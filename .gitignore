@@ -1,0 +1,7 @@
+data/
+__pycache__/
+*.pyc
+canvas/node_modules/
+build/
+dist/
+.playwright-mcp/

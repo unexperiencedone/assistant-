@@ -1,0 +1,35 @@
+name = "Wikipedia search"
+description = "Opens Wikipedia in Edge, clicks Search, types your query, presses Enter and reads the article title."
+phrases = ["search wikipedia for {query}", "look up {query} on wikipedia", "wikipedia {query}"]
+
+[[steps]]
+do = "browser_goto"
+url = "https://en.wikipedia.org/"
+
+# In narrower windows Wikipedia hides the search box behind a Search button.
+[[steps]]
+do = "browser_click"
+label = "Open the search box"
+selector = "a.cdx-button:has-text('Search'):visible"
+timeout = 3
+optional = true
+
+[[steps]]
+do = "browser_fill"
+selector = "input[name='search']:visible"
+value = "{query}"
+press_enter = true
+
+[[steps]]
+do = "browser_wait"
+selector = "#firstHeading"
+timeout = 20
+
+[[steps]]
+do = "browser_read"
+selector = "#firstHeading"
+save_as = "title"
+
+[[steps]]
+do = "say"
+text = "Opened the Wikipedia article {title}."

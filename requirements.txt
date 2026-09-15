@@ -1,0 +1,18 @@
+SpeechRecognition>=3.10
+PyAudio>=0.2.14
+faster-whisper>=1.0
+numpy>=1.24
+pyttsx3>=2.90
+comtypes>=1.2; sys_platform == "win32"
+rich>=13.7
+fastapi>=0.110
+uvicorn>=0.27
+websockets>=12
+pywebview>=6.0
+pystray>=0.19
+Pillow>=10
+pywinauto>=0.6.8; sys_platform == "win32"
+playwright>=1.40
+
+# Only for building the .exe:
+# pyinstaller>=6.0

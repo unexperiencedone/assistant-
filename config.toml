@@ -1,0 +1,85 @@
+# Voice assistant configuration. Every key is optional; defaults live in
+# assistant/config.py.
+
+[assistant]
+name = "Nova"
+# Say this word before a command ("Nova, plan a login page"). Leave empty to
+# treat everything you say as a command.
+wake_word = ""
+# After you speak to the assistant, follow-ups within this many seconds don't
+# need the wake word.
+follow_up_seconds = 20
+# Say a short "On it." if the agent hasn't answered after this many seconds.
+filler_after_seconds = 1.5
+
+[speech]
+enabled = true                 # false: no microphone, type in the canvas instead
+# "whisper" (local, faster-whisper) or "google" (online, SpeechRecognition).
+engine = "whisper"
+whisper_model = "base.en"      # tiny.en | base.en | small.en | medium.en
+whisper_device = "auto"        # auto | cpu | cuda
+whisper_compute_type = "int8"  # int8 | float16 | float32
+language = "en"
+energy_threshold = 300         # raised automatically by ambient calibration
+pause_threshold = 1.0          # seconds of silence that end a phrase
+continuation_seconds = 0.7     # after a pause, keep listening this long; more speech joins the same request
+incomplete_wait_seconds = 4.0  # if it sounds unfinished ("I want you to..."), wait up to this long for the rest
+phrase_time_limit = 30
+
+[voice]
+engine = "auto"                # auto | sapi (Windows) | pyttsx3
+rate = 0                       # SAPI: -10..10, pyttsx3: words per minute (0 = default)
+volume = 100                   # 0..100
+voice_contains = "Zira"        # pick the first installed voice whose name contains this
+
+[agents]
+# Everything you say (except instant local commands) goes to this agent.
+# Claude Code runs on your Claude subscription via its own login: no API key.
+default = "claude"             # claude | antigravity
+workspace = "."                # folder the agent works in
+continue_session = true        # keep one conversation going (resumed after cancel/restart)
+
+[agents.claude]
+executable = "claude"
+# auto: Claude Code approves safe actions itself and runs them (tested working).
+# acceptEdits: file edits only, shell commands get denied when headless.
+# bypassPermissions: everything without checks (risky).
+permission_mode = "auto"
+allowed_tools = []             # extra always-allowed tools, e.g. ["Bash(npm test:*)"]
+model = ""                     # "" = your Claude Code default; e.g. "sonnet" for faster turns
+
+[agents.antigravity]
+executable = "agy"
+mode = "accept-edits"            # accept-edits | plan
+skip_permissions = false         # true passes --dangerously-skip-permissions
+model = ""
+print_timeout = "30m"
+
+[local]
+# SQLite index of apps, files and folders for instant "open" / "find" commands.
+enabled = true
+db_path = "data/index.db"
+# Folders to index. Empty = Desktop, Documents, Downloads, Pictures, Music,
+# Videos, OneDrive and common code folders under your user profile.
+roots = []
+exclude_dirs = []              # added to the built-in list (node_modules, .git, AppData, ...)
+max_depth = 10
+index_hidden = false
+reindex_minutes = 30           # incremental refresh interval
+full_rescan_hours = 24         # full re-list + prune interval
+half_life_days = 14            # how fast past usage stops counting in rankings
+
+[automations]
+# Scripted actions (click buttons in apps, fill web pages) triggered by voice phrases.
+# One TOML file per automation; edited files are picked up without restarting.
+enabled = true
+folder = "automations"
+
+[ui]
+# browser: live canvas in your browser | window: native app window | tray: start hidden in the tray
+mode = "browser"
+hotkey = "ctrl+alt+n"          # shows/hides the canvas window (window and tray modes)
+terminal_dashboard = true      # rich dashboard in the terminal (ignored when there's no console)
+web_dashboard = true           # the canvas server; always on in window/tray mode
+web_port = 8765
+open_browser = true            # browser mode: open the canvas automatically

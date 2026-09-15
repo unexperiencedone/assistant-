@@ -1,0 +1,47 @@
+name = "Calculator demo"
+description = "Opens Calculator and adds 5 + 3 by clicking its buttons, then reads the result aloud."
+phrases = ["calculator demo", "add five and three"]
+
+[[steps]]
+do = "open"
+app = "Calculator"
+
+[[steps]]
+do = "wait_window"
+title = "Calculator"
+timeout = 15
+
+[[steps]]
+do = "click"
+window = "Calculator"
+name = "Clear"
+
+[[steps]]
+do = "click"
+window = "Calculator"
+name = "Five"
+
+[[steps]]
+do = "click"
+window = "Calculator"
+name = "Plus"
+
+[[steps]]
+do = "click"
+window = "Calculator"
+name = "Three"
+
+[[steps]]
+do = "click"
+window = "Calculator"
+name = "Equals"
+
+[[steps]]
+do = "read"
+window = "Calculator"
+auto_id = "CalculatorResults"
+save_as = "result"
+
+[[steps]]
+do = "say"
+text = "{result}"

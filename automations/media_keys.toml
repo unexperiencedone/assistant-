@@ -1,0 +1,7 @@
+name = "Pause or resume music"
+description = "Presses the play/pause media key, which controls Spotify or whatever is playing."
+phrases = ["pause music", "resume music", "pause the music", "play pause"]
+
+[[steps]]
+do = "media"
+key = "play_pause"

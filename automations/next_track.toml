@@ -1,0 +1,7 @@
+name = "Next track"
+description = "Skips to the next song in Spotify or any media player."
+phrases = ["next song", "skip song", "next track", "skip this song"]
+
+[[steps]]
+do = "media"
+key = "next"
