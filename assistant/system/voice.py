@@ -8,25 +8,44 @@ from __future__ import annotations
 
 import os
 import threading
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
 from ..events import EventBus
 from .duplicates import human_size
 from .search import Hit
-from .service import MIN_CONFIDENCE, LocalSystem
+from .service import MIN_CONFIDENCE, LocalSystem, launch
 
 KINDS = {"file": "file", "folder": "folder", "directory": "folder", "app": "app", "apps": "app",
          "application": "app", "program": "app", "files": "file", "folders": "folder"}
 ORDINALS = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5}
+CORRECTION_SECONDS = 120  # "no, the other one" only refers to something opened this recently
+
+
+@dataclass
+class _LastOpen:
+    """What "open X" picked, so a correction can teach the ranking."""
+    hit: Hit
+    query: str
+    kind: str | None
+    alternatives: list[Hit] = field(default_factory=list)
+    at: float = field(default_factory=time.time)
+
+    @property
+    def recent(self) -> bool:
+        return time.time() - self.at < CORRECTION_SECONDS
 
 
 class LocalVoiceCommands:
-    def __init__(self, system: LocalSystem, bus: EventBus, say: Callable[[str], None]) -> None:
+    def __init__(self, system: LocalSystem, bus: EventBus, say: Callable[[str], None], profile=None) -> None:
+        self.profile = profile  # assistant.profile.ProfileService: project names -> folders
         self.system = system
         self.bus = bus
         self.say = say
         self.last_hit: Hit | None = None
+        self.last_open: _LastOpen | None = None
 
     def handle(self, name: str, args: dict[str, str]) -> bool:
         return getattr(self, f"_{name}")(**args)
@@ -34,9 +53,21 @@ class LocalVoiceCommands:
     # -- handlers ---------------------------------------------------------------------
     def _open_item(self, target: str, kind: str = "", kind2: str = "") -> bool:
         kind_name = KINDS.get((kind or kind2).lower())
+        folder = self.profile.folder_for(target) if self.profile and kind_name in (None, "folder") else None
+        if folder:  # "open drishtikon": a project from your profile with its folder set
+            hit = self.system.record_path(folder)
+            launch(folder)
+            self.last_hit = hit
+            self._activity("open", folder)
+            self.say(f"Opening the {target} folder.")
+            return True
         result = self.system.open(target, kind=kind_name)
         if result.ok and result.hit:
             self.last_hit = result.hit
+            alternatives = [h for h in result.alternatives if h.id != result.hit.id and h.score >= MIN_CONFIDENCE]
+            self.last_open = _LastOpen(result.hit, target, kind_name, alternatives)
+            # "open 2" right after this means "not that one, the second match".
+            self.system.last_results = [result.hit, *alternatives]
             self._activity("open", result.hit.path)
             self.say(f"Opening {_spoken_name(result.hit)}.")
             return True
@@ -71,11 +102,41 @@ class LocalVoiceCommands:
             self.say(f"There's no result {index}. Ask me to find something first.")
             return True
         hit = results[index - 1]
+        last = self.last_open
+        if last and last.recent and index > 1 and results[0].id == last.hit.id:
+            self._correct(last, hit)
+            return True
         self.system.open_hit(hit)
         self.last_hit = hit
         self._activity("open", hit.path)
         self.say(f"Opening {_spoken_name(hit)}.")
         return True
+
+    def _wrong_result(self) -> bool:
+        last = self.last_open
+        if not last or not last.recent:
+            return False  # nothing of ours to correct; maybe the agent knows what "that" was
+        if not last.alternatives:  # a remembered choice skips the search, so search now
+            last.alternatives = [h for h in self.system.find(last.query, kind=last.kind, limit=5)
+                                 if h.id != last.hit.id and h.score >= MIN_CONFIDENCE]
+        if not last.alternatives:
+            self.system.record_rejection(last.hit, last.query, last.kind)
+            self.last_open = None
+            self.say(f"Sorry. I don't have another match for {last.query}. Try saying more of the name.")
+            return True
+        self._correct(last, last.alternatives[0])
+        return True
+
+    def _correct(self, last: _LastOpen, chosen: Hit) -> None:
+        """Open the one you meant, and remember it: the wrong pick loses ground for next time."""
+        self.system.record_rejection(last.hit, last.query, last.kind)
+        self.system.open_hit(chosen, last.query, last.kind)
+        remaining = [h for h in last.alternatives if h.id != chosen.id]
+        self.last_open = _LastOpen(chosen, last.query, last.kind, remaining)
+        self.system.last_results = [chosen, *remaining]
+        self.last_hit = chosen
+        self._activity("open", chosen.path)
+        self.say(f"Opening {_spoken_name(chosen)} instead. I'll remember that.")
 
     def _reveal_result(self) -> bool:
         if not self.last_hit or self.last_hit.kind == "app":
@@ -125,14 +186,19 @@ class LocalVoiceCommands:
             self.say(f"The duplicate scan failed: {exc}")
             return
         if not groups:
-            self.say(f"No duplicate files in {Path(folder).name}.")
+            skipped = self.system.duplicate_finder.skipped
+            extra = f" {skipped} files couldn't be read, so I may have missed some." if skipped else ""
+            self.say(f"No duplicate files in {Path(folder).name}.{extra}")
             return
         wasted = sum(g.wasted for g in groups)
         for g in groups[:10]:
             self._activity("duplicate", f"{human_size(g.size)} x{len(g.paths)}: " + " | ".join(g.paths))
         biggest = Path(groups[0].paths[0]).name
+        skipped = self.system.duplicate_finder.skipped
+        unreadable = f" {skipped} files couldn't be read." if skipped else ""
         self.say(f"Found {len(groups)} sets of duplicates using {human_size(wasted)} extra. "
-                 f"The biggest is {biggest}. They're listed on the dashboard. I won't delete anything unless you ask.")
+                 f"The biggest is {biggest}.{unreadable} They're listed on the dashboard. "
+                 "I won't delete anything unless you ask.")
 
     def _resolve_folder(self, spoken: str) -> str | None:
         spoken = spoken.strip()

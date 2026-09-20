@@ -11,6 +11,7 @@ second run over the same folder is nearly instant. Nothing is ever deleted here.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from collections import defaultdict
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ from .db import Database
 
 EDGE = 64 * 1024
 CHUNK = 1024 * 1024
+
+log = logging.getLogger("nova.duplicates")
 
 
 @dataclass
@@ -52,6 +55,7 @@ def parse_size(text: str) -> int:
 class DuplicateFinder:
     def __init__(self, db: Database) -> None:
         self.db = db
+        self.skipped = 0  # unreadable files in the last scan
 
     def find(
         self,
@@ -60,6 +64,7 @@ class DuplicateFinder:
         use_index: bool = True,
         progress: Callable[[str], None] | None = None,
     ) -> list[DuplicateGroup]:
+        self.skipped = 0  # files that couldn't be read: "none found" shouldn't hide them
         by_size: dict[int, list[str]] = defaultdict(list)
         for path, size in self._files(root, min_size, use_index):
             by_size[size].append(path)
@@ -95,6 +100,7 @@ class DuplicateFinder:
                 try:
                     size = os.stat(path, follow_symlinks=False).st_size
                 except OSError:
+                    self.skipped += 1
                     continue
                 if size >= min_size:
                     yield path, size
@@ -111,6 +117,7 @@ class DuplicateFinder:
         try:
             st = os.stat(path)
         except OSError:
+            self.skipped += 1
             return None
         if st.st_size != size:
             return None  # changed since indexing
@@ -122,7 +129,9 @@ class DuplicateFinder:
             return row[0]
         try:
             digest = _full_hash(path) if full else _edge_hash(path, size)
-        except OSError:
+        except OSError as exc:
+            self.skipped += 1
+            log.warning("couldn't read %s: %s", path, exc)
             return None
         with conn:
             # A cached row for an older version of the file is useless: drop it first.
@@ -154,11 +163,12 @@ def _full_hash(path: str) -> str:
     return h.hexdigest()
 
 
-def format_groups(groups: list[DuplicateGroup], limit: int) -> str:
+def format_groups(groups: list[DuplicateGroup], limit: int, skipped: int = 0) -> str:
+    note = f" ({skipped} files couldn't be read)" if skipped else ""
     if not groups:
-        return "no duplicates"
+        return f"no duplicates{note}"
     total = sum(g.wasted for g in groups)
-    lines = [f"{len(groups)} groups, {human_size(total)} reclaimable"]
+    lines = [f"{len(groups)} groups, {human_size(total)} reclaimable{note}"]
     for g in groups[:limit]:
         lines.append(f"{human_size(g.size)} x{len(g.paths)} (wasted {human_size(g.wasted)})")
         lines += [f"  {p}" for p in g.paths]

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -116,9 +117,11 @@ class Indexer:
                 pending.append(("folder", root.name, str(root), str(root.parent), None, None, root.stat().st_mtime, pass_id))
             except OSError:
                 pass
-        stack: list[tuple[Path, int]] = [(root, 0) for root in self.roots]
+        # Breadth-first: during a first cold index, a search finds things in Documents
+        # before the walk disappears into some deep folder.
+        stack: deque[tuple[Path, int]] = deque((root, 0) for root in self.roots)
         while stack:
-            directory, depth = stack.pop()
+            directory, depth = stack.popleft()
             dir_key = str(directory)
             try:
                 dir_mtime = directory.stat().st_mtime

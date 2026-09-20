@@ -12,7 +12,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS items (
@@ -28,12 +28,12 @@ CREATE TABLE IF NOT EXISTS items (
     use_count  INTEGER NOT NULL DEFAULT 0,
     last_used  INTEGER,
     score      REAL    NOT NULL DEFAULT 0, -- frecency, valid as of score_at
-    score_at   INTEGER NOT NULL DEFAULT 0
+    score_at   INTEGER NOT NULL DEFAULT 0,
+    rank_key   REAL                        -- log2(score) + score_at / half_life: sorts like the decayed score
 );
 CREATE INDEX IF NOT EXISTS idx_items_kind   ON items (kind);
 CREATE INDEX IF NOT EXISTS idx_items_parent ON items (parent);
 CREATE INDEX IF NOT EXISTS idx_items_size   ON items (size) WHERE kind = 'file';
-CREATE INDEX IF NOT EXISTS idx_items_used   ON items (score) WHERE use_count > 0;
 
 CREATE VIRTUAL TABLE IF NOT EXISTS items_fts
     USING fts5 (name, content = 'items', content_rowid = 'id', tokenize = 'trigram');
@@ -73,6 +73,17 @@ CREATE TABLE IF NOT EXISTS query_cache (
     last_used INTEGER NOT NULL
 );
 
+-- Spoken/typed commands, ranked the same way as files, so the canvas can offer
+-- the ones this user actually uses instead of a hardcoded list.
+CREATE TABLE IF NOT EXISTS commands (
+    text      TEXT PRIMARY KEY,
+    count     INTEGER NOT NULL DEFAULT 0,
+    last_used INTEGER,
+    score     REAL    NOT NULL DEFAULT 0,
+    score_at  INTEGER NOT NULL DEFAULT 0,
+    rank_key  REAL
+);
+
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -87,6 +98,9 @@ class Database:
         self._local = threading.local()
         with self.connect() as conn:
             conn.executescript(SCHEMA)
+            row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+            self.migrated_from = int(row["value"]) if row else SCHEMA_VERSION
+            _migrate(conn)
             conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)", (SCHEMA_VERSION,))
 
     def connect(self) -> sqlite3.Connection:
@@ -110,3 +124,14 @@ class Database:
     def set_meta(self, key: str, value: str) -> None:
         with self.connect() as conn:
             conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value))
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Bring an older database up to the current schema. Safe to run every start."""
+    for table in ("items", "commands"):
+        columns = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if "rank_key" not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN rank_key REAL")
+    conn.execute("DROP INDEX IF EXISTS idx_items_used")  # sorted by raw score, which ignores decay
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_items_rank ON items (kind, rank_key) WHERE use_count > 0")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_commands_rank ON commands (rank_key)")

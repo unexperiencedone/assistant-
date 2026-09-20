@@ -9,6 +9,18 @@ equivalent to summing every past use's decayed weight:
 
 So an app you opened 20 times last month but never since gradually yields to
 one you've opened 5 times this week, with O(1) storage and O(1) updates.
+
+Habits fade at different speeds: an app you use daily is a habit for months, a
+file belongs to this week's project. So each kind has its own half-life.
+
+Sorting in SQL needs a key that doesn't change as time passes. Taking log2 of
+the decayed score gives one:
+
+    log2(score_now) = log2(score) + score_at / half_life - now / half_life
+
+The last term is the same for every row, so ordering by `rank_key =
+log2(score) + score_at / half_life` is exactly ordering by the decayed score, at
+any moment, for rows that share a half-life. It is stored and indexed.
 """
 
 from __future__ import annotations
@@ -16,8 +28,29 @@ from __future__ import annotations
 import math
 import re
 import time
+from dataclasses import dataclass, field
 
 DEFAULT_HALF_LIFE_DAYS = 14.0
+DAY = 86400.0
+
+
+@dataclass
+class HalfLives:
+    """Seconds after which past use counts half, per kind (app, file, folder, command)."""
+    by_kind: dict[str, float] = field(default_factory=dict)  # days
+    default_days: float = DEFAULT_HALF_LIFE_DAYS
+
+    def seconds(self, kind: str) -> float:
+        return max(0.01, float(self.by_kind.get(kind, self.default_days))) * DAY
+
+    def signature(self) -> str:
+        """Changes whenever stored rank keys would need recomputing."""
+        return f"{self.default_days}|" + ",".join(f"{k}={v}" for k, v in sorted(self.by_kind.items()))
+
+
+def rank_key(score: float, score_at: float, half_life: float) -> float | None:
+    """Time-invariant sort key (see module docstring). None for never-used rows."""
+    return math.log2(score) + score_at / half_life if score > 0 else None
 
 _SPLIT = re.compile(r"[\s_\-.()\[\]]+")
 _CAMEL = re.compile(r"(?<=[a-z])(?=[A-Z])")
@@ -42,6 +75,12 @@ def decayed(score: float, score_at: float, now: float, half_life: float) -> floa
 def bump(score: float, score_at: float, half_life: float, weight: float = 1.0, now: float | None = None) -> tuple[float, int]:
     now = time.time() if now is None else now
     return decayed(score, score_at, now, half_life) + weight, int(now)
+
+
+def demote(score: float, score_at: float, half_life: float, now: float | None = None) -> tuple[float, int]:
+    """You said "no, the other one": halve what this item had earned."""
+    now = time.time() if now is None else now
+    return decayed(score, score_at, now, half_life) * 0.5, int(now)
 
 
 _QUERY_ALIASES = {"ms": "microsoft", "vs": "visual studio", "vscode": "visual studio code", "cmd": "command prompt"}

@@ -127,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             print(json.dumps([{"size": g.size, "paths": g.paths} for g in groups[: args.limit]]))
         else:
-            print(format_groups(groups, args.limit))
+            print(format_groups(groups, args.limit, system.duplicate_finder.skipped))
         return 0 if groups else 1
 
     if args.cmd == "index":

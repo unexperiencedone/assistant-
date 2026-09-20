@@ -7,9 +7,11 @@ import time
 from dataclasses import dataclass
 
 from .db import Database
-from .ranking import decayed, match_score, normalize, rank
+from .ranking import HalfLives, decayed, match_score, normalize, rank
 
 FTS_CANDIDATES = 400
+USED_CANDIDATES = 300  # per kind: the things you use, whatever their names
+KINDS = ("app", "file", "folder")
 
 
 @dataclass
@@ -24,9 +26,9 @@ class Hit:
 
 
 class Searcher:
-    def __init__(self, db: Database, half_life: float) -> None:
+    def __init__(self, db: Database, half_lives: HalfLives) -> None:
         self.db = db
-        self.half_life = half_life
+        self.half_lives = half_lives
 
     def search(
         self,
@@ -48,7 +50,7 @@ class Searcher:
             m = match_score(q, r["name"])
             if m <= 0:
                 continue
-            frec = decayed(r["score"], r["score_at"], now, self.half_life)
+            frec = decayed(r["score"], r["score_at"], now, self.half_lives.seconds(r["kind"]))
             hits.append(Hit(r["id"], r["kind"], r["name"], r["path"], r["size"], frec,
                             rank(m, frec, r["kind"], r["path"], prefer_kind)))
         hits.sort(key=lambda h: h.score, reverse=True)
@@ -80,9 +82,13 @@ class Searcher:
             for r in conn.execute(f"SELECT {cols} FROM items i WHERE i.kind = 'app'"):
                 rows[r["id"]] = r
 
-        # Frequently used things are always considered, whatever their name length.
-        for r in conn.execute(f"SELECT {cols} FROM items i WHERE i.use_count > 0{where} ORDER BY i.score DESC LIMIT 300", params):
-            rows[r["id"]] = r
+        # Frequently used things are always considered, whatever their name length. Sorted by
+        # rank_key (decay-aware), one kind at a time because each kind has its own half-life.
+        for used_kind in ([kind] if kind else KINDS):
+            sql = (f"SELECT {cols} FROM items i WHERE i.kind = ? AND i.use_count > 0{where} "
+                   f"ORDER BY i.rank_key DESC LIMIT {USED_CANDIDATES}")
+            for r in conn.execute(sql, [used_kind, *params]):
+                rows[r["id"]] = r
 
         longest = max(q.split(), key=len)
         if len(longest) >= 3:
@@ -101,16 +107,13 @@ class Searcher:
 
     def top(self, kind: str | None = None, limit: int = 10) -> list[Hit]:
         conn = self.db.connect()
-        sql = "SELECT id, kind, name, path, size, score, score_at FROM items WHERE use_count > 0"
-        params: list = []
-        if kind:
-            sql += " AND kind = ?"
-            params.append(kind)
         now = time.time()
-        hits = [Hit(r["id"], r["kind"], r["name"], r["path"], r["size"],
-                    decayed(r["score"], r["score_at"], now, self.half_life), 0.0)
-                for r in conn.execute(sql + " ORDER BY score DESC LIMIT 500", params)]
-        for h in hits:
-            h.score = h.frecency
+        hits = []
+        for k in ([kind] if kind else KINDS):
+            rows = conn.execute("SELECT id, kind, name, path, size, score, score_at FROM items "
+                                "WHERE kind = ? AND use_count > 0 ORDER BY rank_key DESC LIMIT ?", (k, limit))
+            for r in rows:
+                frec = decayed(r["score"], r["score_at"], now, self.half_lives.seconds(k))
+                hits.append(Hit(r["id"], r["kind"], r["name"], r["path"], r["size"], frec, frec))
         hits.sort(key=lambda h: h.frecency, reverse=True)
         return hits[:limit]
