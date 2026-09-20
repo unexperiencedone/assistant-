@@ -26,6 +26,7 @@ import tomllib
 import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 from typing import Any, Callable
 
 from ..events import EventBus
@@ -40,6 +41,7 @@ STEP_LABELS = {
     "read": "Read {name}{auto_id} from {window}",
     "wait": "Wait {seconds}s",
     "say": "Say: {text}",
+    "phone": "On the phone: {action}",
     "browser_goto": "Open {url}",
     "browser_click": "Click '{text}{name}{selector}' on the page",
     "browser_fill": "Fill '{label}{placeholder}{selector}' with '{value}'",
@@ -48,9 +50,9 @@ STEP_LABELS = {
     "browser_read": "Read '{text}{selector}' from the page",
     "media": "Media key: {key}",
 }
-MEDIA_KEYS = {"play_pause": "{VK_MEDIA_PLAY_PAUSE}", "next": "{VK_MEDIA_NEXT_TRACK}",
-              "previous": "{VK_MEDIA_PREV_TRACK}", "stop": "{VK_MEDIA_STOP}",
-              "volume_up": "{VK_VOLUME_UP}", "volume_down": "{VK_VOLUME_DOWN}", "mute": "{VK_VOLUME_MUTE}"}
+# Windows virtual-key codes. pywinauto's send_keys doesn't know the media keys, so these go through press_vk.
+MEDIA_KEYS = {"play_pause": 0xB3, "next": 0xB0, "previous": 0xB1, "stop": 0xB2,
+              "volume_up": 0xAF, "volume_down": 0xAE, "mute": 0xAD}
 _FILLER = re.compile(r"^(?:please\s+|can you\s+|could you\s+|hey\s+|ok(?:ay)?\s+|run\s+(?:the\s+)?|do\s+(?:the\s+)?)+", re.I)
 
 
@@ -126,11 +128,14 @@ class MacroRunner:
     """Runs one automation at a time on its own thread (UI Automation and Playwright
     both need a consistent thread), publishing progress for the canvas."""
 
-    def __init__(self, bus: EventBus, open_app: Callable[[str], bool], say: Callable[[str], None]) -> None:
+    def __init__(self, bus: EventBus, open_app: Callable[[str], bool], say: Callable[[str], None],
+                 phone: Any = None) -> None:
         self.bus = bus
         self.open_app = open_app
         self.say = say
+        self.phone = phone  # assistant.phone.PhoneBridge, for do = "phone" steps
         self._busy = threading.Lock()
+        self._browser = None  # kept between runs: connecting costs a driver process launch
 
     @property
     def running(self) -> bool:
@@ -161,17 +166,16 @@ class MacroRunner:
             values[f"{key}_url"] = urllib.parse.quote_plus(value)
         labels = [macro.describe(step, values) for step in macro.steps]
         self.bus.publish("route", utterance=utterance or macro.name, route="macro", name=macro.name, steps=labels)
-        browser = None
         started = time.time()
         try:
             for index, step in enumerate(macro.steps):
                 self.bus.publish("macro_step", index=index, status="running", detail="")
                 try:
-                    if step["do"].startswith("browser_") and browser is None:
+                    if step["do"].startswith("browser_") and self._browser is None:
                         from .browser import Browser
 
-                        browser = Browser()
-                    detail = self._execute(step, values, browser) or ""
+                        self._browser = Browser()
+                    detail = self._execute(step, values, self._browser) or ""
                 except Exception as exc:  # report which step failed and why, then stop
                     message = str(exc).splitlines()[0][:200] or exc.__class__.__name__
                     if step.get("optional"):  # e.g. a button that only exists at some window sizes
@@ -179,17 +183,25 @@ class MacroRunner:
                         continue
                     self.bus.publish("macro_step", index=index, status="failed", detail=message)
                     summary = f"{macro.name} stopped at step {index + 1}: {message}"
-                    self.bus.publish("macro_done", ok=False, text=summary)
+                    # Structured fields (name/path/step/error) let Controller fall back to the
+                    # agent for this one request, then ask it to patch the automation file.
+                    self.bus.publish("macro_done", ok=False, text=summary, name=macro.name,
+                                     path=str(macro.path), step=index + 1, error=message)
                     self.bus.log(summary, "warn")
                     self.say(f"{macro.name} failed at step {index + 1}. The canvas shows why.")
                     return False, summary
                 self.bus.publish("macro_step", index=index, status="done", detail=detail)
             summary = f"{macro.name} finished in {time.time() - started:.1f}s."
-            self.bus.publish("macro_done", ok=True, text=summary)
+            self.bus.publish("macro_done", ok=True, text=summary, name=macro.name)
             return True, summary
         finally:
-            if browser is not None:
-                browser.detach()
+            if self._browser is not None:
+                self._browser.release()  # keep the connection for the next automation
+
+    def close(self) -> None:
+        if self._browser is not None:
+            self._browser.detach()
+            self._browser = None
 
     def _execute(self, step: dict[str, Any], values: dict[str, str], browser) -> str:
         from . import desktop
@@ -206,6 +218,23 @@ class MacroRunner:
 
             launch(s["target"])
             return f"opened {s['target']}"
+        if kind == "phone":
+            # The phone, over Tailscale, without a model in the loop. Destructive actions
+            # (a text, a call) are not reachable from here: an automation runs unattended,
+            # and those are exactly the things that must be asked about first.
+            if self.phone is None or not self.phone.configured:
+                raise MacroError("the phone bridge isn't set up (phone/README.md)")
+            action = s.get("action", "")
+            from ..phone import NEEDS_CONFIRMATION, PhoneError
+
+            if action in NEEDS_CONFIRMATION:
+                raise MacroError(f"{action} needs confirming, so it cannot run from an automation")
+            args = {k: v for k, v in s.items() if k not in ("do", "action", "label", "optional", "timeout")}
+            try:
+                result = self.phone.call(action, args)
+            except PhoneError as exc:
+                raise MacroError(str(exc)) from exc
+            return " ".join(str(result.get("output", "")).split())[:200]
         if kind == "wait_window":
             win = desktop.find_window(s["title"], timeout=timeout)
             return win.window_text()
@@ -213,7 +242,7 @@ class MacroRunner:
             return desktop.focus(s["window"]).window_text()
         if kind == "click":
             label = desktop.click(s["window"], s.get("name", ""), s.get("auto_id", ""), s.get("control_type", ""),
-                                  int(s.get("index", 0)), timeout)
+                                  int(s.get("index", 0)), timeout, bool(s.get("exact", False)))
             return f"clicked {label}"
         if kind == "type":
             desktop.type_text(s.get("window", ""), s["text"], s.get("into", ""), s.get("auto_id", ""))
@@ -233,7 +262,7 @@ class MacroRunner:
         if kind == "media":
             if s["key"] not in MEDIA_KEYS:
                 raise MacroError(f"unknown media key {s['key']}; use {', '.join(MEDIA_KEYS)}")
-            desktop.send_keys("", MEDIA_KEYS[s["key"]])
+            desktop.press_vk(MEDIA_KEYS[s["key"]])
             return ""
         target = {k: s[k] for k in ("text", "selector", "role", "name", "label", "placeholder") if s.get(k)}
         if kind == "browser_goto":

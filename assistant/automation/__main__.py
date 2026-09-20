@@ -2,7 +2,7 @@
 
     nova-cli ui windows [--filter spot]
     nova-cli ui controls "Calculator" [--filter plus] [--type Button] [--limit 40]
-    nova-cli ui click "Calculator" "Five" [--auto-id ID] [--type Button] [--index 0]
+    nova-cli ui click "Calculator" "Five" [--auto-id ID] [--type Button] [--index 0] [--exact]
     nova-cli ui type "Notepad" "hello world" [--into "Text editor"]
     nova-cli ui keys "Spotify" "^l"              # ^ Ctrl  % Alt  + Shift  {ENTER} {TAB}
     nova-cli ui read "Calculator" --auto-id CalculatorResults
@@ -44,6 +44,7 @@ def ui_main(argv: list[str]) -> int:
     for name in ("click", "read"):
         p = sub.add_parser(name); p.add_argument("window"); p.add_argument("name", nargs="?", default="")
         p.add_argument("--auto-id", default=""); p.add_argument("--type", default=""); p.add_argument("--index", type=int, default=0)
+        p.add_argument("--exact", action="store_true", help="no prefix/substring fallback on the name")
     p = sub.add_parser("type"); p.add_argument("window"); p.add_argument("text"); p.add_argument("--into", default="")
     p = sub.add_parser("keys"); p.add_argument("window"); p.add_argument("keys")
     args = parser.parse_args(argv)
@@ -68,6 +69,32 @@ def ui_main(argv: list[str]) -> int:
     except desktop.AutomationError as exc:
         print(exc)
         return 1
+    return 0
+
+
+def word_main(argv: list[str]) -> int:
+    from pathlib import Path
+
+    from .office import OfficeError, write_document
+
+    parser = argparse.ArgumentParser(prog="word", description="Create a Word document from Markdown and open it in Word.")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("write")
+    src = p.add_mutually_exclusive_group(required=True)
+    src.add_argument("--file", help="Markdown file with the content (# headings, - bullets, paragraphs)")
+    src.add_argument("--text", help="content inline (for short documents)")
+    p.add_argument("--title", default="")
+    p.add_argument("--out", help="where to save the .docx (default: Documents\\<title>.docx)")
+    p.add_argument("--hidden", action="store_true", help="don't show Word; just save the file")
+    args = parser.parse_args(argv)
+
+    content = Path(args.file).read_text(encoding="utf-8") if args.file else args.text
+    try:
+        path = write_document(content, args.title, Path(args.out) if args.out else None, visible=not args.hidden)
+    except (OfficeError, OSError) as exc:
+        print(f"failed: {exc}")
+        return 1
+    print(f"saved\t{path}")
     return 0
 
 
