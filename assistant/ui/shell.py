@@ -114,7 +114,9 @@ class AppShell:
             pystray.MenuItem("Mute microphone", lambda: self._toggle_mute(),
                              checked=lambda item: bool(app.mic and app.mic.muted.is_set()),
                              enabled=lambda item: app.mic is not None),
-            pystray.MenuItem("Cancel task", lambda: app.cancel_task(), enabled=lambda item: app.runner.running),
+            pystray.MenuItem(lambda item: f"Cancel {len(app.runner.active)} tasks" if len(app.runner.active) > 1
+                             else "Cancel task",
+                             lambda: app.cancel_task(), enabled=lambda item: app.runner.running),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(f"Quit {self.name}", lambda: app.quit()),
         )
