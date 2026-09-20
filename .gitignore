@@ -1,3 +1,4 @@
+.env
 data/
 __pycache__/
 *.pyc
@@ -5,3 +6,7 @@ canvas/node_modules/
 build/
 dist/
 .playwright-mcp/
+
+# Not ignored by default and it held a live token once: keep credentials in .env only.
+env
+debug_screenshots/
