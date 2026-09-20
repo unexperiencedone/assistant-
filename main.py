@@ -56,10 +56,19 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def _bring_existing_instance_forward(port: int) -> None:
+    """A second launch asks the first one to show itself. That is a request like any
+    other now, so it carries the same shared secret."""
     import urllib.request
 
+    from assistant.paths import APP_DIR
+    from assistant.ui import auth
+
+    token = auth.read(APP_DIR / "data" / "nova_token")
+    headers = {auth.HEADER_NAME: token} if token else {}
     try:
-        urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{port}/api/show", method="POST"), timeout=3)
+        urllib.request.urlopen(
+            urllib.request.Request(f"http://127.0.0.1:{port}/api/show", method="POST", headers=headers),
+            timeout=3)
     except OSError:
         pass
 
@@ -73,10 +82,29 @@ def main(argv: list[str] | None = None) -> int:
         from assistant.system.__main__ import main as sysindex_main
 
         return sysindex_main(argv[1:])
-    if argv and argv[0] in ("ui", "macro"):
-        from assistant.automation.__main__ import macro_main, ui_main
+    if argv and argv[0] in ("ui", "macro", "word"):
+        from assistant.automation.__main__ import macro_main, ui_main, word_main
 
-        return (ui_main if argv[0] == "ui" else macro_main)(argv[1:])
+        return {"ui": ui_main, "macro": macro_main, "word": word_main}[argv[0]](argv[1:])
+    if argv and argv[0] == "models":
+        from assistant.agents.chat_api import GroqAgent, OpenRouterAgent, list_models
+        from assistant.config import load_settings
+
+        settings = load_settings()
+        which = (argv[1] if len(argv) > 1 else "groq").lower()
+        agent_type = OpenRouterAgent if which.startswith("open") else GroqAgent
+        config = settings.agents.openrouter if agent_type is OpenRouterAgent else settings.agents.groq
+        print(list_models(agent_type(config, settings.workspace, False, settings.assistant.name)))
+        return 0
+    if argv and argv[0] == "stats":
+        from assistant.stats import main as stats_main
+
+        return stats_main(argv[1:])
+    if argv and argv[0] == "voices":
+        from assistant.audio.tts import list_installed_voices
+
+        print(list_installed_voices())
+        return 0
     if argv and argv[0] == "demo":
         from assistant.ui.demo import main as demo_main
 
