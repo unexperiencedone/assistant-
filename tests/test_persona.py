@@ -188,5 +188,49 @@ class TestTheQuieterLeak(unittest.TestCase):
         self.assertEqual(guard.scrub(honest, self.ID), (honest, ""))
 
 
+class TestAnsweringOnlyWhatWasAsked(unittest.TestCase):
+    """Padding is the opposite of this character's second value: say it and stop."""
+
+    def setUp(self):
+        persona.configure("Nova", "Kaiketsu Tech")
+
+    def test_who_built_you_gets_an_answer_not_an_introduction(self):
+        answer = persona.about("who built you")
+        self.assertTrue(answer.startswith("Kaiketsu Tech built me"), answer)
+        self.assertNotIn("I live on this laptop", answer)
+
+    def test_what_it_runs_on_gets_an_answer_not_an_introduction(self):
+        answer = persona.about("are you built on gpt")
+        self.assertTrue(answer.startswith("Kaiketsu Tech builds me on AI models"), answer)
+        self.assertNotIn("I live on this laptop", answer)
+
+    def test_how_do_you_work_does_not_introduce_itself_first(self):
+        self.assertNotIn("I live on this laptop", persona.about("how do you work"))
+
+    def test_asking_what_it_is_does_lead_with_that(self):
+        for said in ("who are you", "tell me about yourself",
+                     "so what exactly am I talking to here"):
+            with self.subTest(said=said):
+                self.assertTrue(persona.about(said).startswith("I'm Nova"), said)
+
+    def test_a_three_part_question_still_gets_three_parts(self):
+        answer = persona.about("who are you, who built you and how do you work")
+        self.assertIn("I'm Nova", answer)
+        self.assertIn("Kaiketsu Tech built me", answer)
+        self.assertIn("fraction of a second", answer)
+
+    def test_the_maker_is_not_named_twice_to_a_customer(self):
+        answer = persona.about("who are you and who built you", register=persona.CUSTOMER)
+        self.assertEqual(answer.count("Kaiketsu Tech"), 1, answer)
+
+    def test_with_no_maker_configured_it_says_nothing_that_reads_like_a_placeholder(self):
+        persona.configure("Nova", "")
+        for said in ("who are you", "who built you", "what ai do you use"):
+            answer = persona.about(said).lower()
+            for placeholder in ("{maker}", "its maker", "your maker", "my maker"):
+                self.assertNotIn(placeholder, answer, f"{said}: {answer}")
+        persona.configure("Nova", "Kaiketsu Tech")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -77,13 +77,28 @@ def _compose(path: str, name: str, maker: str, register: str) -> str:
     text = _read(path)
     if not text:
         return ""
-    text = text.replace("{name}", name or "Nova").replace("{maker}", maker or "its maker")
+    text = text.replace("{name}", name or "Nova")
+    if maker:
+        text = text.replace("{maker}", maker)
+    else:
+        # No maker configured: say nothing rather than something that reads like a
+        # placeholder. A model given "its maker" will repeat it back as "your maker".
+        text = text.replace(" made by {maker}", "").replace(" by {maker}", "")
+        text = text.replace("{maker}", "the people who built me")
     return f"{text}\n{CUSTOMER_REGISTER if register == CUSTOMER else OWNER_REGISTER}".strip()
 
 
 # The four things people actually ask, and the honest answer to each. Assembled here
 # rather than generated, so the answer to "who are you" cannot drift between backends,
 # between runs, or with the weather.
+ASKS_IDENTITY = re.compile(
+    r"\b(?:who|what)\s+(?:are|r)\s+(?:you|u)\b"
+    r"|\byour\s+name\b"
+    r"|\b(?:introduce|describe|explain)\s+yourself\b"
+    r"|\btell\s+me\s+about\s+(?:yourself|you)\b"
+    r"|\bam\s+i\s+(?:talking|speaking|dealing)\s+(?:to|with)\b"
+    r"|\bare\s+you\s+(?:an?\s+)?(?:ai|bot|robot|human|real|program|machine)\b", re.I)
+
 ASKS_ORIGIN = re.compile(
     r"\b(?:who|what)\s+(?:built|made|created|wrote|designed|owns|develops?|developed)\s+(?:you|u|this|nova)\b"
     r"|\byour\s+(?:maker|creator|developer|owner|company)\b"
@@ -113,19 +128,29 @@ def about(said: str = "", name: str = "", maker: str = "", register: str = OWNER
     """
     name, maker = name or _DEFAULTS["name"], maker or _DEFAULTS["maker"]
     said = said or ""
-    parts = [identity_line(name, maker, register)]
+    origin = bool(ASKS_ORIGIN.search(said))
+    mechanics = bool(ASKS_MECHANICS.search(said))
+    stack = bool(ASKS_STACK.search(said))
 
-    if ASKS_ORIGIN.search(said):
-        parts.append(f"{maker or 'My maker'} built me."
-                     if register == CUSTOMER else
-                     f"{maker or 'My maker'} built me, and you have been shaping me since.")
-    if ASKS_MECHANICS.search(said):
+    parts = []
+    # Lead with who Nova is only when that is what was asked. "Who built you" deserves
+    # an answer, not an introduction followed by an answer.
+    if ASKS_IDENTITY.search(said) or not (origin or mechanics or stack):
+        parts.append(identity_line(name, maker, register))
+
+    if origin and not (maker and parts and maker in parts[0]):
+        parts.append(f"{maker} built me." if register == CUSTOMER else
+                     f"{maker} built me, and you have been shaping me since."
+                     if maker else "The people who built me are behind this machine.")
+    if mechanics:
         parts.append("Most of what you ask me I handle here on this machine in a fraction "
                      "of a second, and I save the things you repeat so they cost nothing "
                      "next time. Anything genuinely new, I think through properly.")
-    if ASKS_STACK.search(said):
-        parts.append(f"{maker or 'My maker'} builds me on AI models from a few providers, "
-                     "with a lot of my own machinery around them.")
+    if stack:
+        parts.append(f"{maker} builds me on AI models from a few providers, with a lot "
+                     "of my own machinery around them." if maker else
+                     "I'm built on AI models from a few providers, with a lot of my own "
+                     "machinery around them.")
     return " ".join(parts)
 
 

@@ -59,6 +59,12 @@ class VoiceAssistant:
         self.shell = None  # native window + tray, in window/tray modes
         self.mic = None
 
+        # Before anything else: AgentRegistry builds its system prompt in its own
+        # constructor, so the character must already know its name and its maker by then.
+        from . import persona
+
+        persona.configure(settings.assistant.name, getattr(settings.assistant, "maker", ""))
+
         self.bus = EventBus()
         logbridge.install(self.bus)  # module warnings (UI automation, browser) reach the activity feed
         self.registry = AgentRegistry(settings)
@@ -163,11 +169,6 @@ class VoiceAssistant:
         from .routes import RouteCounter
 
         self.routes = RouteCounter(settings.base_dir / "data" / "routes.json", self.bus)
-
-        # The character every backend is given, and the answer to "who are you".
-        from . import persona
-
-        persona.configure(settings.assistant.name, getattr(settings.assistant, "maker", ""))
 
         self.promotion = None
         if settings.promotion.enabled:
