@@ -1,0 +1,35 @@
+name = "Smart shuffle"
+description = "Switches Spotify to Smart Shuffle, which mixes recommendations into the playlist. Needs Premium and a playlist playing."
+phrases = ["smart shuffle", "turn on smart shuffle", "enable smart shuffle", "switch to smart shuffle", "use smart shuffle", "put it on smart shuffle"]
+
+[[steps]]
+do = "click"
+label = "Turn shuffle on"
+window = "exe:spotify"
+name = "Enable Shuffle"
+control_type = "Button"
+optional = true
+timeout = 2
+
+# With plain shuffle on, the same button opens a picker with "Shuffle" and "Smart Shuffle".
+[[steps]]
+do = "click"
+label = "Open the shuffle picker"
+window = "exe:spotify"
+name = "Enable Smart Shuffle"
+control_type = "Button"
+optional = true
+timeout = 2
+
+[[steps]]
+do = "click"
+label = "Choose Smart Shuffle"
+window = "exe:spotify"
+name = "Smart Shuffle"
+control_type = "RadioButton"
+optional = true
+timeout = 3
+
+[[steps]]
+do = "say"
+text = "Smart shuffle on."

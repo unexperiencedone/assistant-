@@ -1,0 +1,23 @@
+# Goodnight: everything the phone should do at the end of the day, with no model in the
+# loop. One spoken phrase, zero tokens, about a second in total.
+name = "phone goodnight"
+phrases = ["goodnight", "good night", "bedtime", "i'm going to bed"]
+
+[[steps]]
+do = "phone"
+action = "torch_off"
+label = "torch off"
+
+[[steps]]
+do = "phone"
+action = "volume"
+stream = "music"
+level = "0"
+label = "silence the phone"
+
+[[steps]]
+do = "phone"
+action = "notify"
+title = "Nova"
+text = "Goodnight. Alarms are still on."
+label = "say goodnight on the phone"

@@ -1,0 +1,35 @@
+name = "Minimize a window"
+description = "Minimizes an app's window, leaving whatever it's doing running."
+# Two focus attempts, then one Win+Down, so the app is found whether it names its window
+# after itself (Chrome, Notepad) or after what it's playing (Spotify: window = exe:spotify).
+# Both are optional, so the one that misses is skipped instead of stopping the run.
+phrases = [
+    "minimize {app}",
+    "minimise {app}",
+    "minimize the {app} window",
+    "minimise the {app} window",
+    "minimize {app} window",
+    "hide {app}",
+    "put {app} away",
+    "get {app} out of the way",
+]
+
+[[steps]]
+do = "focus"
+label = "Find {app} by its process"
+window = "exe:{app}"
+timeout = 4
+optional = true
+
+[[steps]]
+do = "focus"
+label = "Find {app} by its window title"
+window = "{app}"
+timeout = 4
+optional = true
+
+[[steps]]
+do = "keys"
+label = "Minimize it"
+# Twice: from a maximized window the first Win+Down only restores it.
+keys = "{VK_LWIN down}{DOWN}{DOWN}{VK_LWIN up}"

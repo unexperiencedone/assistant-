@@ -1,0 +1,32 @@
+name = "Play a song on YouTube"
+description = "Searches YouTube for {query} and opens the first result. Music without \"on youtube\" goes to Spotify instead."
+# Named so it sorts before play_song.toml: automations are matched in filename order, and that one
+# owns the bare "play {query}" phrase, so the YouTube phrases have to be tried first.
+phrases = ["play {query} on youtube", "youtube play {query}", "play the video {query}", "play {query} video", "search youtube for {query}"]
+
+[[steps]]
+do = "browser_goto"
+url = "https://www.youtube.com/results?search_query={query_url}"
+
+[[steps]]
+do = "browser_wait"
+label = "Wait for search results"
+selector = "ytd-video-renderer #video-title:visible"
+timeout = 15
+
+[[steps]]
+do = "browser_click"
+label = "Open the first result"
+selector = "ytd-video-renderer #video-title:visible"
+timeout = 10
+
+[[steps]]
+do = "browser_wait"
+label = "Wait for the player"
+selector = "video.html5-main-video"
+timeout = 15
+optional = true
+
+[[steps]]
+do = "say"
+text = "Playing {query}."

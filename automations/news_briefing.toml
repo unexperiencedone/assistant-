@@ -1,0 +1,38 @@
+name = "News briefing"
+description = "Opens the latest headlines for a topic, newest first, and reads out the top one."
+# The spoken-only headline briefing is already an instant intent (news_briefing in
+# intents.py). This covers the other shape of the request -- "pull up some finance news" --
+# where the topic comes before the word "news" and the user wants the stories on screen.
+phrases = [
+    "pull up some {topic} news",
+    "pull up {topic} news",
+    "show me some {topic} news",
+    "show me {topic} news",
+    "open {topic} news",
+    "find some {topic} news",
+    "{topic} news",
+]
+
+[[steps]]
+do = "browser_goto"
+label = "Open the latest {topic} headlines"
+url = "https://www.bing.com/news/search?q={topic_url}&qft=sortbydate%3d%221%22"
+timeout = 20
+
+[[steps]]
+do = "browser_wait"
+label = "Wait for the headlines"
+selector = ".news-card a.title"
+timeout = 15
+
+[[steps]]
+do = "browser_read"
+label = "Read the top headline"
+selector = ".news-card a.title"
+save_as = "top"
+optional = true
+
+[[steps]]
+do = "say"
+text = "Here's the latest on {topic}. Top story: {top}"
+optional = true

@@ -1,0 +1,58 @@
+name = "Play something on Spotify"
+description = "Searches Spotify for {query} and plays the top result. For a genre or a mood, say \"play some {query}\" instead."
+phrases = [
+  "play {query} on spotify",
+  "play the song {query} on spotify",
+  "put on {query}",
+  "play the song {query}",
+  "play {query}",
+  "put on {query} on spotify",
+  "spotify play {query}",
+  "search spotify for {query}",
+  "play {query} in spotify",
+]
+
+[[steps]]
+do = "open"
+label = "Search Spotify for {query}"
+target = "spotify:search:{query_url}"
+
+[[steps]]
+do = "wait_window"
+title = "exe:spotify"
+timeout = 25
+
+[[steps]]
+do = "wait"
+seconds = 2.5
+
+# The top result's play button is the only control named exactly "Play" while music is playing.
+# When playback is paused the player bar is called "Play" too and comes first, so this first click
+# resumes the bar and the second one lands on the result. Whichever happens, {query} ends up playing.
+[[steps]]
+do = "click"
+label = "Play the top result"
+window = "exe:spotify"
+name = "Play"
+control_type = "Button"
+exact = true
+optional = true
+timeout = 6
+
+[[steps]]
+do = "wait"
+seconds = 1
+
+[[steps]]
+do = "click"
+label = "Play the top result"
+window = "exe:spotify"
+name = "Play"
+control_type = "Button"
+exact = true
+optional = true
+timeout = 3
+
+[[steps]]
+do = "say"
+text = "Playing {query}."

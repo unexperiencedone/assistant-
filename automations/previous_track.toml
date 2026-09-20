@@ -1,0 +1,7 @@
+name = "Previous track"
+description = "Goes back to the previous song in Spotify or any media player."
+phrases = ["previous song", "previous track", "last song", "go back a song", "play the previous song", "go to the previous song", "back one song"]
+
+[[steps]]
+do = "media"
+key = "previous"

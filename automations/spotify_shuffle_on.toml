@@ -1,0 +1,41 @@
+name = "Shuffle on"
+description = "Turns ordinary (random) shuffle on in Spotify, whatever state it was in."
+phrases = [
+  "shuffle on", "turn on shuffle", "turn shuffle on", "enable shuffle",
+  "shuffle the music", "shuffle the songs", "shuffle the playlist",
+  "random shuffle", "normal shuffle", "regular shuffle", "put it on shuffle",
+]
+
+# The player bar's shuffle button is named after what it will do next:
+# "Enable Shuffle" = off, "Enable Smart Shuffle" = plain shuffle on, "Disable Smart Shuffle" = smart shuffle on.
+# So these three optional clicks land on plain shuffle from any starting state.
+[[steps]]
+do = "click"
+label = "Turn shuffle on"
+window = "exe:spotify"
+name = "Enable Shuffle"
+control_type = "Button"
+optional = true
+timeout = 2
+
+[[steps]]
+do = "click"
+label = "Leave smart shuffle"
+window = "exe:spotify"
+name = "Disable Smart Shuffle"
+control_type = "Button"
+optional = true
+timeout = 2
+
+[[steps]]
+do = "click"
+label = "Turn shuffle on"
+window = "exe:spotify"
+name = "Enable Shuffle"
+control_type = "Button"
+optional = true
+timeout = 2
+
+[[steps]]
+do = "say"
+text = "Shuffle on."

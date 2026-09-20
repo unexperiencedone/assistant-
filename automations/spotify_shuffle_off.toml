@@ -1,0 +1,27 @@
+name = "Shuffle off"
+description = "Turns shuffle (plain or smart) off in Spotify."
+phrases = [
+  "shuffle off", "turn off shuffle", "turn shuffle off", "disable shuffle",
+  "no shuffle", "stop shuffling", "stop shuffle", "play in order", "turn off smart shuffle",
+]
+
+# Ctrl+S turns shuffle off from either shuffle mode, and on when it is off, so switch it on first
+# and the keypress always lands on "off".
+[[steps]]
+do = "click"
+label = "Make sure shuffle is on"
+window = "exe:spotify"
+name = "Enable Shuffle"
+control_type = "Button"
+optional = true
+timeout = 2
+
+[[steps]]
+do = "keys"
+label = "Shuffle off"
+window = "exe:spotify"
+keys = "^s"
+
+[[steps]]
+do = "say"
+text = "Shuffle off."

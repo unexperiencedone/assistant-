@@ -1,6 +1,6 @@
 name = "Pause or resume music"
 description = "Presses the play/pause media key, which controls Spotify or whatever is playing."
-phrases = ["pause music", "resume music", "pause the music", "play pause"]
+phrases = ["pause music", "resume music", "pause the music", "play music", "play the music", "stop music", "stop the music", "stop the song", "stop song", "play pause", "use it to play the music", "pause spotify", "resume spotify", "spotify pause", "pause the song", "resume the song", "resume the music"]
 
 [[steps]]
 do = "media"

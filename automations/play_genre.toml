@@ -1,0 +1,38 @@
+name = "Play a genre or mood on Spotify"
+description = "Searches Spotify for {query} and plays the first playlist or card whose name starts with it - for genres and moods, which have no single top result."
+phrases = [
+  "play some {query}",
+  "play some {query} music",
+  "play some {query} on spotify",
+  "put on some {query}",
+  "play a bit of {query}",
+  "play {query} music",
+]
+
+[[steps]]
+do = "open"
+label = "Search Spotify for {query}"
+target = "spotify:search:{query_url}"
+
+[[steps]]
+do = "wait_window"
+title = "exe:spotify"
+timeout = 25
+
+[[steps]]
+do = "wait"
+seconds = 2.5
+
+# Genre searches have no "Top result" card, so the results are buttons called "Play <playlist>".
+# Matching on "Play {query}" is a prefix match, which picks the first playlist named after the genre.
+[[steps]]
+do = "click"
+label = "Play the first {query} playlist"
+window = "exe:spotify"
+name = "Play {query}"
+control_type = "Button"
+timeout = 8
+
+[[steps]]
+do = "say"
+text = "Playing some {query}."

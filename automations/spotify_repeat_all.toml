@@ -1,0 +1,37 @@
+name = "Repeat the playlist"
+description = "Loops the whole playlist or album in Spotify."
+phrases = ["repeat all", "repeat the playlist", "loop the playlist", "loop the album", "repeat the album", "loop everything", "turn on repeat", "repeat on", "loop the queue"]
+
+# Spotify names the repeat control after what the next press will do: "Enable repeat" = off,
+# "Enable repeat one" = looping the list, "Disable repeat" = looping one song. These two optional
+# clicks end with repeat off from any state; Ctrl+R then steps the cycle forward predictably.
+[[steps]]
+do = "click"
+label = "Normalise repeat"
+window = "exe:spotify"
+name = "Enable repeat one"
+optional = true
+timeout = 2
+
+[[steps]]
+do = "click"
+label = "Turn repeat off"
+window = "exe:spotify"
+name = "Disable repeat"
+optional = true
+timeout = 2
+
+
+[[steps]]
+do = "wait"
+seconds = 0.8
+
+[[steps]]
+do = "keys"
+label = "Repeat the whole list"
+window = "exe:spotify"
+keys = "^r"
+
+[[steps]]
+do = "say"
+text = "Repeating the playlist."
