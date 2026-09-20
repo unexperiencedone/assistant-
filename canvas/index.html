@@ -2,8 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Nova</title>
+    <meta name="theme-color" content="#0d0b12" />
+    <meta name="color-scheme" content="dark" />
+    <!-- crossorigin: the manifest and its icons go through the token guard like
+         everything else, so the browser has to send the pairing cookie with them. -->
+    <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/nova-192.png" />
+    <link rel="apple-touch-icon" href="/icons/nova-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Nova" />
   </head>
   <body>
     <div id="root"></div>
