@@ -6,10 +6,24 @@ from ..config import Settings
 from .antigravity_cli import AntigravityCliAgent
 from .base import AgentBackend
 from .claude_cli import ClaudeCliAgent
+from .chat_api import GroqAgent, OpenRouterAgent
 from .rules import session_instructions
 
 # Words a speech recognizer might produce for each backend.
 ALIASES = {
+    "groq": "groq",
+    "grok": "groq",          # what the recognizer usually hears
+    "grock": "groq",
+    "rock": "groq",
+    "llama": "groq",
+    "lama": "groq",
+    "fast model": "groq",
+    "openrouter": "openrouter",
+    "open router": "openrouter",
+    "router": "openrouter",
+    "free model": "openrouter",
+    "free models": "openrouter",
+    "open-router": "openrouter",
     "claude": "claude",
     "cloud": "claude",
     "clod": "claude",
@@ -31,6 +45,8 @@ class AgentRegistry:
         self.backends: dict[str, AgentBackend] = {
             "claude": ClaudeCliAgent(settings.agents.claude, workspace, cont, instructions),
             "antigravity": AntigravityCliAgent(settings.agents.antigravity, workspace, cont, instructions),
+            "openrouter": OpenRouterAgent(settings.agents.openrouter, workspace, cont, settings.assistant.name),
+            "groq": GroqAgent(settings.agents.groq, workspace, cont, settings.assistant.name),
         }
         self.current_name = settings.agents.default if settings.agents.default in self.backends else "claude"
         if not self.current.is_available():
@@ -51,6 +67,23 @@ class AgentRegistry:
 
     def availability(self) -> dict[str, bool]:
         return {name: backend.is_available() for name, backend in self.backends.items()}
+
+    def attach_tools(self, context) -> None:
+        """Give model-based agents (Groq, OpenRouter) Nova's local abilities."""
+        for backend in self.backends.values():
+            if hasattr(backend, "context"):
+                backend.context = context
+
+    def apply_profile(self, profile) -> None:
+        """Give each agent the profile summary it's allowed to see (assistant/profile)."""
+        from ..profile import audience_for
+
+        for name, backend in self.backends.items():
+            backend.set_profile(profile.standing(audience_for(name)))
+
+    def spawn_current(self) -> AgentBackend:
+        """An independent instance of the selected agent, for a parallel task."""
+        return self.current.spawn()
 
     def close(self) -> None:
         for backend in self.backends.values():

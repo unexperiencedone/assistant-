@@ -31,7 +31,9 @@ class ClaudeCliAgent(AgentBackend):
     def __init__(self, settings: ClaudeAgentSettings, workspace: Path, continue_session: bool, instructions: str) -> None:
         super().__init__(settings.executable, workspace, continue_session)
         self.settings = settings
+        self.base_instructions = instructions
         self.instructions = instructions
+        self._restart_for_instructions = False
         self._proc: subprocess.Popen[str] | None = None
         self._events: queue.Queue[dict[str, Any]] = queue.Queue()
         self._lock = threading.Lock()
@@ -55,6 +57,21 @@ class ClaudeCliAgent(AgentBackend):
         """Launch the session ahead of the first message (costs no usage until you speak)."""
         with self._lock:
             return self._ensure_process() is not None
+
+    def spawn(self) -> "ClaudeCliAgent":
+        """A second Claude Code session, for a task running alongside this one."""
+        twin = ClaudeCliAgent(self.settings, self.workspace, self.continue_session, self.base_instructions)
+        twin.instructions = self.instructions
+        twin.recorder = self.recorder
+        return twin
+
+    def set_profile(self, standing: str) -> None:
+        instructions = f"{self.base_instructions}\n\n{standing}" if standing else self.base_instructions
+        if instructions != self.instructions:
+            self.instructions = instructions
+            # The system prompt is fixed when the process starts. Restart it before the next
+            # turn (never mid-turn); --resume keeps the conversation.
+            self._restart_for_instructions = self._proc is not None
 
     def _ensure_process(self) -> subprocess.Popen[str] | None:
         if self._proc and self._proc.poll() is None:
@@ -104,7 +121,11 @@ class ClaudeCliAgent(AgentBackend):
     # -- one turn -------------------------------------------------------------------------
     def run(self, prompt: str, on_event: Callable[[AgentEvent], None], cancel: threading.Event) -> AgentResult:
         started = time.time()
+        turn = self.start_turn_log(prompt)
         with self._lock:
+            if self._restart_for_instructions and (self.continue_session or not self.session_id):
+                self._restart_for_instructions = False
+                self.close()
             proc = self._ensure_process()
             if proc is None:
                 return AgentResult(False, f"I can't find the {self.label} command '{self.executable}'.")
@@ -120,18 +141,25 @@ class ClaudeCliAgent(AgentBackend):
         while True:
             if cancel.is_set():
                 self.close()  # next turn resumes the same conversation
+                turn.close("cancelled", False, time.time() - started)
                 return AgentResult(False, "Cancelled.", self.session_id, time.time() - started, cancelled=True)
             try:
                 obj = events.get(timeout=0.2)
             except queue.Empty:
                 continue
+            turn.raw(obj)
             if obj.get("type") == "_exit":
                 self._proc = None
+                detail = f"the claude process exited with code {obj.get('code')}"
+                turn.close(detail, False, time.time() - started)
                 return AgentResult(False, "Claude Code exited unexpectedly. Check that you're logged in with claude.",
-                                   self.session_id, time.time() - started)
+                                   self.session_id, time.time() - started, detail=detail)
             for event in self.parse(obj):
                 if event.kind == "result":
-                    return AgentResult(not event.data["is_error"], event.text, self.session_id, time.time() - started)
+                    result = AgentResult(not event.data["is_error"], event.text, self.session_id,
+                                         time.time() - started, data=event.data)
+                    turn.close(result.summary, result.ok, result.seconds)
+                    return result
                 on_event(event)
 
     def parse(self, obj: dict[str, Any]) -> Iterable[AgentEvent]:
@@ -147,18 +175,21 @@ class ClaudeCliAgent(AgentBackend):
                     yield AgentEvent("tool", tool=name, text=_describe_tool(name, block.get("input", {})))
         elif kind == "result":
             self.session_id = obj.get("session_id") or self.session_id
-            for denial in obj.get("permission_denials") or []:
-                yield AgentEvent("tool", tool="denied", text=f"{denial.get('tool_name', 'tool')} needs approval")
+            denied = [d.get("tool_name", "tool") for d in obj.get("permission_denials") or []]
+            for name in denied:
+                yield AgentEvent("tool", tool="denied", text=f"{name} needs approval, which nobody can give in this mode")
             yield AgentEvent(
                 "result",
                 text=obj.get("result") or "",
-                data={"is_error": bool(obj.get("is_error")), "cost_usd": obj.get("total_cost_usd")},
+                data={"is_error": bool(obj.get("is_error")), "cost_usd": obj.get("total_cost_usd"),
+                      "denied": denied, "turns": obj.get("num_turns"), "subtype": obj.get("subtype")},
             )
 
 
 def _describe_tool(name: str, args: dict[str, Any]) -> str:
+    """The tool's target, in full. Shortening happens where things are displayed, not here:
+    the whole command or path is what you want when looking back at what an agent did."""
     for key in ("file_path", "command", "pattern", "url", "query", "description", "prompt"):
         if args.get(key):
-            value = args[key]
-            return Path(value).name if key == "file_path" else short(value, 80)
+            return " ".join(str(args[key]).split())
     return ""
