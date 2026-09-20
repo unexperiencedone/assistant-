@@ -13,7 +13,7 @@ function nodeHeight(node) {
 
 // Top-to-bottom DAG layout. Positions are recomputed on every graph change;
 // the graph is small (one request), so this is instant.
-export function layoutGraph(graph) {
+export function layoutGraph(graph, selectedId = null) {
   const g = new dagre.graphlib.Graph();
   g.setGraph({ rankdir: "TB", nodesep: 36, ranksep: 42, marginx: 24, marginy: 24 });
   g.setDefaultEdgeLabel(() => ({}));
@@ -34,9 +34,14 @@ export function layoutGraph(graph) {
     return {
       id: node.id,
       type: "step",
+      // React Flow measures nodes itself, but the minimap draws nothing until it has,
+      // and these are the sizes dagre just laid the graph out with anyway. Measured
+      // values take over the moment they land.
+      initialWidth: NODE_WIDTH,
+      initialHeight: heights[node.id],
       position: { x: x - NODE_WIDTH / 2, y: y - heights[node.id] / 2 },
-      data: node,
-      draggable: false,
+      data: { ...node, selected: node.id === selectedId },
+      draggable: node.kind === "step",   // plan steps can be dragged into a new order
     };
   });
   const edges = graph.edges

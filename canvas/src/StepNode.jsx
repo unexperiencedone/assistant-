@@ -15,7 +15,10 @@ function StepNode({ data }) {
   const actions = data.actions ?? [];
   const hidden = (data.action_count ?? actions.length) - actions.length;
   return (
-    <div className={`node node-${data.kind} status-${data.status}`} title={data.detail || data.label}>
+    <div
+      className={`node node-${data.kind} status-${data.status}${data.selected ? " selected" : ""}`}
+      title="Click for the full detail"
+    >
       <Handle type="target" position={Position.Top} isConnectable={false} />
       <div className="node-top">
         <span className="node-kind">{KIND_LABEL[data.kind] ?? data.kind}</span>
@@ -28,7 +31,7 @@ function StepNode({ data }) {
       {data.detail ? <div className="node-detail">{data.detail}</div> : null}
       {actions.length > 0 ? (
         <ul className="node-actions">
-          {hidden > 0 ? <li className="action-more">+{hidden} earlier</li> : null}
+          {hidden > 0 ? <li className="action-more">+{hidden} earlier (click to see)</li> : null}
           {actions.map((a, i) => (
             <li key={i} className={`action action-${a.status}`}>
               <span className="action-tool">{a.tool}</span>
