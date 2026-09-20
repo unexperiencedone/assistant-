@@ -1,5 +1,10 @@
 """Text-to-speech with a background queue and instant interruption.
 
+Speech is local: the Windows voice (SAPI) on this machine, pyttsx3 elsewhere. A
+cloud voice sounds better but the free tiers rate-limit within a few sentences,
+which leaves Nova silent mid-reply, so naturalness comes from punctuation instead
+(see `_for_speech`). Local speech also costs nothing and never waits on a network.
+
 The speech engine is created and used only inside the worker thread, which is
 what both SAPI (COM) and pyttsx3 require.
 """
@@ -17,13 +22,32 @@ from ..config import VoiceSettings
 from ..events import EventBus
 
 
+_SPOKEN_SYMBOLS = {"&": " and ", "%": " percent ", "@": " at ", "+": " plus ", "=": " equals ", "×": " times "}
+
+
 def _for_speech(text: str) -> str:
-    """Strip markdown and code so the voice doesn't read symbols aloud."""
+    """Make text sound like speech: no markdown or symbols, and punctuation where a
+    person would pause. Speech engines take their rhythm from commas and full stops,
+    so text without them is read as one breathless run-on."""
     text = re.sub(r"```.*?```", " (code omitted) ", text, flags=re.S)
     text = re.sub(r"`([^`]*)`", r"\1", text)
     text = re.sub(r"[*_#>|~]+", "", text)
     text = re.sub(r"https?://\S+", "a link", text)
-    return re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"^\s*[-•]\s+", "", text, flags=re.M)        # list bullets read as pauses, not dashes
+    text = re.sub(r"\s+[-–—]\s+", ", ", text)                   # dashes become commas
+    text = re.sub(r"\.{3,}|…", ",", text)                       # trailing off -> a short pause
+    for symbol, spoken in _SPOKEN_SYMBOLS.items():
+        text = text.replace(symbol, spoken)
+    # A line break is a sentence boundary; without punctuation the voice runs straight on.
+    # Lines that already end in punctuation just get a space.
+    text = re.sub(r"(\S)[ \t]*\n+[ \t]*", lambda m: m.group(1) + (" " if m.group(1) in ".,:;!?" else ". "), text)
+    text = re.sub(r"\s+([,.!?;:])", r"\1", text)                # no space before punctuation
+    text = re.sub(r"([,!?;:])(?=\S)", r"\1 ", text)              # space after, except inside file.ext
+    text = re.sub(r"\.(?=[A-Z])", ". ", text)                    # sentence break, not "notes.txt"
+    text = re.sub(r"\s+", " ", text).strip(" ,;:")
+    if text and text[-1] not in ".!?":
+        text += "."
+    return text
 
 
 class Speaker(ABC):
@@ -150,8 +174,22 @@ class Pyttsx3Speaker(Speaker):
         self._engine.runAndWait()
 
 
+def list_installed_voices() -> str:
+    """`python main.py voices`: the voices on this machine, for voice_contains."""
+    if sys.platform != "win32":
+        import pyttsx3
+
+        return "\n".join(v.name for v in pyttsx3.init().getProperty("voices"))
+    import comtypes.client
+
+    voice = comtypes.client.CreateObject("SAPI.SpVoice")
+    tokens = voice.GetVoices()
+    names = [tokens.Item(i).GetDescription() for i in range(tokens.Count)]
+    return "\n".join(names) + "\n\nSet part of a name as voice_contains under [voice] in config.toml."
+
+
 def make_speaker(settings: VoiceSettings, bus: EventBus) -> Speaker:
-    engine = settings.engine
-    if engine == "auto":
-        engine = "sapi" if sys.platform == "win32" else "pyttsx3"
-    return SapiSpeaker(settings, bus) if engine == "sapi" else Pyttsx3Speaker(settings, bus)
+    """`engine` picks the voice: sapi (Windows), pyttsx3, or auto for whichever fits."""
+    if settings.engine == "pyttsx3" or sys.platform != "win32":
+        return Pyttsx3Speaker(settings, bus)
+    return SapiSpeaker(settings, bus)

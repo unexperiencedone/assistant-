@@ -9,7 +9,8 @@ sentence to the agent. So after each phrase:
      in parallel, so this adds little delay)
   2. if the transcript still looks unfinished ("...", a trailing comma, or ends on
      a word like "to", "my", "the"), wait up to `incomplete_wait_seconds` more
-  3. only then transcribe the whole request once and hand it on
+  3. only then transcribe the whole request once, drop it if it looks like noise
+     (see gate.py), and hand it on
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ import speech_recognition as sr
 
 from ..config import SpeechSettings
 from ..events import EventBus
+from .gate import Transcript, rejection
 from .transcriber import Transcriber
 from .tts import Speaker
 
@@ -117,21 +119,26 @@ class MicrophoneListener:
                     continue
                 self.bus.status("listening")
                 started = time.time()
-                text = self.capture_request(recognizer, source)
-                if text is None:
+                heard = self.capture_request(recognizer, source)
+                if heard is None:
                     continue
                 if self.speaker.last_active_at >= started:
                     continue  # the assistant spoke during this capture: likely an echo
-                self.on_utterance(text)
+                reason = rejection(heard, self.settings.min_avg_logprob)
+                if reason:
+                    self.bus.publish("heard", text=heard.text, accepted=False, reason=reason)
+                    self.bus.log(f"(ignored: {reason}) {heard.text[:80]}")
+                    continue
+                self.on_utterance(heard.text)
 
-    def capture_request(self, recognizer: sr.Recognizer, source: sr.AudioSource) -> str | None:
+    def capture_request(self, recognizer: sr.Recognizer, source: sr.AudioSource) -> Transcript | None:
         """Listen until the user has finished a whole request. None if nothing was said."""
         first = self._listen(recognizer, source, timeout=1)
         if first is None:
             return None
         pieces = [first]
         extensions = 0
-        pending: Future[str] = self._transcribe_pool.submit(self._safe_transcribe, first)
+        pending: Future[Transcript] = self._transcribe_pool.submit(self._safe_transcribe, first)
 
         while True:
             nxt = self._listen(recognizer, source, timeout=self.settings.continuation_seconds)
@@ -141,7 +148,8 @@ class MicrophoneListener:
                 continue
 
             self.bus.status("transcribing")
-            text = pending.result()
+            heard = pending.result()
+            text = heard.text
             if extensions < MAX_EXTENSIONS and looks_unfinished(text) and self._room_for(pieces):
                 extra_wait = max(0.0, self.settings.incomplete_wait_seconds - self.settings.continuation_seconds)
                 self.bus.status("listening")
@@ -152,7 +160,7 @@ class MicrophoneListener:
                     extensions += 1
                     pending = self._transcribe_pool.submit(self._safe_transcribe, join_audio(pieces))
                     continue
-            return text or None
+            return heard if text else None
 
     # -- helpers ------------------------------------------------------------------------
     def _listen(self, recognizer: sr.Recognizer, source: sr.AudioSource, timeout: float) -> sr.AudioData | None:
@@ -162,19 +170,44 @@ class MicrophoneListener:
         # the threshold so high that quiet words count as silence.
         recognizer.energy_threshold = min(recognizer.energy_threshold, self._calibrated_threshold * THRESHOLD_CEILING)
         try:
-            audio = recognizer.listen(source, timeout=timeout, phrase_time_limit=self.settings.phrase_time_limit)
+            # Streaming gives us the phrase chunk by chunk, so the canvas can show a live
+            # level while you speak instead of only a "listening" label.
+            chunks = list(self._stream(recognizer, source, timeout))
         except sr.WaitTimeoutError:
+            self.bus.publish("mic", level=0.0, speaking=False)
             return None
+        if not chunks:
+            return None
+        audio = sr.AudioData(b"".join(c.frame_data for c in chunks), chunks[0].sample_rate, chunks[0].sample_width)
+        self.bus.publish("mic", level=0.0, speaking=False)
         return audio if audio.frame_data else None
+
+    def _stream(self, recognizer: sr.Recognizer, source: sr.AudioSource, timeout: float):
+        last_published = 0.0
+        for chunk in recognizer.listen(source, timeout=timeout,
+                                       phrase_time_limit=self.settings.phrase_time_limit, stream=True):
+            now = time.time()
+            if now - last_published > 0.1:  # ~10 updates a second is plenty for a meter
+                last_published = now
+                self.bus.publish("mic", level=self._level(chunk, recognizer.energy_threshold), speaking=True)
+            yield chunk
+
+    @staticmethod
+    def _level(chunk: sr.AudioData, threshold: float) -> float:
+        """0..1, where ~0.5 is the level at which speech is detected."""
+        import audioop
+
+        rms = audioop.rms(chunk.frame_data, chunk.sample_width)
+        return round(min(1.0, (rms / max(threshold, 1.0)) * 0.5), 3)
 
     @staticmethod
     def _room_for(pieces: list[sr.AudioData]) -> bool:
         seconds = sum(len(p.frame_data) / (p.sample_rate * p.sample_width) for p in pieces)
         return seconds < MAX_REQUEST_SECONDS
 
-    def _safe_transcribe(self, audio: sr.AudioData) -> str:
+    def _safe_transcribe(self, audio: sr.AudioData) -> Transcript:
         try:
             return self.transcriber.transcribe(audio)
         except Exception as exc:
             self.bus.log(f"Transcription failed: {exc}", "warn")
-            return ""
+            return Transcript("")

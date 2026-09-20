@@ -8,23 +8,22 @@ import speech_recognition as sr
 
 from ..config import SpeechSettings
 from ..events import EventBus
-
-# Whisper tends to "hear" these in silence or background noise.
-_HALLUCINATIONS = {"", "you", "thank you.", "thank you", "thanks for watching!", "bye.", "."}
+from .gate import Transcript
 
 
 class Transcriber(ABC):
     @abstractmethod
-    def transcribe(self, audio: sr.AudioData) -> str: ...
+    def transcribe(self, audio: sr.AudioData) -> Transcript: ...
 
 
 class WhisperTranscriber(Transcriber):
     """Local, private and fast on CPU with the int8 base.en model."""
 
-    def __init__(self, settings: SpeechSettings, bus: EventBus) -> None:
+    def __init__(self, settings: SpeechSettings, bus: EventBus, hotwords: str | None = None) -> None:
         from faster_whisper import WhisperModel  # heavy import, only when selected
 
         self.settings = settings
+        self.hotwords = hotwords  # e.g. the wake word, so "Nova" isn't heard as "Noah"
         bus.log(f"Loading Whisper model '{settings.whisper_model}' (first run downloads it)...")
         self.model = WhisperModel(
             settings.whisper_model,
@@ -33,7 +32,7 @@ class WhisperTranscriber(Transcriber):
         )
         bus.log("Whisper ready.")
 
-    def transcribe(self, audio: sr.AudioData) -> str:
+    def transcribe(self, audio: sr.AudioData) -> Transcript:
         import numpy as np
 
         pcm = audio.get_raw_data(convert_rate=16000, convert_width=2)
@@ -44,9 +43,18 @@ class WhisperTranscriber(Transcriber):
             beam_size=1,
             vad_filter=True,
             condition_on_previous_text=False,
+            hotwords=self.hotwords or None,
         )
-        text = " ".join(s.text.strip() for s in segments if s.no_speech_prob < 0.6).strip()
-        return "" if text.lower() in _HALLUCINATIONS else text
+        kept = [s for s in segments if s.no_speech_prob < 0.6]
+        if not kept:
+            return Transcript("")
+        durations = [max(0.01, s.end - s.start) for s in kept]
+        return Transcript(
+            text=" ".join(s.text.strip() for s in kept).strip(),
+            avg_logprob=sum(s.avg_logprob * d for s, d in zip(kept, durations)) / sum(durations),
+            compression_ratio=max(s.compression_ratio for s in kept),
+            duration=sum(durations),
+        )
 
 
 class GoogleTranscriber(Transcriber):
@@ -56,21 +64,21 @@ class GoogleTranscriber(Transcriber):
         self.settings = settings
         self.recognizer = sr.Recognizer()
 
-    def transcribe(self, audio: sr.AudioData) -> str:
+    def transcribe(self, audio: sr.AudioData) -> Transcript:
         language = self.settings.language
         if language and "-" not in language:
             language = {"en": "en-US"}.get(language, language)
         try:
-            return self.recognizer.recognize_google(audio, language=language or "en-US").strip()
+            return Transcript(self.recognizer.recognize_google(audio, language=language or "en-US").strip())
         except sr.UnknownValueError:
-            return ""
+            return Transcript("")
 
 
-def make_transcriber(settings: SpeechSettings, bus: EventBus) -> Transcriber:
+def make_transcriber(settings: SpeechSettings, bus: EventBus, hotwords: str | None = None) -> Transcriber:
     if settings.engine == "google":
         return GoogleTranscriber(settings)
     try:
-        return WhisperTranscriber(settings, bus)
+        return WhisperTranscriber(settings, bus, hotwords)
     except Exception as exc:
         bus.log(f"Whisper unavailable ({exc}); falling back to Google speech.", "warn")
         return GoogleTranscriber(settings)
