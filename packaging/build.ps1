@@ -32,5 +32,9 @@ $text = $text -replace '(?m)^db_path = "data/index.db"', 'db_path = "%LOCALAPPDA
 
 Copy-Item automations (Join-Path $root "dist\Nova\automations") -Recurse -Force  # editable, next to the exe
 
+# Secrets must never end up in a build: .env stays on the developer's machine.
+$leaked = Get-ChildItem dist\Nova -Recurse -Force -Filter ".env" -ErrorAction SilentlyContinue
+if ($leaked) { $leaked | Remove-Item -Force; throw "A .env file reached dist\Nova (removed). Check the packaging steps." }
+
 $size = (Get-ChildItem dist\Nova -Recurse -File | Measure-Object Length -Sum).Sum / 1MB
 Write-Host ("== done: dist\Nova ({0:N0} MB)" -f $size)
