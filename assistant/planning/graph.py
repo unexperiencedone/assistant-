@@ -19,12 +19,18 @@ from __future__ import annotations
 import itertools
 import json
 import threading
+import time
+from collections import deque
 from dataclasses import asdict, dataclass, field
 
 from ..events import Event, EventBus
 from .plan import Plan, strip_markup
 
-MAX_ACTIONS_SHOWN = 4
+MAX_ACTIONS_SHOWN = 4      # how many are drawn inside a node
+MAX_ACTIONS_KEPT = 300     # how many are kept per node (the inspector shows these)
+MAX_TEXT_KEPT = 8000       # per action/detail, so one huge tool result can't bloat memory
+DISPLAY_TEXT = 300         # what goes into the live snapshot; full text comes from /api/run
+MAX_HISTORY = 20           # previous requests kept for the history rail
 
 ROUTE_LABELS = {
     "task": "Send to {backend}",
@@ -44,23 +50,106 @@ class Node:
     action_count: int = 0
 
 
+@dataclass
+class Lane:
+    """One track of work. An automation and the agent run on separate threads, so they
+    get separate graphs: otherwise whichever starts last takes over the canvas and the
+    other's events land in the wrong picture."""
+    run: int = 0
+    started: float = field(default_factory=time.time)
+    nodes: dict[str, Node] = field(default_factory=dict)
+    edges: list[tuple[str, str]] = field(default_factory=list)
+    show_plan: bool = False
+    executing_plan: bool = False
+
+
+MAX_LANES = 4  # concurrent tasks kept on the canvas; older finished ones go to history
+
+
 class GraphTracker:
     def __init__(self, bus: EventBus, plan: Plan) -> None:
         self.bus = bus
         self.plan = plan
         self._lock = threading.RLock()
         self._runs = itertools.count(1)
-        self._reset(0)
+        self.history: deque[dict] = deque(maxlen=MAX_HISTORY)  # finished graphs, newest last
+        # One lane per task: the agent's tasks (t1, t2...), automations ("macro") and
+        # local commands ("main") all get their own graph so they never overwrite each other.
+        self.lanes: dict[str, Lane] = {"main": Lane()}
+        self._current = "main"    # lane the event being handled belongs to
+        self.active = "main"      # lane the canvas follows by default
         for topic in ("route", "agent", "plan", "macro_step", "macro_done"):
             bus.subscribe(topic, self._on_event)
 
+    # -- the lane currently being written to ----------------------------------------
+    @property
+    def lane(self) -> Lane:
+        if self._current not in self.lanes:
+            self.lanes[self._current] = Lane()
+            self._evict_lanes()
+        return self.lanes[self._current]
+
+    def _evict_lanes(self) -> None:
+        """Keep the canvas to a handful of lanes; finished ones are still in history."""
+        while len(self.lanes) > MAX_LANES:
+            oldest = min((k for k in self.lanes if k != self._current),
+                         key=lambda k: self.lanes[k].started, default=None)
+            if oldest is None:
+                return
+            lane = self.lanes.pop(oldest)
+            if any(n.kind in ("agent", "step", "result") for n in lane.nodes.values()):
+                self.history.append(self._full_dict(lane))
+
+    @property
+    def run(self) -> int:
+        return self.lane.run
+
+    @property
+    def started(self) -> float:
+        return self.lane.started
+
+    @property
+    def nodes(self) -> dict[str, Node]:
+        return self.lane.nodes
+
+    @property
+    def edges(self) -> list[tuple[str, str]]:
+        return self.lane.edges
+
+    @edges.setter
+    def edges(self, value: list[tuple[str, str]]) -> None:
+        self.lane.edges = value
+
+    @property
+    def show_plan(self) -> bool:
+        return self.lane.show_plan
+
+    @show_plan.setter
+    def show_plan(self, value: bool) -> None:
+        self.lane.show_plan = value
+
+    @property
+    def executing_plan(self) -> bool:
+        return self.lane.executing_plan
+
+    @executing_plan.setter
+    def executing_plan(self, value: bool) -> None:
+        self.lane.executing_plan = value
+
     # -- state --------------------------------------------------------------------
     def _reset(self, run: int) -> None:
-        self.run = run
-        self.nodes: dict[str, Node] = {}
-        self.edges: list[tuple[str, str]] = []
-        self.show_plan = False
-        self.executing_plan = False
+        # Keep the finished graph so the previous request can still be looked at, unless
+        # nothing happened in it: a local command that found no match publishes a route and
+        # then falls through to the agent, and that stub shouldn't become a history entry.
+        if self._did_something():
+            self.history.append(self._full_dict())
+        self.lanes[self._current] = Lane(run=run)
+
+    def _did_something(self) -> bool:
+        nodes = self.lane.nodes
+        if not nodes:
+            return False
+        return any(n.kind in ("agent", "step", "result") or n.actions for n in nodes.values())
 
     def _add(self, node: Node, parent: str | None = None) -> Node:
         self.nodes[node.id] = node
@@ -68,20 +157,77 @@ class GraphTracker:
             self.edges.append((parent, node.id))
         return node
 
+    def _full_dict(self, lane: Lane | None = None) -> dict:
+        """Everything, untruncated: what /api/run and the inspector panel serve."""
+        lane = lane or self.lane
+        return {
+            "run": lane.run,
+            "started": lane.started,
+            "label": next((n.label for n in lane.nodes.values() if n.kind == "request"), ""),
+            "nodes": [asdict(n) for n in lane.nodes.values()],
+            "edges": [{"id": f"{s}->{t}", "source": s, "target": t} for s, t in lane.edges],
+        }
+
+    @staticmethod
+    def _display(full: dict) -> dict:
+        """Shorten text for the wire; the full version stays available from /api/run."""
+        for node in full["nodes"]:
+            node["detail"] = node["detail"][:DISPLAY_TEXT]
+            actions = node["actions"]
+            node["actions_kept"] = len(actions)
+            node["actions"] = [{**a, "text": a["text"][:DISPLAY_TEXT]} for a in actions[-MAX_ACTIONS_SHOWN:]]
+        return full
+
     def to_dict(self) -> dict:
+        """The live snapshot: the active lane, plus every lane and the request history."""
         with self._lock:
-            return {
-                "run": self.run,
-                "nodes": [asdict(n) for n in self.nodes.values()],
-                "edges": [{"id": f"{s}->{t}", "source": s, "target": t} for s, t in self.edges],
-            }
+            lanes = {name: self._display(self._full_dict(lane)) for name, lane in self.lanes.items()}
+            active = self.active
+            history = [
+                {"run": g["run"], "label": g["label"], "started": g["started"],
+                 "status": next((n["status"] for n in g["nodes"] if n["kind"] == "result"), "done")}
+                for g in list(self.history)[::-1]
+            ]
+        snapshot = dict(lanes.get(active) or next(iter(lanes.values())))
+        snapshot["lane"] = active
+        snapshot["lanes"] = {name: {**graph, "title": _lane_title(name, graph)} for name, graph in lanes.items()
+                             if graph["nodes"]}
+        snapshot["history"] = history
+        return snapshot
+
+    def run_detail(self, run: int | None = None) -> dict | None:
+        """One run in full, for the inspector. None = the lane the canvas is following."""
+        with self._lock:
+            if run is None:
+                return self._full_dict(self.lanes[self.active])
+            for lane in self.lanes.values():
+                if lane.run == run:
+                    return self._full_dict(lane)
+            return next((g for g in self.history if g["run"] == run), None)
 
     # -- events -------------------------------------------------------------------
+    def _lane_for(self, event: Event) -> str:
+        """Which task's graph this event belongs to."""
+        if event.topic in ("macro_step", "macro_done"):
+            return "macro"
+        if event.topic == "route" and event.data.get("route") == "macro":
+            return "macro"
+        task = event.data.get("task")
+        if task:
+            return str(task)
+        if event.topic == "plan":
+            # Plan edits belong with whichever task is executing the plan, else the lane
+            # the canvas is on (a plan being drafted or rearranged).
+            return self.active if self.active in self.lanes else "main"
+        return self.active if event.topic != "route" and self.active in self.lanes else "main"
+
     def _on_event(self, event: Event) -> None:
         with self._lock:
+            self._current = self._lane_for(event)
             handler = getattr(self, f"_on_{event.topic}")
             if handler(event.data) is False:
                 return
+            self.active = self._current  # the canvas follows whatever just moved
             snapshot = self.to_dict()
         self.bus.publish("graph", **snapshot)
 
@@ -125,7 +271,7 @@ class GraphTracker:
             text = _clean(d.get("text", ""))
             anchor = self.nodes.get(self._anchor())
             if anchor and text:
-                anchor.detail = text[:140]
+                anchor.detail = text[:MAX_TEXT_KEPT]
         elif kind in ("result", "error"):
             self._finish(kind == "result", d.get("text", ""))
         else:
@@ -138,7 +284,7 @@ class GraphTracker:
             return False
         node.status = d["status"]
         if d.get("detail"):
-            node.detail = d["detail"][:140]
+            node.detail = d["detail"][:MAX_TEXT_KEPT]
         return None
 
     def _on_macro_done(self, d: dict) -> bool | None:
@@ -158,13 +304,23 @@ class GraphTracker:
                     action["status"] = "done" if ok else "failed"
         leaves = self._leaf_ids()
         self._add(Node("result", "result", "Done" if ok else "Problem", "done" if ok else "failed",
-                       _clean(text)[:300]))
+                       _clean(text)[:MAX_TEXT_KEPT]))
         for leaf in leaves:
             self.edges.append((leaf, "result"))
+        # The finished request, in full, for the work history (assistant/history).
+        self.bus.publish("run_finished", lane=self._current, graph=self._full_dict())
 
     def _on_plan(self, d: dict) -> bool | None:
         if "request" not in self.nodes:
-            return False
+            # A plan with no request behind it: restored from the last session, or edited
+            # before anything ran. Draw it on its own so it can be seen and rearranged.
+            if not d.get("steps"):
+                return False
+            self._reset(next(self._runs))
+            self._add(Node("request", "request", d.get("title") or "Plan", "done"))
+            self._add(Node("route", "route", "Current plan", "done",
+                           "not running yet: drag steps to reorder, or say go ahead"), "request")
+            self.show_plan = True
         if not self.show_plan and not self.executing_plan:
             self.show_plan = bool(d.get("steps"))
         if not self.show_plan:
@@ -210,13 +366,23 @@ class GraphTracker:
         for action in anchor.actions:
             if action["status"] == "running":
                 action["status"] = "done"
-        anchor.actions.append({"tool": tool, "text": text[:120], "status": status})
+        anchor.actions.append({"tool": tool, "text": text[:MAX_TEXT_KEPT], "status": status})
         anchor.action_count += 1
-        del anchor.actions[:-MAX_ACTIONS_SHOWN]
+        # Keep a long tail: the node shows the last few, the inspector shows these.
+        del anchor.actions[:-MAX_ACTIONS_KEPT]
 
     def _leaf_ids(self) -> list[str]:
         sources = {s for s, _ in self.edges}
         return [nid for nid in self.nodes if nid not in sources and nid != "request"] or ["route"]
+
+
+def _lane_title(name: str, graph: dict) -> str:
+    if name == "macro":
+        return "Automation"
+    if name == "main":
+        return "Nova"
+    running = any(n["status"] == "running" for n in graph["nodes"])
+    return f"Task {name.lstrip('t')}{'' if running else ' (done)'}"
 
 
 def _clean(text: str) -> str:

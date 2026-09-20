@@ -22,13 +22,57 @@ from dataclasses import asdict, dataclass, field
 
 STEP_MARKER = re.compile(r"\[\[STEP (\d+) (START|DONE|FAILED)\]\]", re.I)
 PLAN_BLOCK = re.compile(r"\[\[PLAN:?\s*(?P<title>[^\]]*)\]\](?P<body>.*?)\[\[/PLAN\]\]", re.I | re.S)
+PLAN_OPEN = re.compile(r"\[\[PLAN:?\s*(?P<title>[^\]]*)\]\]", re.I)
+PLAN_CLOSE = re.compile(r"\[\[/PLAN\]\]", re.I)
 _STEP_LINE = re.compile(r"^\s*(?:\d+[.)]|[-*•])\s+(?P<text>.+?)\s*$", re.M)
 _AFTER = re.compile(r"\s*\((?:after|depends on|needs|requires)\s*:?\s*(?P<deps>[\d,\s&and]+)\)\s*$", re.I)
 
 
+def _end_of_steps(text: str, start: int) -> int:
+    """Where a plan block that was never closed ends: after its last step line.
+
+    Agents forget `[[/PLAN]]` and keep talking ("That's a six step plan..."). The list
+    itself is the reliable boundary — a blank line only stays inside the block when
+    another step follows it.
+    """
+    at = start
+    seen_step = False
+    for line in text[start:].splitlines(keepends=True):
+        if not line.strip():
+            following = next((one for one in text[at + len(line):].splitlines() if one.strip()), "")
+            if seen_step and not _STEP_LINE.match(following):
+                break
+            at += len(line)
+            continue
+        if _STEP_LINE.match(line):
+            seen_step = True
+            at += len(line)
+            continue
+        if seen_step:
+            break
+        at += len(line)  # a sentence between the tag and the first step
+    return at if seen_step else start
+
+
+def find_plan_blocks(text: str) -> list[tuple[int, int, str, str]]:
+    """Every plan block in `text` as (start, end, title, body), closed or not."""
+    blocks: list[tuple[int, int, str, str]] = []
+    for opening in PLAN_OPEN.finditer(text):
+        closing = PLAN_CLOSE.search(text, opening.end())
+        if closing:
+            blocks.append((opening.start(), closing.end(), opening.group("title"),
+                           text[opening.end():closing.start()]))
+            continue
+        end = _end_of_steps(text, opening.end())
+        blocks.append((opening.start(), end, opening.group("title"), text[opening.end():end]))
+    return blocks
+
+
 def strip_markup(text: str) -> str:
     """Remove plan blocks and step markers so they aren't read aloud."""
-    return STEP_MARKER.sub("", PLAN_BLOCK.sub("", text)).strip()
+    for start, end, _, _ in reversed(find_plan_blocks(text)):
+        text = text[:start] + text[end:]
+    return STEP_MARKER.sub("", text).strip()
 
 
 def parse_step_line(text: str, number: int) -> tuple[str, list[int]]:
@@ -107,6 +151,27 @@ class Plan:
                 step.after = sorted(d - 1 if d > number else d for d in deps)
             return removed
 
+    def move_step(self, number: int, to: int) -> PlanStep | None:
+        """Move step `number` to position `to` (both 1-based), keeping dependencies sane.
+
+        Dependencies are step *numbers*, so they're remapped to follow the steps they
+        pointed at. A step can only depend on earlier work, so any dependency that would
+        now point forwards is dropped rather than silently inverting the plan.
+        """
+        with self._lock:
+            count = len(self.steps)
+            if not (1 <= number <= count) or not (1 <= to <= count) or number == to:
+                return None
+            order = list(range(count))              # old indices in their new order
+            order.insert(to - 1, order.pop(number - 1))
+            new_index = {old: position for position, old in enumerate(order)}  # 0-based
+            moved = self.steps[number - 1]
+            self.steps = [self.steps[old] for old in order]
+            for position, step in enumerate(self.steps):
+                remapped = sorted({new_index[dep - 1] + 1 for dep in step.after if 0 < dep <= count})
+                step.after = [dep for dep in remapped if dep <= position]  # only earlier steps
+            return moved
+
     def clear(self) -> None:
         with self._lock:
             self.title = ""
@@ -118,15 +183,15 @@ class Plan:
 
     def replace_from_block(self, text: str) -> bool:
         """Adopt the last [[PLAN]] block in agent output. Returns True if the plan changed."""
-        blocks = list(PLAN_BLOCK.finditer(text))
+        blocks = find_plan_blocks(text)
         if not blocks:
             return False
-        block = blocks[-1]
-        lines = [m.group("text") for m in _STEP_LINE.finditer(block.group("body"))]
+        _, _, block_title, body = blocks[-1]
+        lines = [m.group("text") for m in _STEP_LINE.finditer(body)]
         if not lines:
             return False
         parsed = [parse_step_line(line, i) for i, line in enumerate(lines, 1)]
-        title = block.group("title").strip() or self.title
+        title = block_title.strip() or self.title
         with self._lock:
             if title == self.title and parsed == [(s.text, s.after) for s in self.steps]:
                 return False  # same plan seen again (streamed text, then the final result)
