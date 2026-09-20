@@ -119,5 +119,74 @@ class TestTheGuard(unittest.TestCase):
         self.assertEqual(self.scrub(""), ("", ""))
 
 
+class TestAnElaboratedQuestion(unittest.TestCase):
+    """"Who are you, who built you and how do you work" is three questions.
+
+    A one-line canned answer to it is its own kind of wrong -- it ignores two thirds of
+    what was asked, which is exactly the moment someone is paying attention to the
+    character. And any phrasing the intent misses reaches a backend that answers as
+    itself.
+    """
+
+    def setUp(self):
+        persona.configure("Nova", "Kaiketsu Tech")
+
+    def test_the_wider_phrasings_still_never_reach_a_model(self):
+        for said in ("who built you", "who made you", "how do you work",
+                     "how were you made", "tell me about yourself", "describe yourself",
+                     "what ai do you use", "what model are you",
+                     "are you built on gpt", "what technology do you use",
+                     "who are you and who built you and how do you work"):
+            with self.subTest(said=said):
+                found = intents.match_intent(said)
+                self.assertIsNotNone(found, said)
+                self.assertEqual(found.name, "identity", said)
+
+    def test_a_question_about_the_world_is_not_about_nova(self):
+        for said in ("who built the taj mahal", "how do solar panels work",
+                     "who made this pull request"):
+            found = intents.match_intent(said)
+            self.assertNotEqual(getattr(found, "name", ""), "identity", said)
+
+    def test_each_part_asked_gets_answered(self):
+        answer = persona.about("who are you and who built you and how do you work")
+        self.assertIn("Nova", answer)
+        self.assertIn("Kaiketsu Tech built me", answer)
+        self.assertIn("fraction of a second", answer)
+
+    def test_only_what_was_asked_is_answered(self):
+        short = persona.about("who are you")
+        self.assertNotIn("fraction of a second", short)
+        self.assertEqual(short, persona.identity_line())
+
+    def test_asked_what_it_runs_on_it_tells_the_truth(self):
+        answer = persona.about("what ai do you use")
+        self.assertIn("models from a few providers", answer)
+        for denial in ("I do not use", "I don't use", "no outside", "not Claude"):
+            self.assertNotIn(denial.lower(), answer.lower())
+
+    def test_no_answer_it_composes_would_trip_its_own_guard(self):
+        """The local answers must survive the net that catches the backends."""
+        for said in ("who are you", "who built you", "how do you work", "what ai do you use",
+                     "who are you and who built you and how do you work"):
+            for register in (persona.OWNER, persona.CUSTOMER):
+                answer = persona.about(said, register=register)
+                self.assertEqual(guard.scrub(answer, "x")[1], "", f"{said} / {register}")
+
+
+class TestTheQuieterLeak(unittest.TestCase):
+    ID = "I'm Nova, made by Kaiketsu Tech."
+
+    def test_naming_a_provider_as_what_it_is(self):
+        for said in ("I'm powered by Claude.", "I run on Claude 3.5.",
+                     "My underlying model is GPT-4.", "I am based on Llama."):
+            with self.subTest(said=said):
+                self.assertEqual(guard.scrub(said, self.ID)[1], "identity", said)
+
+    def test_the_honest_general_answer_names_no_provider_and_survives(self):
+        honest = "Kaiketsu Tech builds me on AI models from a few providers."
+        self.assertEqual(guard.scrub(honest, self.ID), (honest, ""))
+
+
 if __name__ == "__main__":
     unittest.main()

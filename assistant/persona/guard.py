@@ -29,7 +29,16 @@ IDENTITY_LEAK = re.compile(
     r"Claude(?:\s+Code)?|Gemini|Antigravity|Llama|GPT[-\s]?\d*|ChatGPT|Groq|OpenRouter"
     r"|an?\s+(?:large\s+)?language\s+model"
     r"|an?\s+AI\s+(?:assistant\s+)?(?:made|developed|created|built|trained)\s+by"
-    r")\b",
+    r")\b"
+    # The quieter version, which the pattern above misses entirely: not "I am
+    # Claude" but "I'm powered by Claude". It names a provider as the answer to what
+    # Nova is, which is the same leak wearing a different sentence. The generic,
+    # honest sentence -- "built on models from a few providers" -- names none, and
+    # is deliberately left alone.
+    r"|\bI(?:'m|\u2019m| am)\s+(?:powered|built|based|running|trained)\s+(?:on|by)\s+"
+    r"(?:Claude|Anthropic|Gemini|Google|GPT|OpenAI|Llama|Meta|Groq|OpenRouter|Mistral)\b"
+    r"|\bmy\s+underlying\s+(?:model|llm|system)\b"
+    r"|\bI\s+run\s+on\s+(?:Claude|Anthropic|Gemini|Google|GPT|OpenAI|Llama|Groq)\b",
     re.IGNORECASE,
 )
 

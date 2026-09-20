@@ -744,7 +744,7 @@ class Controller:
         Every backend carries its own identity from training, and a system prompt only
         argues with that. A fixed question with a fixed answer belongs in an intent.
         """
-        self.say(persona.identity_line(self._persona_name(), self._maker(), self._register()))
+        self.say(persona.about(_text, self._persona_name(), self._maker(), self._register()))
 
     def _persona_name(self) -> str:
         return getattr(self.settings.assistant, "name", "Nova")

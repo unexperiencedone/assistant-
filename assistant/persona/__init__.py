@@ -17,6 +17,7 @@ row to the table in character.md rather than another adjective.
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 
 from ..paths import resource_path
@@ -78,6 +79,54 @@ def _compose(path: str, name: str, maker: str, register: str) -> str:
         return ""
     text = text.replace("{name}", name or "Nova").replace("{maker}", maker or "its maker")
     return f"{text}\n{CUSTOMER_REGISTER if register == CUSTOMER else OWNER_REGISTER}".strip()
+
+
+# The four things people actually ask, and the honest answer to each. Assembled here
+# rather than generated, so the answer to "who are you" cannot drift between backends,
+# between runs, or with the weather.
+ASKS_ORIGIN = re.compile(
+    r"\b(?:who|what)\s+(?:built|made|created|wrote|designed|owns|develops?|developed)\s+(?:you|u|this|nova)\b"
+    r"|\byour\s+(?:maker|creator|developer|owner|company)\b"
+    r"|\bwhere\s+(?:do\s+)?you\s+come\s+from\b", re.I)
+
+ASKS_MECHANICS = re.compile(
+    r"\bhow\s+(?:do|does|did|are|is|can)\s+(?:you|u|nova|this|it)\s*\w*\s*work"
+    r"|\bhow\s+(?:do|does)\s+(?:you|u|nova|this|it)\b"
+    r"|\bhow\s+(?:were|was)\s+(?:you|nova|this|it)\s+(?:made|built|created)\b"
+    r"|\bwhat\s+can\s+you\s+do\b"
+    r"|\bexplain\s+(?:yourself|how\s+you\s+work)\b", re.I)
+
+ASKS_STACK = re.compile(
+    r"\bwhat\s+(?:ai|model|llm|engine|tech(?:nology)?|stack|system)\b"
+    r"|\b(?:which|what)\s+\w*\s*model\b"
+    r"|\bare\s+you\s+(?:built|based|running|powered)\s+on\b"
+    r"|\bwhat\s+(?:are\s+you|is\s+nova)\s+(?:built|based|running)\s+on\b"
+    r"|\b(?:powered|runs?)\s+by\b", re.I)
+
+
+def about(said: str = "", name: str = "", maker: str = "", register: str = OWNER) -> str:
+    """The answer to an identity question, however much of it was asked.
+
+    Every sentence is true and fixed. The stack sentence in particular is never a denial:
+    someone who sincerely asks what Nova runs on gets a straight answer, because the
+    first thing this character is for is not lying.
+    """
+    name, maker = name or _DEFAULTS["name"], maker or _DEFAULTS["maker"]
+    said = said or ""
+    parts = [identity_line(name, maker, register)]
+
+    if ASKS_ORIGIN.search(said):
+        parts.append(f"{maker or 'My maker'} built me."
+                     if register == CUSTOMER else
+                     f"{maker or 'My maker'} built me, and you have been shaping me since.")
+    if ASKS_MECHANICS.search(said):
+        parts.append("Most of what you ask me I handle here on this machine in a fraction "
+                     "of a second, and I save the things you repeat so they cost nothing "
+                     "next time. Anything genuinely new, I think through properly.")
+    if ASKS_STACK.search(said):
+        parts.append(f"{maker or 'My maker'} builds me on AI models from a few providers, "
+                     "with a lot of my own machinery around them.")
+    return " ".join(parts)
 
 
 def identity_line(name: str = "", maker: str = "", register: str = OWNER) -> str:

@@ -33,10 +33,16 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
         # By name, resolved against your contacts before anything is dialled or sent.
         ("phone_sms_name", r"^(?:text|message|sms)\s+(?P<name>(?!it\b|its\b|the\b|a\b|an\b|this\b|that\b|them\b|him\b|her\b|his\b|us\b|me\b|my\b|you\b|your\b|back\b|off\b|out\b|in\b|up\b|on\b|for\b|about\b|later\b|now\b|again\b|someone\b|somebody\b|everyone\b)[a-z][a-z.'-]{1,20}(?:\s+[a-z][a-z.'-]{1,20}){0,2})\s+"
                            r"(?:saying|that|with)\s+(?P<body>.+)$"),
-        ("identity", r"^(?:who|what)\s+(?:are|r)\s+(?:you|u)\b"
+        ("identity", r"^(?:so\s+)?(?:who|what)\s+(?:are|r)\s+(?:you|u)\b"
                      r"|^what(?:.?s| is)\s+your\s+name\b"
-                     r"|^introduce\s+yourself\b"
-                     r"|^are\s+you\s+(?:an?\s+)?(?:ai|bot|robot|human|real|claude|chatgpt|gemini)\b"),
+                     r"|^(?:introduce|describe|explain)\s+yourself\b"
+                     r"|^tell\s+me\s+about\s+(?:yourself|you)\b"
+                     r"|^are\s+you\s+(?:an?\s+)?(?:ai|bot|robot|human|real|claude|chatgpt|gemini|llm|program|machine)\b"
+                     r"|^(?:who|what)\s+(?:built|made|created|wrote|designed|owns)\s+(?:you|u|nova)\b"
+                     r"|^how\s+(?:do|does|did|were|was|are)\s+(?:you|u|nova)\s+(?:work|made|built|created|run)\b"
+                     r"|^what\s+(?:ai|model|llm|engine|tech|technology|stack)\b"
+                     r"|^(?:what|which)\s+(?:ai|model)\s+(?:do|are)\s+you\b"
+                     r"|^are\s+you\s+(?:built|based|running|powered)\s+on\b"),
         ("phone_find", r"^(?:find|locate|ping|ring|where.s|where\s+is)\s+(?:my\s+)?phone\b"),
         ("phone_call_name", r"^(?:call|ring|dial|phone)\s+(?P<name>(?!it\b|its\b|the\b|a\b|an\b|this\b|that\b|them\b|him\b|her\b|his\b|us\b|me\b|my\b|you\b|your\b|back\b|off\b|out\b|in\b|up\b|on\b|for\b|about\b|later\b|now\b|again\b|someone\b|somebody\b|everyone\b)[a-z][a-z.'-]{1,20}(?:\s+[a-z][a-z.'-]{1,20}){0,2})\s*$"),
         # A number, never a bare word: "call it a day" must not reach the dialler. The
