@@ -3,12 +3,16 @@
 
 [assistant]
 name = "Nova"
-# Say this word before a command ("Nova, plan a login page"). Leave empty to
-# treat everything you say as a command.
-wake_word = ""
-# After you speak to the assistant, follow-ups within this many seconds don't
-# need the wake word.
-follow_up_seconds = 20
+# Spoken requests must start with this word: "Nova, plan a login page",
+# "hey Nova ...", "okay Nova ...". Anything else the microphone hears is ignored.
+# Leave empty to treat everything you say as a command. Typed input never needs it.
+wake_word = "nova"
+# Extra spellings to accept when speech recognition mishears the wake word.
+wake_aliases = []
+# When you can reply without the wake word: "questions" = after "Hey Nova" on its
+# own or when Nova asked you something; "always" = after every reply; "off".
+follow_up = "questions"
+follow_up_seconds = 8
 # Say a short "On it." if the agent hasn't answered after this many seconds.
 filler_after_seconds = 1.5
 
@@ -25,8 +29,14 @@ pause_threshold = 1.0          # seconds of silence that end a phrase
 continuation_seconds = 0.7     # after a pause, keep listening this long; more speech joins the same request
 incomplete_wait_seconds = 4.0  # if it sounds unfinished ("I want you to..."), wait up to this long for the rest
 phrase_time_limit = 30
+# Whisper's average log-probability for the phrase; below this it was guessing
+# (background audio, mumbling) and the phrase is ignored. Lower it (e.g. -1.2) if
+# real requests get ignored, raise it (e.g. -0.8) if noise still gets through.
+min_avg_logprob = -1.0
 
 [voice]
+# The Windows voice speaks every reply: it is instant, free and never rate-limited.
+# (Cloud voices sound better but the free tiers cut out after a few sentences.)
 engine = "auto"                # auto | sapi (Windows) | pyttsx3
 rate = 0                       # SAPI: -10..10, pyttsx3: words per minute (0 = default)
 volume = 100                   # 0..100
@@ -35,7 +45,8 @@ voice_contains = "Zira"        # pick the first installed voice whose name conta
 [agents]
 # Everything you say (except instant local commands) goes to this agent.
 # Claude Code runs on your Claude subscription via its own login: no API key.
-default = "claude"             # claude | antigravity
+default = "claude"             # claude | antigravity | openrouter
+max_parallel = 2               # agent tasks at once (each gets its own session and canvas lane); 1 = strictly one at a time
 workspace = "."                # folder the agent works in
 continue_session = true        # keep one conversation going (resumed after cancel/restart)
 
@@ -47,6 +58,33 @@ executable = "claude"
 permission_mode = "auto"
 allowed_tools = []             # extra always-allowed tools, e.g. ["Bash(npm test:*)"]
 model = ""                     # "" = your Claude Code default; e.g. "sonnet" for faster turns
+
+[agents.groq]
+# Groq runs open models on its own chips: an answer comes back in about a second,
+# which is what makes a spoken reply feel instant. Say "use groq" to switch to it.
+# See what this key can run: python main.py models. Tool-calling ones there today:
+# "openai/gpt-oss-120b" (default), "qwen/qwen3.8-27b", "openai/gpt-oss-20b" (weakest).
+# Llama chat models aren't on this key, and groq/compound (Llama-based) refuses tool calls.
+model = "openai/gpt-oss-120b"
+api_key_env = "GROQ_API_KEY"         # put the key in .env next to config.toml (never committed)
+max_tool_calls = 6                   # model/tool rounds per request
+max_tokens = 1200
+temperature = 0.3
+timeout = 120
+history_messages = 24
+
+[agents.openrouter]
+# A chat model as the brain, Nova's own tools as its hands: say "use openrouter".
+# It answers, opens things, clicks in apps, runs automations and writes Word documents,
+# and hands coding or terminal work to Claude Code. The model must support tool calling.
+# Free options: "openrouter/free" (routes to any free model), "nvidia/nemotron-3.5-lightning:free".
+model = "openrouter/free"
+api_key_env = "OPENROUTER_API_KEY"   # put the key in .env next to config.toml (never committed)
+max_tool_calls = 6                   # model/tool rounds per request
+max_tokens = 1200
+temperature = 0.3
+timeout = 120
+history_messages = 24
 
 [agents.antigravity]
 executable = "agy"
@@ -67,13 +105,41 @@ max_depth = 10
 index_hidden = false
 reindex_minutes = 30           # incremental refresh interval
 full_rescan_hours = 24         # full re-list + prune interval
-half_life_days = 14            # how fast past usage stops counting in rankings
+half_life_days = 14            # how fast past usage stops counting, for kinds not listed below
+# Days after which a past use counts half. Apps are habits, files are this week's project.
+half_life_by_kind = { app = 30, file = 7, folder = 14, command = 10 }
+
+[history]
+# Work history: sessions of everything said and done, browsable from History in the canvas.
+# A session ends after this many idle minutes (never while a task is running); a restart
+# inside that window continues the same session. Kept on this PC in data/ (git-ignored).
+enabled = true
+db_path = "data/history.db"
+idle_minutes = 30
+keep_days = 365
+
+[sessions]
+# Every agent turn's full stream is written to one JSON-lines file per turn, so the
+# complete record survives restarts and the canvas's display shortening.
+enabled = true
+folder = "data/sessions"
+keep_days = 14
 
 [automations]
 # Scripted actions (click buttons in apps, fill web pages) triggered by voice phrases.
 # One TOML file per automation; edited files are picked up without restarting.
 enabled = true
 folder = "automations"
+
+[promotion]
+# Turns requests that keep going through Claude into automations/*.toml, written by
+# Claude itself, so routine tasks stop costing tokens over time. See AGENTS.md section 12.
+enabled = true
+store_path = "data/task_frequency.json"
+auto_after = 3          # this many repeats of the same kind of request: write it, no asking
+ask_min_turns = 4       # below auto_after, ask once if a turn used at least this many tool calls...
+ask_min_cost_usd = 0.01 # ...or cost at least this much...
+ask_min_seconds = 123   # ...or simply take this long (2 min 3 s). Quicker than that: never ask.
 
 [ui]
 # browser: live canvas in your browser | window: native app window | tray: start hidden in the tray
@@ -83,3 +149,53 @@ terminal_dashboard = true      # rich dashboard in the terminal (ignored when th
 web_dashboard = true           # the canvas server; always on in window/tray mode
 web_port = 8765
 open_browser = true            # browser mode: open the canvas automatically
+# Which interface the canvas answers on. "127.0.0.1" would be this PC only; every
+# interface is what lets the phone reach Nova over Tailscale. Safe only because
+# require_token below is on (every request, page and socket included) and inbound 8765
+# is allowed on Private networks only. Both are described in docs/phone.md.
+host = "0.0.0.0"
+# A shared secret on every request: page, API and WebSocket alike. Generated on first
+# start into token_file (git-ignored). Rotating is deleting that file and restarting.
+require_token = true
+token_file = "data/nova_token"
+
+[ambient]
+# The briefing panel: weather, markets and headlines. Nothing is ever polled — asking
+# for a briefing is one agent turn that reads the pages, cites them and stops.
+enabled = true
+cache_path = "data/ambient.json"
+place = "Kanpur"                       # where "the weather" means
+markets = ["NIFTY 50", "S&P 500"]      # quotes and last closes, from Google Finance
+headlines = 3
+topics = []                            # what to prefer when picking headlines, e.g. ["India", "AI"]
+
+[awareness]
+# What you were doing on this PC: app names and window titles only — never keystrokes,
+# never screen contents. Screenshots happen only when you ask for one, in the moment.
+# Watching starts with Nova; "Pause 1 h", "Stop watching" and "Forget everything" are
+# on the Activity screen, and everything recorded is deleted on the schedule below.
+enabled = true
+watch_on_start = true    # false: Nova starts idle and you press Start watching yourself
+db_path = "data/awareness.db"
+poll_seconds = 2
+dwell_seconds = 12       # anything shorter was Alt-Tabbing past, not working
+idle_seconds = 120       # no keyboard or mouse for this long ends the stretch
+merge_gap_seconds = 120  # back in the same place within this: one stretch, not two
+raw_days = 7             # raw focus events are deleted after this
+session_days = 19        # the collapsed sessions live a little longer
+
+[phone]
+# Nova's control of your phone through the Termux bridge (phone/README.md): torch,
+# battery, open an app, buzz it, a notification, a text message. Reachable over
+# Tailscale only, and only for those named actions -- there is no "run a command"
+# endpoint on the phone. The token is a credential, so it goes in .env:
+#   NOVA_PHONE_TOKEN=<what `python nova_bridge.py --print-token` prints>
+enabled = true
+host = "100.88.150.39"     # the phone, from `tailscale status`
+port = 8766
+token_env = "NOVA_PHONE_TOKEN"
+timeout = 12
+confirm_destructive = true # a text message is always confirmed first, wherever you asked
+# Dual-SIM phones: which card sends the texts. 0 is SIM 1, 1 is SIM 2. Calls follow the
+# phone's own default calling SIM (Android setting) -- Termux cannot pick a slot to dial on.
+sim_slot = 0
