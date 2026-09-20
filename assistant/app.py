@@ -164,6 +164,11 @@ class VoiceAssistant:
 
         self.routes = RouteCounter(settings.base_dir / "data" / "routes.json", self.bus)
 
+        # The character every backend is given, and the answer to "who are you".
+        from . import persona
+
+        persona.configure(settings.assistant.name, getattr(settings.assistant, "maker", ""))
+
         self.promotion = None
         if settings.promotion.enabled:
             from .automation.promotion import PromotionStore

@@ -20,7 +20,9 @@ _REPO_CLI = r"python C:\Assisstant\sysindex.py"
 _REPO_MAIN = r"python C:\Assisstant\main.py"
 _QUICKREF = re.compile(r"<!-- quickref:start -->(.*?)<!-- quickref:end -->", re.S)
 
-VOICE_INSTRUCTIONS = """You are being driven by voice through a speech assistant called {name}. The user speaks, a speech recognizer transcribes it, and your final text reply for each turn is read aloud.
+VOICE_INSTRUCTIONS = """{persona}
+
+You are being driven by voice through a speech assistant called {name}. The user speaks, a speech recognizer transcribes it, and your final text reply for each turn is read aloud.
 
 - Act on requests directly: use your tools to do the work instead of describing what you would do. Ask one short question only when the request is truly ambiguous or the action is destructive.
 - Transcripts can contain misheard words ("cloud" for Claude, "get hub" for GitHub). Interpret them sensibly.
@@ -56,7 +58,11 @@ def quick_reference() -> str:
 
 
 def session_instructions(assistant_name: str, workspace: Path) -> str:
-    text = VOICE_INSTRUCTIONS.format(name=assistant_name, cli=cli_command(), main=main_command(), agents_file=AGENTS_FILE)
+    from .. import persona
+
+    text = VOICE_INSTRUCTIONS.format(
+        persona=persona.character(assistant_name),
+        name=assistant_name, cli=cli_command(), main=main_command(), agents_file=AGENTS_FILE)
     try:
         inside_repo = workspace.resolve() == APP_DIR and (APP_DIR / "AGENTS.md").exists()
     except OSError:

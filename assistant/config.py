@@ -16,6 +16,9 @@ DEFAULT_CONFIG = APP_DIR / "config.toml"
 @dataclass
 class AssistantSettings:
     name: str = "Nova"
+    # Who the assistant says made it. Whatever runs underneath is an implementation
+    # detail; this is the answer to "who are you" (assistant/persona/).
+    maker: str = "Kaiketsu Tech"
     # Catch a known script said a different way (assistant/matching.py), and when the
     # rules cannot decide, let a free Groq model choose between a script and the agent.
     loose_matching: bool = True

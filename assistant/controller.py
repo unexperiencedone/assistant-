@@ -24,7 +24,8 @@ from .audio.tts import Speaker
 from .config import Settings
 from .events import EventBus
 from .intents import LOCAL_INTENTS, Intent, match_intent, normalize, strip_wake_word
-from . import matching
+from . import matching, persona
+from .persona import guard as persona_guard
 from .classify import classify
 from .intents import example_corpus as intent_examples
 from .phone import PhoneError, bridge as phone_bridge
@@ -392,6 +393,12 @@ class Controller:
         # With several tasks in flight, say which one this was: they finish out of order.
         others_running = bool(self.runner.active)
         prefix = f"{label}: " if others_running and label else ""
+        # Last line of defence: a backend that introduced itself, or explained a failure
+        # by naming plumbing the user cannot act on (persona/guard.py).
+        result.summary, tripped = persona_guard.scrub(
+            result.summary, persona.identity_line(self._persona_name(), self._maker(), self._register()))
+        if tripped:
+            self.bus.log(f"persona guard: {tripped} from {backend.label}", "warn")
         spoken = spoken_reply(result.summary, self.profile.reply_sentences if self.profile else MAX_SPOKEN_SENTENCES)
         shown = full_reply(result.summary)
         if PLAN_BLOCK.search(result.summary) and not self.plan.is_empty and "go ahead" not in spoken.lower():
@@ -730,6 +737,24 @@ class Controller:
         if not self._phone_ready():
             return
         self._phone_do("torch_on" if (state or state2) == "on" else "torch_off")
+
+    def _intent_identity(self, _text: str) -> None:
+        """Answered here so no model ever gets the chance to introduce itself as itself.
+
+        Every backend carries its own identity from training, and a system prompt only
+        argues with that. A fixed question with a fixed answer belongs in an intent.
+        """
+        self.say(persona.identity_line(self._persona_name(), self._maker(), self._register()))
+
+    def _persona_name(self) -> str:
+        return getattr(self.settings.assistant, "name", "Nova")
+
+    def _maker(self) -> str:
+        return getattr(self.settings.assistant, "maker", "")
+
+    def _register(self) -> str:
+        """Who is being spoken to. Only the formality changes, never the character."""
+        return persona.CUSTOMER if self.reply_to == "customer" else persona.OWNER
 
     def _intent_phone_find(self, _text: str) -> None:
         """Lost in the room: the phone says where it is, which beats a ringtone."""

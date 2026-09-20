@@ -34,7 +34,9 @@ from . import tools as tool_registry
 from .base import AgentBackend, AgentEvent, AgentResult, short
 
 USER_AGENT = "Nova-voice-assistant/1.0"
-SYSTEM_PROMPT = """You are {name}, a voice assistant on the user's Windows PC. The user speaks; your reply is read aloud.
+SYSTEM_PROMPT = """{persona}
+
+You are {name}, a voice assistant on the user's Windows PC. The user speaks; your reply is read aloud.
 
 - Reply in one to three short spoken sentences. No markdown, lists, code or long file paths.
 - Write for the ear: commas where a person would pause, a full stop at the end of every sentence, and symbols as words ("50 percent", "and").
@@ -101,7 +103,10 @@ class ChatAgent(AgentBackend):
         """Name the tools that exist right now. A model told about a tool it wasn't given
         will try to call it, and Groq rejects the whole turn when it does."""
         names = [schema["function"]["name"] for schema in tool_registry.schemas(self.context)]
+        from .. import persona
+
         prompt = SYSTEM_PROMPT.format(
+            persona=persona.seed(self.assistant_name),
             name=self.assistant_name,
             tools=", ".join(names) or "none",
             delegate=DELEGATE_RULE if "delegate_to_claude" in names else "")
