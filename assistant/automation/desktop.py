@@ -10,10 +10,14 @@ mouse; real mouse clicks are only used when a control doesn't support it.
 
 from __future__ import annotations
 
+import logging
 import re
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any
+
+log = logging.getLogger("nova.desktop")
 
 INTERACTIVE_TYPES = {
     "Button", "MenuItem", "ListItem", "Hyperlink", "Edit", "CheckBox", "RadioButton", "TabItem",
@@ -36,9 +40,21 @@ class ControlInfo:
         return f"{self.control_type}\t{self.name}\t{self.auto_id}"
 
 
+def _attach_default_desktop() -> None:
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        hdesk = u.OpenDesktopW("default", 0, False, 0x01FF)
+        if hdesk:
+            u.SetThreadDesktop(hdesk)
+    except Exception:
+        pass
+
+
 def _desktop():
     from pywinauto import Desktop
 
+    _attach_default_desktop()
     return Desktop(backend="uia")
 
 
@@ -59,7 +75,8 @@ def list_windows(filter_text: str = "") -> list[tuple[str, int]]:
     return rows
 
 
-_window_cache: dict[str, Any] = {}
+WINDOW_CACHE_SIZE = 32  # Nova runs for days: this cache must not grow without limit
+_window_cache: OrderedDict[str, Any] = OrderedDict()
 
 
 def find_window(title: str, timeout: float = 0):
@@ -68,18 +85,34 @@ def find_window(title: str, timeout: float = 0):
     if cached is not None:
         try:
             if cached.is_visible():  # still open: skip re-scanning every window on the desktop
+                _window_cache.move_to_end(title)
                 return cached
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("cached window %r no longer usable: %s", title, exc)
         _window_cache.pop(title, None)
     win = _search_window(title, timeout)
     _window_cache[title] = win
+    _window_cache.move_to_end(title)
+    while len(_window_cache) > WINDOW_CACHE_SIZE:
+        _window_cache.popitem(last=False)
     return win
+
+
+def _exe_name(win) -> str:
+    """Basename of the window's process, lowercased and without .exe ("" if it can't be read)."""
+    try:
+        from pywinauto.application import process_module
+
+        return process_module(win.element_info.process_id).rsplit("\\", 1)[-1].lower().removesuffix(".exe")
+    except Exception:
+        return ""
 
 
 def _search_window(title: str, timeout: float):
     deadline = time.time() + timeout
     wanted = _norm(title)
+    # "exe:spotify" matches by process instead of title, for apps that rename their window constantly.
+    exe = wanted[4:].strip().removesuffix(".exe") if wanted.startswith("exe:") else ""
     while True:
         candidates = []
         for win in _desktop().windows():
@@ -90,7 +123,11 @@ def _search_window(title: str, timeout: float):
             except Exception:
                 continue
             t = _norm(text)
-            if t == wanted:
+            if exe:
+                if _exe_name(win) != exe:
+                    continue
+                rank = 0
+            elif t == wanted:
                 rank = 0
             elif t.startswith(wanted):
                 rank = 1
@@ -121,8 +158,9 @@ def focus(title: str):
         if win.get_show_state() == 2:  # minimized
             win.restore()
         win.set_focus()
-    except Exception:
-        pass
+    except Exception as exc:
+        # Windows refuses focus changes in some states; the action often still works.
+        log.warning("couldn't focus %r: %s", title, exc)
     return win
 
 
@@ -139,6 +177,9 @@ class _Element:
     auto_id: str
 
 
+_truncated_walk = False  # set when a window has more elements than MAX_WALK
+
+
 def _snapshot(win) -> list[_Element]:
     """Every descendant with name/type/id fetched in ONE cross-process call.
 
@@ -153,13 +194,18 @@ def _snapshot(win) -> list[_Element]:
     for prop in (_NAME, _CONTROL_TYPE, _AUTOMATION_ID):
         request.AddProperty(prop)
     found = win.element_info.element.FindAllBuildCache(_TREE_SCOPE_DESCENDANTS, uia.true_condition, request)
+    global _truncated_walk
+    _truncated_walk = found.Length > MAX_WALK
+    if _truncated_walk:
+        log.warning("%r has %d elements; only the first %d were searched", win.window_text(), found.Length, MAX_WALK)
     elements = []
     for i in range(min(found.Length, MAX_WALK)):
         raw = found.GetElement(i)
         try:
             elements.append(_Element(raw, type_names.get(raw.CachedControlType, ""),
                                      (raw.CachedName or "").strip(), raw.CachedAutomationId or ""))
-        except Exception:
+        except Exception as exc:
+            log.debug("skipped an element: %s", exc)
             continue
     return elements
 
@@ -200,8 +246,12 @@ def list_controls(title: str, filter_text: str = "", control_type: str = "", lim
 
 
 def find_control(title: str, name: str = "", auto_id: str = "", control_type: str = "",
-                 index: int = 0, timeout: float = 5):
-    """A control by exact name or AutomationId, falling back to case-insensitive prefix/substring."""
+                 index: int = 0, timeout: float = 5, exact: bool = False):
+    """A control by exact name or AutomationId, falling back to case-insensitive prefix/substring.
+
+    `exact` turns that fallback off, for names like "Play" that would otherwise match a longer
+    button ("Play Album - Ed Sheeran") once the one you meant is gone.
+    """
     from pywinauto.controls.uiawrapper import UIAWrapper
     from pywinauto.uia_element_info import UIAElementInfo
 
@@ -209,6 +259,7 @@ def find_control(title: str, name: str = "", auto_id: str = "", control_type: st
         raise AutomationError("Give a control name or auto_id.")
     deadline = time.time() + timeout
     wanted = _norm(name)
+    exact_only = exact
     while True:
         win = find_window(title)
         exact, prefix, contains = [], [], []
@@ -224,6 +275,8 @@ def find_control(title: str, name: str = "", auto_id: str = "", control_type: st
                 continue
             if n == wanted:
                 exact.append(el)
+            elif exact_only:
+                continue
             elif n.startswith(wanted):
                 prefix.append(el)
             elif wanted in n:
@@ -233,13 +286,17 @@ def find_control(title: str, name: str = "", auto_id: str = "", control_type: st
             return UIAWrapper(UIAElementInfo(matches[index].raw))
         if time.time() >= deadline:
             what = f"auto_id '{auto_id}'" if auto_id else f"'{name}'"
-            raise AutomationError(f"No control {what} in '{win.window_text()}'. Try: nova-cli ui controls \"{title}\"")
+            # "Not found" and "didn't look at all of it" are different answers.
+            limit = (f" This window has more than {MAX_WALK} elements, so the search was incomplete."
+                     if _truncated_walk else "")
+            raise AutomationError(f"No control {what} in '{win.window_text()}'.{limit} "
+                                  f"Try: nova-cli ui controls \"{title}\"")
         time.sleep(0.3)
 
 
 def click(title: str, name: str = "", auto_id: str = "", control_type: str = "", index: int = 0,
-          timeout: float = 5) -> str:
-    control = find_control(title, name, auto_id, control_type, index, timeout)
+          timeout: float = 5, exact: bool = False) -> str:
+    control = find_control(title, name, auto_id, control_type, index, timeout, exact)
     label = control.element_info.name or auto_id
     for pattern in ("invoke", "toggle", "select"):
         method = getattr(control, pattern, None)
@@ -248,7 +305,8 @@ def click(title: str, name: str = "", auto_id: str = "", control_type: str = "",
         try:
             method()
             return label
-        except Exception:
+        except Exception as exc:
+            log.debug("%s() failed on %r, trying the next way to press it: %s", pattern, label, exc)
             continue
     focus(title)
     control.click_input()  # last resort: a real mouse click at the control's position
@@ -270,13 +328,23 @@ def type_text(title: str, text: str, into: str = "", auto_id: str = "") -> None:
 
 
 def send_keys(title: str, keys: str) -> None:
-    """pywinauto key syntax: ^ Ctrl, % Alt, + Shift, {ENTER}, {TAB}, {VK_MEDIA_PLAY_PAUSE}..."""
+    """pywinauto key syntax: ^ Ctrl, % Alt, + Shift, {ENTER}, {TAB}... (media keys: use press_vk)."""
     from pywinauto.keyboard import send_keys as _send
 
     if title:
         focus(title)
         time.sleep(0.15)
     _send(keys, pause=0.02)
+
+
+def press_vk(code: int) -> None:
+    """Tap a virtual key system-wide (media and volume keys go to whatever is playing, no focus needed)."""
+    import ctypes
+
+    _attach_default_desktop()
+    keyup = 0x0002
+    ctypes.windll.user32.keybd_event(code, 0, 0, 0)
+    ctypes.windll.user32.keybd_event(code, 0, keyup, 0)
 
 
 def read(title: str, name: str = "", auto_id: str = "") -> str:

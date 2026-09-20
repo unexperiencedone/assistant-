@@ -11,11 +11,17 @@ Browser from one thread (the automation runner does).
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import time
 import urllib.request
 from pathlib import Path
+
+log = logging.getLogger("nova.browser")
+
+# Trusted-user tool: Edge runs with a normal (unsandboxed) profile under this account,
+# and automations can act on any page it can reach. Not for multi-user or remote use.
 
 CDP_PORT = 9333
 EDGE_CANDIDATES = [
@@ -64,8 +70,13 @@ class Browser:
     # -- connection -----------------------------------------------------------------------
     @property
     def page(self):
-        if self._page is None or self._page.is_closed():
-            self._connect()
+        if self._page is not None:
+            try:
+                if not self._page.is_closed():
+                    return self._page
+            except Exception as exc:  # the browser was closed under us
+                log.debug("previous page is gone (%s); reconnecting", exc)
+        self._connect()
         return self._page
 
     def _connect(self) -> None:
@@ -74,20 +85,25 @@ class Browser:
         if not _cdp_ready():
             _launch_edge()
         if self._playwright is None:
-            self._playwright = sync_playwright().start()
+            self._playwright = sync_playwright().start()  # spawns a driver process: reused after this
         self._browser = self._playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
         context = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
         pages = [p for p in context.pages if not p.url.startswith(("devtools://", "edge://"))]
         self._page = pages[-1] if pages else context.new_page()
         self._page.bring_to_front()
 
+    def release(self) -> None:
+        """Finish a run. The Playwright driver stays connected for the next one:
+        starting it costs a process launch, and the Edge window is unaffected either way."""
+        self._page = None
+
     def detach(self) -> None:
-        """Stop controlling the browser; the Edge window stays open."""
+        """Fully disconnect (on shutdown). The Edge window stays open."""
         if self._playwright is not None:
             try:
                 self._playwright.stop()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("Playwright didn't stop cleanly: %s", exc)
         self._playwright = self._browser = self._page = None
 
     # -- actions --------------------------------------------------------------------------
