@@ -144,8 +144,16 @@ Python 3.11 voice assistant. Entry point `main.py`, settings in `config.toml` â†
 | Work history: timed sessions (idle close, never mid-task), search, recap (docs/history.md) | `history/`; screen `canvas/src/History.jsx` |
 | User profile: schema, visibility per agent, prompt context, speech hints (docs/personalization.md) | `profile/`; editor `canvas/src/Profile.jsx` |
 | Briefing panel: the on-ask weather/markets/headlines cache (`data/ambient.json`) | `ambient/service.py`; headlines alone are instant and agent-free via `ambient/news.py` ("news briefing") |
+| Standing goals: the queue Nova acts on unprompted, quiet hours, one-at-a-time firing (docs/standing_agent.md) | `goals/` (`store.py`, `service.py`) |
+| Capture and edit: screen recording (ffmpeg gdigrab), phone camera, local cut/caption/reframe | `capture/` (`screen.py`, `phone.py`, `edit.py`, `inbox.py`) |
+| Publishing: GitHub (gh CLI), LinkedIn, Instagram, and the approval gate in front of all three (docs/publishing.md) | `publish/` (`gate.py` stages and sends, `service.py` wires the arms) |
+| Voice drift check: fixed probes scored against the character, `python main.py voice-check` | `persona/drift.py`, `persona/__main__.py` |
+| Journal: one entry per finished day, written from history + awareness, fed back as continuity (docs/journal.md) | `journal/` (`writer.py` builds the facts, `service.py` writes and serves `context()`) |
 | Activity awareness: window-title probe, folding into sessions, retention, questions | `awareness/` (`collector.py`, `collapse.py`, `store.py`); screen `canvas/src/Awareness.jsx` |
 | Phone control: torch, battery, open, notify, calls and SMS (both confirmed first) over Tailscale (phone/README.md) | `phone/bridge.py`; the listener is `phone/nova_bridge.py`, run on the phone; automations reach it with `do = "phone"`; reading contacts/SMS/call log is gated by the Phone section of the profile |
+| Web reach for the chat models: keyless search and a page reader, so a lookup never needs Claude | `agents/web.py`; tools `web_search` / `read_page` in `agents/tools.py` |
+| Agent skills: the same `SKILL.md` folders Claude Code reads, indexed by name and loaded on demand (`[skills]` paths) | `agents/skills.py`; tools `list_skills` / `read_skill`; `suggest()` names the fitting skill because models won't notice one themselves |
+| Recipes: how a job went when it went well, fed back on the next similar request (docs/recipes.md) | `recipes/` (`store.py`, `service.py`); recorded in `controller.on_agent_finished`, injected in `controller.dispatch` |
 | Local index (SQLite, per-kind frecency, corrections, command chips) | `system/` (`ranking.py`, `commands.py`) |
 | UI automation + TOML automations | `automation/` (`desktop.py`, `browser.py`, `macros.py`); files in `automations/` |
 | Canvas server / frontend | `ui/server.py`; React source in `canvas/` (`npm run build`) |

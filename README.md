@@ -21,8 +21,8 @@ the things you repeat so they stop costing anything at all.
 ![Tailscale](https://img.shields.io/badge/Tailscale-242424?style=for-the-badge&logo=tailscale&logoColor=white)
 ![Termux](https://img.shields.io/badge/Termux-000000?style=for-the-badge&logo=android&logoColor=3DDC84)
 
-![Tests](https://img.shields.io/badge/tests-295_passing-3fb950?style=flat-square)
-![Modules](https://img.shields.io/badge/python-82_modules-3776AB?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-400_passing-3fb950?style=flat-square)
+![Modules](https://img.shields.io/badge/python-110_modules-3776AB?style=flat-square)
 ![API billing](https://img.shields.io/badge/API_billing-none-8957e5?style=flat-square)
 ![Speech](https://img.shields.io/badge/speech-100%25_local-0969da?style=flat-square)
 
@@ -34,7 +34,7 @@ the things you repeat so they stop costing anything at all.
 
 Most assistants cost the same on day 300 as they did on day 1, because every request
 goes to a model. **Nova treats reaching for a model as a failure to have learned
-something.** A request falls through four tiers, cheapest first, and only the last one
+something.** A request falls through six tiers, cheapest first, and only the last one
 costs anything.
 
 ```mermaid
@@ -47,14 +47,18 @@ flowchart LR
     D -->|match| Z
     D -->|unsure| E{Free model:<br/>which script?}
     E -->|a script| Z
-    E -->|none of them| F[Claude]
+    E -->|none| G[Groq<br/>+ 23 tools, web, skills]
+    G -->|finished it| Z
+    G -->|"can't finish"| F[Claude]
     F --> Z
-    F -.learns.-> C
+    F -.->|recipe| G
+    F -.->|automation| C
 
     style B fill:#0d1117,stroke:#3fb950,color:#e6edf3
     style C fill:#0d1117,stroke:#3fb950,color:#e6edf3
     style D fill:#0d1117,stroke:#3fb950,color:#e6edf3
     style E fill:#0d1117,stroke:#d29922,color:#e6edf3
+    style G fill:#0d1117,stroke:#d29922,color:#e6edf3
     style F fill:#0d1117,stroke:#f85149,color:#e6edf3
     style Z fill:#0d1117,stroke:#8957e5,color:#e6edf3
 ```
@@ -65,11 +69,83 @@ flowchart LR
 | 🟢 **Saved automation** — a TOML script matched | `automations/` | microseconds | free |
 | 🟢 **Loose match** — filler, synonyms, word order | `assistant/matching.py` | microseconds | free |
 | 🟡 **Free-model router** — which of these scripts? | `assistant/classify.py` | ~1 s | free |
-| 🔴 **Claude** — genuinely new work | `assistant/agents/` | seconds | your subscription |
+| 🟡 **Groq** *(default)* — 23 tools, web search, skills | `assistant/agents/chat_api.py` | ~1 s | free |
+| 🔴 **Claude** — what Groq couldn't finish | `assistant/agents/` | seconds | your subscription |
+
+**The two dotted arrows are the whole point.** When Claude does solve something, it
+doesn't just answer — it leaves the answer behind. A [recipe](docs/recipes.md) records
+*how* the job went so Groq can do it next time; three repeats and it becomes a saved
+[automation](automations/README.md) that needs no model at all. Work migrates **down**
+the cascade over the assistant's life instead of sitting at the top forever.
 
 > **Watch it work:** `python main.py stats --routes` prints the share of requests that
 > never reached a model, one bar per week. That chart is this design's only real
 > scoreboard.
+
+---
+
+## User flow
+
+What actually happens between you speaking and Nova answering.
+
+```mermaid
+flowchart TD
+    W([You say<br/>“Nova, …”]) --> WAKE{Wake word?}
+    WAKE -->|no| DROP([Ignored])
+    WAKE -->|yes| GATE[Noise gate<br/>drops garbage transcripts]
+    GATE --> STT[Whisper, on this machine]
+    STT --> CASCADE{Routing cascade}
+
+    CASCADE -->|regex / automation / loose| LOCAL[Answered locally<br/>no model, no network]
+    CASCADE -->|needs a brain| PRE[Nova adds context<br/>profile · journal · recipe · skill]
+
+    PRE --> GROQ[Groq, ~1s<br/>23 tools]
+    GROQ --> ASK{Finished?}
+    ASK -->|yes| GUARD
+    ASK -->|out of steps,<br/>tool failed,<br/>or too complex| CLA[Claude Code<br/>told what Groq already tried]
+    CLA --> GUARD[Persona guard<br/>strips borrowed identity]
+
+    LOCAL --> SPEAK
+    GUARD --> SPEAK([Spoken aloud<br/>+ drawn on the canvas])
+    SPEAK --> LEARN{Worth keeping?}
+    LEARN -->|yes| REC[Recipe written<br/>3 repeats → automation]
+    LEARN -->|no| END([Idle])
+    REC --> END
+
+    style WAKE fill:#0d1117,stroke:#8957e5,color:#e6edf3
+    style CASCADE fill:#0d1117,stroke:#d29922,color:#e6edf3
+    style LOCAL fill:#0d1117,stroke:#3fb950,color:#e6edf3
+    style GROQ fill:#0d1117,stroke:#d29922,color:#e6edf3
+    style CLA fill:#0d1117,stroke:#f85149,color:#e6edf3
+    style REC fill:#0d1117,stroke:#3fb950,color:#e6edf3
+    style SPEAK fill:#0d1117,stroke:#8957e5,color:#e6edf3
+```
+
+### The same flow, in words
+
+| Step | What happens | Why it's built that way |
+|:--|:--|:--|
+| **1 · Wake word** | Speech must start with "Nova". Typed input never needs it. | The privacy boundary. Nothing leaves the mic without it. |
+| **2 · Noise gate** | Whisper's own confidence score throws away the TV, mumbling and half-words. | A wrong transcript acted on is worse than one ignored. |
+| **3 · Cascade** | Six tiers, cheapest first. Most days most requests never reach step 4. | Reaching for a model is treated as a failure to have learned. |
+| **4 · Context** | Before any model runs, Nova adds your profile, the last few journal entries, a matching recipe, and names a fitting skill. | A model that starts knowing yesterday and knowing what worked last time needs fewer turns. |
+| **5 · Groq** | Answers in about a second with 23 tools: the local index, app clicking, web search, its own status. | Free and fast. This tier is meant to *finish* jobs, not triage them. |
+| **6 · Escalation** | Out of steps, a tool failed, or genuinely complex → the whole job goes to Claude, **told what Groq already tried.** | You should never have to do the routing by hand. |
+| **7 · Guard** | A regex net catches a backend introducing itself or blaming "the API". | Whatever runs underneath is Nova's business, not yours. |
+| **8 · Learning** | A success is recorded as a recipe; three repeats writes an automation. | This is the step that makes tomorrow cheaper than today. |
+
+### A worked example
+
+> **You:** *"Nova, post something on LinkedIn about the release."*
+
+1. No regex matches, no automation matches → the cascade falls through to a brain.
+2. Groq gets your profile and the last three journal entries, so it knows what "the
+   release" refers to without asking.
+3. It calls `draft_post` — which **stages a draft and sends nothing**.
+4. Nova reads the draft back to you: *"Here's what I'd post…"*
+5. Nothing goes out until you say so. There is no tool for approving a draft, by
+   design — a model cannot decide to publish ([why](docs/publishing.md)).
+6. A recipe records that this worked, so the next one is quicker.
 
 ---
 
@@ -96,6 +172,7 @@ python main.py stats                  # module and line counts
 python main.py stats --routes         # which tier answered, by week
 python main.py models                 # what your Groq key can actually run
 python main.py voices                 # installed SAPI voices
+python main.py voice-check            # is this still the same Nova? (scores its own replies)
 python main.py sysindex find "invoice" --kind file
 python main.py ui controls "Calculator" --filter plus
 python main.py macro run "search wikipedia for ada lovelace"
@@ -110,7 +187,8 @@ python main.py autostart install      # start in the tray at logon
 
 | | | |
 |:--|:--|:--|
-| [Things to say](#things-to-say) | [The four brains](#the-four-brains) | [The canvas](#the-canvas) |
+| [User flow](#user-flow) | [Things to say](#things-to-say) | [The four brains](#the-four-brains) |
+| [Getting cheaper](#getting-cheaper-over-time) | [Beyond answering](#beyond-answering) | [The canvas](#the-canvas) |
 | [Voice](#voice) | [Clicking things](#clicking-things) | [Your phone](#your-phone) |
 | [Who Nova is](#who-nova-is) | [Architecture](#architecture) | [Reproducing it](#reproducing-it-from-scratch) |
 | [Troubleshooting](#when-things-go-wrong) | [Packaging](#packaging-and-autostart) | [Further reading](#further-reading) |
@@ -132,6 +210,14 @@ python main.py autostart install      # start in the tray at logon
 | "Find duplicates in downloads" / "my most used apps" | Local duplicate scan / frecency list |
 | "Find my phone" / "torch on" / "text Priya saying running late" | Your phone, over Tailscale |
 | "News briefing" / "show the canvas" / "goodbye" | Headlines with no model at all / open the canvas / quit |
+| "What's the latest on the Nvidia earnings?" | Groq searches the web itself — no Claude turn |
+| "What are you working on?" | Real state: running tasks, recordings, drafts, goals |
+| "Record my screen" / "that's it, stop recording" | ffmpeg screen capture into the inbox |
+| "Take a picture with my phone" | The phone camera, if you've switched it on in your profile |
+| "Every morning, tell me what changed in my repos" | A standing goal Nova fires on its own |
+| "What are your standing goals?" | Reads them back |
+| "What's waiting to go out?" / "post it" / "drop that draft" | The approval gate in front of anything outward-facing |
+| "What did we do today?" / "recap yesterday" | Work history, no model needed |
 
 ---
 
@@ -142,26 +228,73 @@ canvas header shows which is active.
 
 | | What it is | Best at |
 |:--|:--|:--|
-| **Claude Code** *(default)* | A brain with hands already attached: terminal, file editing, web. Runs on your subscription — no API key. | Coding, file edits, multi-step work |
-| **Groq** | Open models on Groq's chips, answering in about a second, acting through *Nova's* tools. | Chat, quick questions, opening things, automations |
+| **Groq** *(default)* | Open models on Groq's chips, answering in about a second, acting through *Nova's* 23 tools. Free. | Nearly everything: questions, lookups, opening things, automations, status |
+| **Claude Code** | A brain with hands already attached: terminal, file editing, web. Runs on your subscription — no API key. | Coding, file edits, and whatever Groq couldn't finish |
 | **OpenRouter** | The same loop against free models. | A fallback when Groq is rate-limited |
 | **Antigravity** | Google's `agy` CLI. | An alternative coding agent |
 
-Groq and OpenRouter are only model APIs, so Nova supplies the loop and the hands:
-`find_items`, `open_item`, `find_duplicates`, `list_windows`, `list_controls`,
-`click_control`, `type_in_app`, `press_keys`, `read_control`, `list_automations`,
-`run_automation`, `write_word` — and `delegate_to_claude`, the rule that keeps it sane:
-anything needing a terminal, file edits or several steps goes to Claude rather than
-being reinvented with a small model.
+**Groq leads on purpose.** It costs nothing and replies in about a second, so the
+question is not whether it's as good as Claude — it's how much it can finish by itself.
+Nova supplies the loop and the hands, in five groups:
+
+| Group | Tools |
+|:--|:--|
+| **This machine** | `find_items` · `open_item` · `find_duplicates` |
+| **Inside apps** | `list_windows` · `list_controls` · `click_control` · `type_in_app` · `press_keys` · `read_control` |
+| **The web** | `web_search` · `read_page` |
+| **Nova itself** | `nova_status` · `list_automations` · `run_automation` · `write_word` · `start_recording` · `stop_recording` · `draft_post` · `add_goal` · `list_goals` |
+| **Skills & handover** | `list_skills` · `read_skill` · `delegate_to_claude` |
+
+Three of those changed how much reaches Claude at all:
+
+- **`web_search` / `read_page`** — keyless DuckDuckGo search and a page reader, stdlib
+  only. Before these, *every* question about anything current had to go to Claude,
+  because a chat model with no internet can only guess or delegate.
+- **`nova_status`** — Groq can see its own state: running tasks, whether a recording is
+  going, drafts waiting for approval, standing goals. "What are you working on" is now
+  answerable from real state rather than guessed at.
+- **`delegate_to_claude`** — still the escape hatch, but now the *last* resort rather
+  than the first, and it carries a `skill` argument so Groq names the right skill when
+  handing over.
+
+There is deliberately **no tool for approving a draft**. The gate in front of everything
+outward-facing exists so a model can never decide to publish.
+
+<details>
+<summary><b>When Groq can't finish — the handover</b></summary>
+
+The cascade is only honest if its bottom tier failing means the work *rises*, not that
+the work stops. Three paths now escalate automatically:
+
+| Situation | What happens |
+|:--|:--|
+| Used all `max_tool_calls` steps | The whole job goes to Claude |
+| Groq unreachable or rate-limited | The job goes to Claude; you still get an answer |
+| A tool failed so it can't finish | Hands over rather than reporting a dead end |
+
+Claude is told **what Groq already tried**, so the expensive tier doesn't repeat the
+cheap tier's dead work. A cancelled turn never escalates — saying "stop" must not
+quietly start a slower, costlier turn. Set `escalate_to_claude = false` to turn it off.
+
+There is also a guard for a specific small-model failure: replying *"I've handed that to
+Claude"* **without calling the tool**. Describing the handover reads, to a small model,
+like performing it. Nova detects the claim and performs the delegation for real, because
+a fabricated action is the one failure you cannot detect for yourself.
+
+</details>
 
 <details>
 <summary><b>Configuration and the tool-calling catch</b></summary>
 
 ```toml
+[agents]
+default = "groq"                 # groq | claude | antigravity | openrouter
+
 [agents.groq]
 model = "openai/gpt-oss-120b"    # python main.py models
 api_key_env = "GROQ_API_KEY"
 max_tool_calls = 6
+escalate_to_claude = true        # out of steps or unreachable → hand the job up
 
 [agents.openrouter]
 model = "openrouter/free"
@@ -178,6 +311,92 @@ in parallel both answered in about 2 s. Free tiers rate-limit; if a model garble
 call, the turn is retried once without tools so you still get an answer.
 
 </details>
+
+---
+
+## Getting cheaper over time
+
+Three mechanisms, softest first. Together they're the reason work moves *down* the
+cascade instead of sitting at the top.
+
+### Recipes — what worked, so it isn't worked out twice
+
+When an agent turn succeeds, Nova records **how**: which tools in what order, how long,
+which brain, and what failed on the way. Next time a similar request arrives, that
+account goes in front of the model.
+
+```
+You have done this kind of thing before ("post an update about the release to linkedin").
+What worked, in order: list_windows, click_control, type_in_app.
+It took Claude Code about 52 seconds.
+Known dead ends, don't repeat them: the LinkedIn compose box needs a click before typing
+Treat this as evidence, not a script: do what fits this request.
+```
+
+The point is **not replay**. The expensive tier solves something once, and after that
+the cheap tier can read how it was done and do it itself.
+
+> **The dead ends are the valuable half.** A successful transcript shows the path that
+> worked; it cannot show the three that didn't, and those are exactly what the next
+> model will try. *"The window is called Spotify Premium, not Spotify"* is one line that
+> saves two wasted tool calls, and no amount of cleverness infers it from a clean run.
+
+A hint about the *wrong* task is worse than no hint — a model given a confident
+irrelevant instruction follows it anyway — so matching is strict and stays silent far
+more often than not. Full detail: [`docs/recipes.md`](docs/recipes.md).
+
+### Skills — the same documents Claude Code reads
+
+Point `[skills] paths` at a folder of `SKILL.md` files and every brain Nova has can use
+them. A skill written once teaches all of them.
+
+| | How |
+|:--|:--|
+| **Always in the prompt** | Just the *names* — all 18 cost about 50 tokens |
+| **Loaded on request** | `read_skill` fetches one document, truncated to a budget |
+| **When names aren't enough** | `list_skills` returns the descriptions |
+| **Handing over** | `delegate_to_claude` takes a `skill` argument, so Claude doesn't re-choose |
+
+These documents run to 1,500 lines and Groq's whole reply is capped near 1,000 tokens,
+so loading them wholesale would cost more than the answer. Hence the two stages.
+
+> **Telling a model "read a skill if one fits" does not work.** Verified: asked what the
+> bouncy popover effect is called, Groq answered "spring animation" from memory and never
+> opened `animation-vocabulary` — whose own description quotes that exact question, with
+> the answer "Pop in". Strengthening the prompt didn't help either. So Nova matches the
+> request against skill descriptions *locally* and names the one skill that fits. Then it
+> loads it, and answers correctly.
+
+### Automation promotion — the end state
+
+Three repeats of the same kind of request and Claude writes the steps as
+`automations/<task_type>.toml` itself. From then on it needs no model at all. See
+[AGENTS.md §12](AGENTS.md).
+
+---
+
+## Beyond answering
+
+Nova also does things nobody asked for in that moment.
+
+| | What it does | Detail |
+|:--|:--|:--|
+| 📔 **Journal** | One short entry per finished day, written from the work history — never invented. The last few entries go into every brain's instructions, which is where continuity between sessions comes from. | [`docs/journal.md`](docs/journal.md) |
+| 🎯 **Standing goals** | *"Every morning, tell me what changed in my repos."* The one place Nova starts something itself. | [`docs/standing_agent.md`](docs/standing_agent.md) |
+| 🎬 **Capture** | Screen recording via ffmpeg, phone camera photos, and local CPU cut/caption/reframe. | [`docs/standing_agent.md`](docs/standing_agent.md) |
+| 📤 **Publishing** | GitHub, LinkedIn and Instagram — all three behind one approval gate. | [`docs/publishing.md`](docs/publishing.md) |
+| 🎙 **Voice drift check** | `python main.py voice-check` scores Nova's replies against its own character, so "the voice has slipped" becomes a number with a date. | `assistant/persona/drift.py` |
+
+Three properties hold across all of them, and each is a line of code someone will later
+be tempted to delete:
+
+- **A goal is a request, not a privilege.** A due goal is submitted through the same
+  pipeline you speak into, so every confirmation guarding a text, a call or a post still
+  guards a goal. Nothing fires mid-conversation or during quiet hours.
+- **Nothing sends itself.** Everything outward-facing is staged as a draft, read back to
+  you, and sent only when you approve *that specific draft*. There is no "yes to
+  everything" switch, because that's the switch that eventually posts the wrong thing.
+- **Footage is never deleted automatically.** It's the one thing you cannot re-shoot.
 
 ---
 
@@ -343,8 +562,27 @@ flowchart TD
         CTL --> AG[agents/]
     end
 
+    subgraph CTX [" Context added before any model "]
+        PROF[profile/] --> AG
+        JRNL[journal/] --> AG
+        RCP[recipes/] --> AG
+        SKL[agents/skills.py] --> AG
+    end
+
+    subgraph HANDS [" What a model can reach "]
+        AG --> TOOLS[agents/tools.py<br/>23 tools]
+        TOOLS --> WEBT[agents/web.py]
+        TOOLS --> SYS[system/]
+        TOOLS --> DESK[automation/desktop.py]
+        TOOLS --> CAP[capture/]
+        TOOLS --> PUB[publish/ → gate]
+        TOOLS --> GOAL[goals/]
+    end
+
     AG --> RUN[agent_runner.py]
     RUN --> PLAN[planning/]
+    RUN -.->|success| RCP
+    GOAL -.->|fires a request| CTL
 
     subgraph OUT [" Output "]
         BUS[(EventBus)] --> STATE[state.py<br/>versioned slices]
@@ -588,6 +826,10 @@ checks — use with care. To always allow specific tools, add entries like
 | [`automations/README.md`](automations/README.md) | The TOML automation format |
 | [`docs/phone.md`](docs/phone.md) · [`phone/README.md`](phone/README.md) | The phone bridge end to end |
 | [`docs/personalization.md`](docs/personalization.md) · [`docs/history.md`](docs/history.md) | Profile and work history |
+| [`docs/recipes.md`](docs/recipes.md) | How a job that worked is recorded and fed back |
+| [`docs/journal.md`](docs/journal.md) | The day-by-day record that gives Nova continuity |
+| [`docs/standing_agent.md`](docs/standing_agent.md) | Standing goals, screen capture and editing |
+| [`docs/publishing.md`](docs/publishing.md) | GitHub, LinkedIn, Instagram — and the gate in front of them |
 | [`docs/document_standards.md`](docs/document_standards.md) | How written documents and diagrams are produced |
 | [`docs/business_pipeline.md`](docs/business_pipeline.md) | A designed-but-unbuilt outreach pipeline |
 
