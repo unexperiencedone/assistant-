@@ -116,6 +116,49 @@ class VoiceAssistant:
             self.awareness = AwarenessService(db if db.is_absolute() else settings.base_dir / db,
                                               self.bus, settings.awareness, narrate=self._narrate)
 
+        # Nova's own record of its days. It reads the two stores above and writes one
+        # entry per finished day; those entries go back into the agents' instructions,
+        # which is where continuity between sessions actually comes from.
+        self.journal = None
+        if settings.journal.enabled:
+            from .journal import JournalService
+
+            db = Path(os.path.expandvars(settings.journal.db_path)).expanduser()
+            self.journal = JournalService(db if db.is_absolute() else settings.base_dir / db,
+                                          self.bus, settings.journal,
+                                          history=self.history.store if self.history else None,
+                                          awareness=self.awareness, narrate=self._narrate)
+            # A new entry only lands once a day, so refreshing the instructions then is free.
+            self.bus.subscribe("journal", lambda event: self._apply_profile(self.profile))
+
+        # The one place Nova starts something itself. A due goal is submitted exactly as
+        # if you had said it, so nothing here routes around a confirmation.
+        self.goals = None
+        if settings.goals.enabled:
+            from .goals import GoalsService
+
+            db = Path(os.path.expandvars(settings.goals.db_path)).expanduser()
+            self.goals = GoalsService(db if db.is_absolute() else settings.base_dir / db,
+                                      self.bus, settings.goals,
+                                      submit=lambda text, source: self.submit(text, source),
+                                      busy=lambda: self.runner.running or not self.inbox.empty())
+
+        # Capture and publishing: the hands. The recorder writes into the inbox folder;
+        # the publish service stages drafts and sends none of them without your word.
+        self.capture = None
+        if settings.capture.enabled:
+            from .capture import ScreenRecorder
+
+            folder = Path(os.path.expandvars(settings.capture.inbox)).expanduser()
+            self.capture = ScreenRecorder(folder if folder.is_absolute() else settings.base_dir / folder)
+        self.publisher = None
+        if settings.publish.enabled:
+            from .publish import PublishService
+
+            db = Path(os.path.expandvars(settings.publish.db_path)).expanduser()
+            self.publisher = PublishService(db if db.is_absolute() else settings.base_dir / db,
+                                            self.bus, workspace=settings.workspace)
+
         self.server = None
         if settings.ui.web_dashboard or self.mode != "browser":
             from .ui import auth
@@ -184,9 +227,33 @@ class VoiceAssistant:
         # Model-based agents (Groq, OpenRouter) act through Nova's own abilities.
         from .agents.tools import ToolContext
 
+        # How past jobs went, fed back on the next similar request (docs/recipes.md).
+        self.recipes = None
+        if settings.recipes.enabled:
+            from .recipes import RecipeService
+
+            db = Path(os.path.expandvars(settings.recipes.db_path)).expanduser()
+            self.recipes = RecipeService(db if db.is_absolute() else settings.base_dir / db,
+                                         self.bus, settings.recipes)
+
+        # Skills are read from disk once: only the frontmatter, so eighteen of them cost
+        # a few milliseconds. The documents themselves are loaded on demand by read_skill.
+        installed_skills: dict = {}
+        if settings.skills.enabled:
+            from .agents import skills as skill_registry
+
+            roots = [Path(os.path.expandvars(p)).expanduser() for p in settings.skills.paths]
+            installed_skills = skill_registry.discover(
+                [r if r.is_absolute() else settings.base_dir / r for r in roots])
+            if installed_skills:
+                self.bus.log(f"{len(installed_skills)} skills available: {skill_registry.names(installed_skills)}")
+
         self.registry.attach_tools(ToolContext(
             local_system=self.local_system, automations=automations,
             delegate=self._delegate_to_claude, workspace=settings.workspace,
+            runner=self.runner, capture=self.capture, publisher=self.publisher, goals=self.goals,
+            skills=installed_skills, skill_limit=settings.skills.read_limit,
+            capture_settings=settings.capture,
         ))
 
         self.controller = Controller(
@@ -195,6 +262,11 @@ class VoiceAssistant:
             profile=self.profile, history=self.history.store if self.history else None,
             promotion_store=self.promotion,
             phone=self.phone,
+            goals=self.goals,
+            recipes=self.recipes,
+            capture=self.capture,
+            publisher=self.publisher,
+            capture_settings=settings.capture,
         )
         self.profile.on_change(self._apply_profile)
         self.profile.announce()  # agents, speech words and the canvas get the saved profile
@@ -344,6 +416,16 @@ class VoiceAssistant:
                 self.ambient.stop()
             if self.awareness:
                 self.awareness.stop()
+            if self.journal:
+                self.journal.stop()
+            if self.goals:
+                self.goals.stop()
+            if self.capture and self.capture.running:
+                self.capture.stop()  # a half-written recording is worse than a short one
+            if self.publisher:
+                self.publisher.close()
+            if self.recipes:
+                self.recipes.close()
             if self.server:
                 self.server.stop()
 
@@ -363,7 +445,7 @@ class VoiceAssistant:
         return ""
 
     def _apply_profile(self, profile) -> None:
-        self.registry.apply_profile(profile)
+        self.registry.apply_profile(profile, self.journal.context() if self.journal else "")
         if self.transcriber is not None and hasattr(self.transcriber, "hotwords"):
             self.transcriber.hotwords = profile.hotwords(self.settings.assistant.wake_word) or None
 
@@ -394,6 +476,10 @@ class VoiceAssistant:
             self.ambient.start()
         if self.awareness:
             self.awareness.start()
+        if self.journal:
+            self.journal.start()
+        if self.goals:
+            self.goals.start()
         if self.server:
             try:
                 self.server.start()

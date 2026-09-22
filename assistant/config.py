@@ -85,6 +85,10 @@ class ChatAgentSettings:
     temperature: float = 0.3
     timeout: float = 120
     history_messages: int = 24
+    # When this tier runs out of steps, or can't be reached at all, pass the whole job
+    # to Claude Code instead of handing the user a dead end and asking them to re-route
+    # it themselves. Off means a failure is reported as a failure.
+    escalate_to_claude: bool = True
 
 
 @dataclass
@@ -225,6 +229,88 @@ class AwarenessSettings:
 
 
 @dataclass
+class CaptureSettings:
+    """Screen recordings and phone photos, and where they land.
+
+    Nothing in the inbox is ever deleted automatically: footage is the one thing that
+    cannot be re-shot. Editing is local ffmpeg on the CPU (there is no GPU here), so a
+    long render takes minutes. See docs/standing_agent.md."""
+    enabled: bool = True
+    inbox: str = "data/inbox"
+    fps: int = 25
+    monitor: int = 1      # which screen to record; 0 records the whole desktop, both screens
+    audio: bool = False   # system audio needs a loopback device; off until one is set up
+
+
+@dataclass
+class PublishSettings:
+    """The publishing arms, and the gate in front of them.
+
+    Nothing here sends by itself. Everything is staged as a draft, said back to you, and
+    goes out only when you approve that specific draft. Credentials for LinkedIn and
+    Instagram live in .env, never here."""
+    enabled: bool = True
+    db_path: str = "data/publish.db"
+
+
+@dataclass
+class GoalsSettings:
+    """Standing goals: the things Nova starts on its own, without being asked each time.
+
+    A goal is a request in Nova's own words, submitted through the same pipeline you
+    speak into -- so every confirmation that guards a text, a call or a post still
+    guards a goal. Nothing fires while you are mid-conversation, and nothing fires
+    during quiet hours. See docs/standing_agent.md."""
+    enabled: bool = True
+    db_path: str = "data/goals.db"
+    check_seconds: float = 120   # how often it looks for something due
+    quiet_from: int = 22         # no goal fires between these hours (set equal to disable quiet hours)
+    quiet_to: int = 8
+    one_at_a_time: bool = True   # a backlog goes out one per tick, never in a burst
+
+
+@dataclass
+class JournalSettings:
+    """Nova's own record of its days: one short entry per finished day.
+
+    Written from the work history (and the activity record, when that is on), never
+    from nothing. The last few entries go into every agent's instructions, which is
+    what gives Nova continuity across sessions rather than a fresh introduction each
+    time. See docs/journal.md."""
+    enabled: bool = True
+    db_path: str = "data/journal.db"
+    check_minutes: float = 30   # how often it looks for a finished day that has no entry
+    backfill_days: int = 3      # how far back it will still write an entry (after the laptop was off)
+    context_days: int = 3       # entries put in front of the agents
+    keep_days: float = 730
+    narrate: bool = True        # let a free chat model phrase the entry; the facts still come from the rows
+
+
+@dataclass
+class RecipeSettings:
+    """What worked last time, recorded and fed back (docs/recipes.md).
+
+    Not a script: a recipe is evidence that a route worked, so a model reading one is
+    expected to adapt it. This is what lets the cheap tier take over a job the
+    expensive tier solved once, which is the only way the running cost actually falls."""
+    enabled: bool = True
+    db_path: str = "data/recipes.db"
+    hint_agents: bool = True     # put a matching recipe in front of the agent for the turn
+
+
+@dataclass
+class SkillsSettings:
+    """Agent skills: folders holding a SKILL.md that teaches a model one kind of job.
+
+    Shared with Claude Code rather than duplicated -- the same folder serves both, so a
+    skill written once improves every brain Nova has. Only the names go in the system
+    prompt (about fifty tokens); a document is loaded only when a model asks for it."""
+    enabled: bool = True
+    paths: list[str] = field(default_factory=lambda: ["C:/claude_skills", ".claude/skills"])
+    read_limit: int = 6000   # characters of one skill handed over at a time
+
+
+@dataclass
 class PhoneSettings:
     """Nova's control of your phone through the Termux bridge (phone/README.md).
 
@@ -254,6 +340,12 @@ class Settings:
     ambient: AmbientSettings = field(default_factory=AmbientSettings)
     phone: PhoneSettings = field(default_factory=PhoneSettings)
     awareness: AwarenessSettings = field(default_factory=AwarenessSettings)
+    journal: JournalSettings = field(default_factory=JournalSettings)
+    goals: GoalsSettings = field(default_factory=GoalsSettings)
+    capture: CaptureSettings = field(default_factory=CaptureSettings)
+    publish: PublishSettings = field(default_factory=PublishSettings)
+    skills: SkillsSettings = field(default_factory=SkillsSettings)
+    recipes: RecipeSettings = field(default_factory=RecipeSettings)
     # Folder containing config.toml; relative paths in the config resolve against it.
     base_dir: Path = field(default_factory=lambda: APP_DIR)
 

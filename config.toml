@@ -44,8 +44,13 @@ voice_contains = "Zira"        # pick the first installed voice whose name conta
 
 [agents]
 # Everything you say (except instant local commands) goes to this agent.
-# Claude Code runs on your Claude subscription via its own login: no API key.
-default = "claude"             # claude | antigravity | openrouter
+# Groq is the front door on purpose: it answers in about a second, it is free, and with
+# web_search, read_page and nova_status it can finish most requests by itself. What it
+# cannot do -- editing files, running commands, git, anything multi-step -- it hands to
+# Claude Code through its delegate_to_claude tool, so the hard jobs still get the good
+# model without every "what's the weather" costing a Claude turn. Say "use Claude" to
+# switch for a while, or set this back to "claude" to make that permanent.
+default = "groq"               # groq | claude | antigravity | openrouter
 max_parallel = 2               # agent tasks at once (each gets its own session and canvas lane); 1 = strictly one at a time
 workspace = "."                # folder the agent works in
 continue_session = true        # keep one conversation going (resumed after cancel/restart)
@@ -68,6 +73,10 @@ model = ""                     # "" = your Claude Code default; e.g. "sonnet" fo
 model = "openai/gpt-oss-120b"
 api_key_env = "GROQ_API_KEY"         # put the key in .env next to config.toml (never committed)
 max_tool_calls = 6                   # model/tool rounds per request
+# If it runs out of those steps, or Groq can't be reached at all, the whole job is passed
+# to Claude Code instead of coming back as "say use claude for the harder parts". You
+# should never have to do the routing by hand. false reports the failure instead.
+escalate_to_claude = true
 max_tokens = 1200
 temperature = 0.3
 timeout = 120
@@ -183,6 +192,69 @@ idle_seconds = 120       # no keyboard or mouse for this long ends the stretch
 merge_gap_seconds = 120  # back in the same place within this: one stretch, not two
 raw_days = 7             # raw focus events are deleted after this
 session_days = 19        # the collapsed sessions live a little longer
+
+[journal]
+# Nova's own record of its days: one short entry per finished day, written from the
+# work history and the activity record above — never invented. The last few entries go
+# into every agent's instructions, so Nova starts a session knowing what we were in the
+# middle of instead of meeting you fresh. Entries are local, like everything else here.
+enabled = true
+db_path = "data/journal.db"
+check_minutes = 30    # how often it looks for a finished day that has no entry yet
+backfill_days = 3     # how far back it still writes entries, after the laptop was off
+context_days = 3      # how many entries the agents are shown
+keep_days = 730
+narrate = true        # a free chat model phrases the entry; the facts still come from the rows
+
+[goals]
+# Standing goals: things Nova starts on its own ("every morning, tell me what changed
+# in my repos"). A goal is just a request in Nova's words, submitted the same way yours
+# is — so the confirmation in front of a text, a call or a post still applies. Nothing
+# fires while you are mid-conversation, and nothing fires during quiet hours.
+enabled = true
+db_path = "data/goals.db"
+check_seconds = 120
+quiet_from = 22       # no goal fires between these two hours
+quiet_to = 8
+one_at_a_time = true  # a backlog goes out one per tick, never all at once
+
+[capture]
+# Screen recordings and phone photos. They land in the inbox folder below and are never
+# deleted automatically. Editing (cut, caption, reframe) is local ffmpeg on the CPU —
+# there is no GPU on this laptop, so a long render takes minutes, not seconds.
+enabled = true
+inbox = "data/inbox"
+fps = 25
+monitor = 1     # which screen to record; 0 records the whole desktop (both screens, very wide)
+audio = false   # system audio needs a loopback capture device set up first
+
+[publish]
+# GitHub, LinkedIn and Instagram — and the one gate in front of all three. Nothing goes
+# out unread: Nova drafts, says it back, and posts only when you approve that draft.
+# Tokens live in .env (LINKEDIN_ACCESS_TOKEN, INSTAGRAM_ACCESS_TOKEN, INSTAGRAM_USER_ID);
+# GitHub goes through the gh CLI's own login, so there is no token here at all.
+enabled = true
+db_path = "data/publish.db"
+
+[recipes]
+# How a job went when it went well: which tools, in what order, how long, and what
+# failed on the way. Recorded automatically after a successful agent turn, and put back
+# in front of the model the next time a similar request comes in. It is evidence, not a
+# script -- the model adapts it. This is what lets Groq take over something Claude
+# solved once, so the cost of a repeated job falls instead of staying flat.
+enabled = true
+db_path = "data/recipes.db"
+hint_agents = true    # false records recipes but stops feeding them back
+
+[skills]
+# Agent skills: folders with a SKILL.md inside, the same ones Claude Code reads. Sharing
+# the folder means a skill written once teaches every brain Nova has. Only the skill
+# *names* go into each turn's instructions (about fifty tokens for all of them); the
+# document itself is loaded only when a model calls read_skill, because these run to a
+# thousand lines and would otherwise cost more than the answer.
+enabled = true
+paths = ["C:/claude_skills", ".claude/skills"]   # first match wins, so a project skill beats a shared one
+read_limit = 6000    # characters of one skill handed over per call
 
 [phone]
 # Nova's control of your phone through the Termux bridge (phone/README.md): torch,

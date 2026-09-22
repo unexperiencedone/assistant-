@@ -22,6 +22,7 @@ from .agents import AgentRegistry
 from .agents.base import AgentBackend, AgentResult, short  # noqa: F401  (AgentResult used in type hints)
 from .audio.tts import Speaker
 from .config import Settings
+from .controller_capture import CaptureCommands
 from .events import EventBus
 from .intents import LOCAL_INTENTS, Intent, match_intent, normalize, strip_wake_word
 from . import matching, persona
@@ -65,7 +66,7 @@ def yes_or_no(text: str) -> bool | None:
     return None
 
 
-class Controller:
+class Controller(CaptureCommands):
     def __init__(
         self,
         settings: Settings,
@@ -82,8 +83,18 @@ class Controller:
         history: "HistoryStore | None" = None,
         promotion_store: "PromotionStore | None" = None,
         phone: Any = None,
+        goals: Any = None,
+        recipes: Any = None,
+        capture: Any = None,
+        publisher: Any = None,
+        capture_settings: Any = None,
     ) -> None:
         self.profile = profile
+        self.goals = goals
+        self.recipes = recipes
+        self.capture = capture
+        self.publisher = publisher
+        self.capture_settings = capture_settings
         self.history = history
         self.automations = automations
         self.promotion = promotion_store
@@ -376,6 +387,14 @@ class Controller:
         if result.ok and command:
             self._remember_command(command)  # only requests that worked teach the quick actions
             self._last_command, self._last_task_type = command, task_type
+        # What worked, so the cheap tier can do this one next time (docs/recipes.md).
+        # Recorded after the tag is extracted, because the tag is the key it is stored under.
+        if self.recipes and task_type and command:
+            if result.ok:
+                self.recipes.remember(task_type, command, backend=backend.label,
+                                      seconds=result.seconds, task_id=task_id)
+            else:
+                self.recipes.note_failure(task_type, result.detail or result.summary)
         decision = promotion.DECISION_NONE
         if result.ok and fix_ctx:
             # This turn was Claude finishing a request its own automation had just failed on;
@@ -542,6 +561,14 @@ class Controller:
         if self.profile:
             # Details of any project or person you mention, within what this agent may see.
             prompt = self.profile.with_context(prompt, text, backend.name)
+        # How a job like this went last time. Silent unless a stored request really
+        # resembles this one -- a hint about the wrong task is worse than no hint, since
+        # a model given a confident irrelevant instruction follows it anyway.
+        if self.recipes and getattr(self.settings.recipes, "hint_agents", True):
+            hint = self.recipes.hint(text)
+            if hint:
+                prompt = f"{hint}\n\n{prompt}"
+                self.bus.log("recipe: reusing what worked on a request like this")
         route = "execute_plan" if executing_plan else ("plan" if self.plan_mode else "task")
         # A task running alongside another gets its own agent session, so the two
         # conversations never mix.
@@ -932,6 +959,29 @@ class Controller:
             self.say(f"Okay, I won't {description}.")
         self._ask_next_phone()   # "text Aadidev and Anant" is two questions, not one
 
+    def _intent_goals_list(self, _text: str) -> None:
+        if self.goals is None:
+            self.say("Standing goals are turned off in the config.")
+            return
+        self.say(self.goals.spoken())
+
+    def _intent_goal_add(self, _text: str, cadence: str = "", what: str = "",
+                         cadence2: str = "", what2: str = "") -> None:
+        """"Every morning, tell me what changed in my repos." -- stored as a request in
+        your words, fired on its own schedule, and run through the ordinary pipeline."""
+        if self.goals is None:
+            self.say("Standing goals are turned off in the config.")
+            return
+        spoken, what = (cadence or cadence2).lower(), (what or what2).strip()
+        every = {"hour": "hourly", "week": "weekly", "monday": "weekly"}.get(spoken, "daily")
+        goal = self.goals.add(what, every, next_due=_next_due(spoken))
+        if goal is None:
+            self.say("I didn't catch what you want me to do.")
+            return
+        when = {"hourly": "every hour", "weekly": "once a week"}.get(every, "every morning"
+                if spoken in ("morning", "monday") else "every day")
+        self.say(f"Right. {when}, I'll {what}. Say what are your standing goals to hear them back.")
+
     def _intent_recap(self, _text: str, when: str = "") -> None:
         if self.history is None:
             self.say("The work history is turned off in the config.")
@@ -992,3 +1042,15 @@ def spoken_reply(text: str, max_sentences: int = MAX_SPOKEN_SENTENCES) -> str:
     sentences = _SENTENCE_END.split(" ".join(lines))
     spoken = " ".join(sentences[:max_sentences]).strip()
     return spoken if len(spoken) <= 450 else spoken[:447].rsplit(" ", 1)[0] + "..."
+
+
+def _next_due(spoken: str) -> float:
+    """When a spoken cadence should first fire. "Morning" means tomorrow morning, not now."""
+    import time as _time
+
+    hours = {"morning": 8, "evening": 19, "night": 21}
+    if spoken not in hours:
+        return _time.time()
+    local = _time.localtime()
+    due = _time.mktime((local.tm_year, local.tm_mon, local.tm_mday, hours[spoken], 0, 0, 0, 0, -1))
+    return due if due > _time.time() else due + 86400

@@ -79,6 +79,29 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
         ("time", r"^what(?:'s| is) the time\b|^what time is it\b"),
         ("news_briefing", r"^(?:what'?s|what is|pull|get|give|read|run|fetch|show|any)?\s*(?:me)?\s*(?:up)?\s*(?:a|the|my)?\s*(?:news(?:\s+(?:briefing|headlines|update|summary))?|headlines|briefing)(?:\s+(?:briefing|update))?(?:\s+(?:for|on|about)\s+(?P<topic>.+?))?(?:\s+(?:today|now|right now|this morning|please))?[.!?]*$"),
         ("recap", r"^(?:what did (?:we|i|you) (?:do|work on|get done)|(?:give me a |quick )?recap|summari[sz]e (?:the |this |my |our )?(?:session|work|day))(?:\s+(?:in |for |from |of )?(?P<when>today|yesterday|this session|(?:the )?(?:last|previous) session))?\b"),
+        # -- capture and publishing (assistant/capture, assistant/publish) -----------
+        ("stop_recording", r"^(?:stop|end|finish)\s+(?:the\s+)?(?:screen\s+)?record(?:ing)?\b"
+                           r"|^(?:that'?s\s+it|cut)[,.!]?\s*(?:stop\s+recording)?$"),
+        ("record_screen", r"^(?:start\s+)?record(?:ing)?\s+(?:my\s+|the\s+)?(?:screen|desktop|display)\b"
+                          r"|^(?:screen[\s-]?record|capture\s+my\s+screen)\b"
+                          r"|^record\s+(?:this|what\s+i'?m\s+doing)\b"),
+        ("phone_photo", r"^take\s+(?:a\s+)?(?:photo|picture|pic|snap|shot)\s*"
+                        r"(?:(?:with|on|using|from)\s+(?:my\s+)?(?:phone|camera))?\s*"
+                        r"(?:with\s+the\s+)?(?P<which>front|back|selfie)?\s*(?:camera)?[.!]?$"),
+        ("publish_waiting", r"^(?:what'?s|what\s+is|anything)\s+(?:waiting|pending|queued)"
+                            r"(?:\s+to\s+(?:go\s+out|post|publish|be\s+posted))?\b"
+                            r"|^(?:show|list)\s+(?:my\s+|the\s+)?drafts?\b"),
+        ("publish_approve", r"^(?:post|publish|send)\s+it\b(?:\s+now)?[.!]?$"
+                            r"|^(?:yes[,.]?\s+)?(?:go\s+ahead\s+and\s+)?(?:post|publish)\s+(?:it|that|the\s+draft)\b"),
+        ("publish_discard", r"^(?:drop|discard|bin|delete|scrap|forget)\s+(?:it|that|the\s+draft|the\s+post)\b"
+                            r"|^don'?t\s+(?:post|publish|send)\s+(?:it|that)\b"),
+        # -- standing goals (assistant/goals): the things Nova starts by itself ------
+        ("goals_list", r"^(?:what|which)\s+(?:are\s+)?(?:your|the|my)?\s*standing\s+goals?\b"
+                       r"|^what\s+(?:are\s+you|do\s+you)\s+do(?:ing)?\s+(?:on\s+your\s+own|by\s+yourself|without\s+me)\b"
+                       r"|^list\s+(?:your\s+|my\s+)?(?:standing\s+)?goals\b"),
+        # "every morning tell me what changed in my repos" -> a daily goal whose text is the rest.
+        ("goal_add", r"^every\s+(?P<cadence>morning|day|hour|week|monday|evening|night)[,:]?\s+(?P<what>.{4,200})$"
+                     r"|^(?:each|each\s+and\s+every)\s+(?P<cadence2>morning|day|hour|week)[,:]?\s+(?P<what2>.{4,200})$"),
         ("list_automations", r"^(?:list|show|what are)(?: me)?(?: my| the)? (?:automations|macros|routines|scripts)\b"),
         ("remember_automation", r"^(?:remember|teach yourself|learn from)\s+(?:how you (?:did|do)\s+)?(?:that|this|it)\b.*$"
                                  r"|^(?:save|turn)\s+(?:that|this|it)(?:\s+one)?\s+(?:as|into)\s+(?:an?\s+)?(?:automation|instant\s+command|macro|script)\b.*$"),
