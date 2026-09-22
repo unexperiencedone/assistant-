@@ -249,7 +249,15 @@ class VoiceAssistant:
                     backend = self.registry.current
                 return self.runner.start(backend.spawn(), prompt, label)
 
-            self.orchestrator = Orchestrator(dispatch, max_fanout=settings.orchestrate.max_fanout)
+            narrator = None
+            if settings.narrator.enabled and settings.narrator.groups:
+                from .persona.narrator import Narrator
+
+                voice = Narrator(ask=self._narrate, settings=settings.narrator,
+                                 log=lambda text: self.bus.log(text))
+                narrator = lambda plain: voice.say_it_better(plain, settings.narrator.max_chars)
+            self.orchestrator = Orchestrator(dispatch, max_fanout=settings.orchestrate.max_fanout,
+                                             narrate=narrator)
 
         # Skills are read from disk once: only the frontmatter, so eighteen of them cost
         # a few milliseconds. The documents themselves are loaded on demand by read_skill.

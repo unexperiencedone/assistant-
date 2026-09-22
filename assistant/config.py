@@ -287,6 +287,21 @@ class JournalSettings:
 
 
 @dataclass
+class NarratorSettings:
+    """Turning several raw results into one thing Nova would actually say.
+
+    Only where the text reaching you was never written in one voice by anything: a
+    finished group of parallel tasks, whose answer is two or three backends' replies
+    stapled together. Never on an instant intent -- those answer offline in
+    microseconds, and a network call to sound marginally warmer is the exact trade the
+    cascade exists to refuse. Every narration is checked against the source and thrown
+    away if it lost a number or a name, so this cannot make an answer less accurate."""
+    enabled: bool = True
+    groups: bool = True         # narrate a finished multi-step group
+    max_chars: int = 600
+
+
+@dataclass
 class OrchestrateSettings:
     """Running several pieces of work for one request, and answering once.
 
@@ -359,6 +374,7 @@ class Settings:
     skills: SkillsSettings = field(default_factory=SkillsSettings)
     recipes: RecipeSettings = field(default_factory=RecipeSettings)
     orchestrate: OrchestrateSettings = field(default_factory=OrchestrateSettings)
+    narrator: NarratorSettings = field(default_factory=NarratorSettings)
     # Folder containing config.toml; relative paths in the config resolve against it.
     base_dir: Path = field(default_factory=lambda: APP_DIR)
 

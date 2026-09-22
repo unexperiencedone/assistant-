@@ -74,9 +74,15 @@ class Group:
 class Orchestrator:
     """Walks a step DAG, dispatching what is ready and collecting what comes back."""
 
-    def __init__(self, dispatch: Dispatch, max_fanout: int = 3) -> None:
+    def __init__(self, dispatch: Dispatch, max_fanout: int = 3,
+                 narrate: Callable[[str], str] | None = None) -> None:
         self.dispatch = dispatch
         self.max_fanout = max(1, int(max_fanout))
+        # Turns the stapled-together step answers into one spoken line. Optional, and
+        # returns its input unchanged on any doubt, so a group can never end up saying
+        # less than it knew (assistant/persona/narrator.py). A group already takes tens
+        # of seconds, which is the only reason a model call is affordable here at all.
+        self.narrate = narrate
         self.groups: dict[str, Group] = {}
         self._by_task: dict[str, tuple[str, int]] = {}   # task id -> (group id, step index)
         self._lock = threading.RLock()
@@ -166,6 +172,13 @@ class Orchestrator:
 
     def summarise(self, group: Group) -> str:
         """One answer for the whole group, saying plainly what did and didn't happen."""
+        plain = self._plain(group)
+        if self.narrate is None or len(group.steps) < 2:
+            return plain
+        return self.narrate(plain) or plain
+
+    def _plain(self, group: Group) -> str:
+        """The facts, assembled locally. Always correct, never graceful."""
         done = [s for s in group.steps if s.status == DONE]
         failed = [s for s in group.steps if s.status == FAILED]
         blocked = [s for s in group.steps if s.status == BLOCKED]
