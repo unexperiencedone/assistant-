@@ -21,7 +21,7 @@ the things you repeat so they stop costing anything at all.
 ![Tailscale](https://img.shields.io/badge/Tailscale-242424?style=for-the-badge&logo=tailscale&logoColor=white)
 ![Termux](https://img.shields.io/badge/Termux-000000?style=for-the-badge&logo=android&logoColor=3DDC84)
 
-![Tests](https://img.shields.io/badge/tests-400_passing-3fb950?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-420_passing-3fb950?style=flat-square)
 ![Modules](https://img.shields.io/badge/python-110_modules-3776AB?style=flat-square)
 ![API billing](https://img.shields.io/badge/API_billing-none-8957e5?style=flat-square)
 ![Speech](https://img.shields.io/badge/speech-100%25_local-0969da?style=flat-square)
@@ -47,7 +47,7 @@ flowchart LR
     D -->|match| Z
     D -->|unsure| E{Free model:<br/>which script?}
     E -->|a script| Z
-    E -->|none| G[Groq<br/>+ 23 tools, web, skills]
+    E -->|none| G[Groq<br/>+ 25 tools, web, skills]
     G -->|finished it| Z
     G -->|"can't finish"| F[Claude]
     F --> Z
@@ -69,7 +69,7 @@ flowchart LR
 | 🟢 **Saved automation** — a TOML script matched | `automations/` | microseconds | free |
 | 🟢 **Loose match** — filler, synonyms, word order | `assistant/matching.py` | microseconds | free |
 | 🟡 **Free-model router** — which of these scripts? | `assistant/classify.py` | ~1 s | free |
-| 🟡 **Groq** *(default)* — 23 tools, web search, skills | `assistant/agents/chat_api.py` | ~1 s | free |
+| 🟡 **Groq** *(default)* — 25 tools, web search, skills | `assistant/agents/chat_api.py` | ~1 s | free |
 | 🔴 **Claude** — what Groq couldn't finish | `assistant/agents/` | seconds | your subscription |
 
 **The two dotted arrows are the whole point.** When Claude does solve something, it
@@ -99,7 +99,7 @@ flowchart TD
     CASCADE -->|regex / automation / loose| LOCAL[Answered locally<br/>no model, no network]
     CASCADE -->|needs a brain| PRE[Nova adds context<br/>profile · journal · recipe · skill]
 
-    PRE --> GROQ[Groq, ~1s<br/>23 tools]
+    PRE --> GROQ[Groq, ~1s<br/>25 tools]
     GROQ --> ASK{Finished?}
     ASK -->|yes| GUARD
     ASK -->|out of steps,<br/>tool failed,<br/>or too complex| CLA[Claude Code<br/>told what Groq already tried]
@@ -129,7 +129,7 @@ flowchart TD
 | **2 · Noise gate** | Whisper's own confidence score throws away the TV, mumbling and half-words. | A wrong transcript acted on is worse than one ignored. |
 | **3 · Cascade** | Six tiers, cheapest first. Most days most requests never reach step 4. | Reaching for a model is treated as a failure to have learned. |
 | **4 · Context** | Before any model runs, Nova adds your profile, the last few journal entries, a matching recipe, and names a fitting skill. | A model that starts knowing yesterday and knowing what worked last time needs fewer turns. |
-| **5 · Groq** | Answers in about a second with 23 tools: the local index, app clicking, web search, its own status. | Free and fast. This tier is meant to *finish* jobs, not triage them. |
+| **5 · Groq** | Answers in about a second with 25 tools: the local index, app clicking, web search, its own status. | Free and fast. This tier is meant to *finish* jobs, not triage them. |
 | **6 · Escalation** | Out of steps, a tool failed, or genuinely complex → the whole job goes to Claude, **told what Groq already tried.** | You should never have to do the routing by hand. |
 | **7 · Guard** | A regex net catches a backend introducing itself or blaming "the API". | Whatever runs underneath is Nova's business, not yours. |
 | **8 · Learning** | A success is recorded as a recipe; three repeats writes an automation. | This is the step that makes tomorrow cheaper than today. |
@@ -188,7 +188,8 @@ python main.py autostart install      # start in the tray at logon
 | | | |
 |:--|:--|:--|
 | [User flow](#user-flow) | [Things to say](#things-to-say) | [The four brains](#the-four-brains) |
-| [Getting cheaper](#getting-cheaper-over-time) | [Beyond answering](#beyond-answering) | [The canvas](#the-canvas) |
+| [Several at once](#several-things-at-once) | [Getting cheaper](#getting-cheaper-over-time) | [Beyond answering](#beyond-answering) |
+| [The canvas](#the-canvas) | | |
 | [Voice](#voice) | [Clicking things](#clicking-things) | [Your phone](#your-phone) |
 | [Who Nova is](#who-nova-is) | [Architecture](#architecture) | [Reproducing it](#reproducing-it-from-scratch) |
 | [Troubleshooting](#when-things-go-wrong) | [Packaging](#packaging-and-autostart) | [Further reading](#further-reading) |
@@ -218,6 +219,8 @@ python main.py autostart install      # start in the tray at logon
 | "What are your standing goals?" | Reads them back |
 | "What's waiting to go out?" / "post it" / "drop that draft" | The approval gate in front of anything outward-facing |
 | "What did we do today?" / "recap yesterday" | Work history, no model needed |
+| "Audit the repo, check my PRs, then write it up" | Three steps: two in parallel, the third waits, one answer |
+| "Start the repo audit in the background" | Runs while Nova keeps answering; tells you when it lands |
 
 ---
 
@@ -228,7 +231,7 @@ canvas header shows which is active.
 
 | | What it is | Best at |
 |:--|:--|:--|
-| **Groq** *(default)* | Open models on Groq's chips, answering in about a second, acting through *Nova's* 23 tools. Free. | Nearly everything: questions, lookups, opening things, automations, status |
+| **Groq** *(default)* | Open models on Groq's chips, answering in about a second, acting through *Nova's* 25 tools. Free. | Nearly everything: questions, lookups, opening things, automations, status |
 | **Claude Code** | A brain with hands already attached: terminal, file editing, web. Runs on your subscription — no API key. | Coding, file edits, and whatever Groq couldn't finish |
 | **OpenRouter** | The same loop against free models. | A fallback when Groq is rate-limited |
 | **Antigravity** | Google's `agy` CLI. | An alternative coding agent |
@@ -243,6 +246,7 @@ Nova supplies the loop and the hands, in five groups:
 | **Inside apps** | `list_windows` · `list_controls` · `click_control` · `type_in_app` · `press_keys` · `read_control` |
 | **The web** | `web_search` · `read_page` |
 | **Nova itself** | `nova_status` · `list_automations` · `run_automation` · `write_word` · `start_recording` · `stop_recording` · `draft_post` · `add_goal` · `list_goals` |
+| **Several things at once** | `start_task` · `run_steps` |
 | **Skills & handover** | `list_skills` · `read_skill` · `delegate_to_claude` |
 
 Three of those changed how much reaches Claude at all:
@@ -311,6 +315,60 @@ in parallel both answered in about 2 s. Free tiers rate-limit; if a model garble
 call, the turn is retried once without tools so you still get an answer.
 
 </details>
+
+---
+
+## Several things at once
+
+A request with separate parts doesn't have to be answered one part at a time. Nova
+dispatches the pieces that can run now, holds the ones that depend on others, and gives
+you **one** answer when they're all done.
+
+```mermaid
+flowchart LR
+    R([“audit the repo, check my PRs,<br/>then write it up”]) --> G{Groq decomposes}
+    G --> S1[1 · audit the repo]
+    G --> S2[2 · check the PRs]
+    G --> S3[3 · write it up<br/>after 1, 2]
+    S1 --> J
+    S2 --> J
+    S3 --> J[One answer]
+    S1 -.blocks.-> S3
+    S2 -.blocks.-> S3
+
+    style G fill:#0d1117,stroke:#d29922,color:#e6edf3
+    style S1 fill:#0d1117,stroke:#3fb950,color:#e6edf3
+    style S2 fill:#0d1117,stroke:#3fb950,color:#e6edf3
+    style S3 fill:#0d1117,stroke:#8957e5,color:#e6edf3
+    style J fill:#0d1117,stroke:#8957e5,color:#e6edf3
+```
+
+**Sequential and parallel are the same mechanism.** `planning.Plan` already gave every
+step an `after` list, so the difference between working through a list and fanning it
+out is only whether the steps declare dependencies — a chain of `after`s runs one at a
+time, their absence runs everything together, and one walker handles both. There was no
+reason to build two things.
+
+| Tool | For |
+|:--|:--|
+| `start_task` | One slow job in the background. Returns immediately so Nova keeps talking, and tells you when it lands. |
+| `run_steps` | Several pieces of one request. Steps say `(after 1, 2)` when they must wait. |
+
+`delegate_to_claude` still exists and still blocks — that's correct for "do this one
+thing". `start_task` is the non-blocking sibling, and it's what makes answering-while-
+working possible at all.
+
+### Three rules that make this worth having
+
+- **One request, one answer.** A group is silent until it finishes. Three tasks
+  narrating themselves is three voices over each other, and speech here is half-duplex
+  — you'd hear a jumble instead of a result.
+- **Fan-out is capped** (`max_fanout = 3`). A small model asked to decompose will
+  decompose anything, and four background tasks for "what time is it" would quietly
+  undo the entire cascade above. Extra steps are dropped, not queued.
+- **A blocked step is named, not dropped.** If step 1 fails, step 3 never runs — and
+  that's the thing you most need told. A group that half-worked and reports "done" is
+  the worst outcome available here.
 
 ---
 
@@ -570,7 +628,7 @@ flowchart TD
     end
 
     subgraph HANDS [" What a model can reach "]
-        AG --> TOOLS[agents/tools.py<br/>23 tools]
+        AG --> TOOLS[agents/tools.py<br/>25 tools]
         TOOLS --> WEBT[agents/web.py]
         TOOLS --> SYS[system/]
         TOOLS --> DESK[automation/desktop.py]

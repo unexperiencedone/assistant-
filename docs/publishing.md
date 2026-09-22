@@ -105,3 +105,65 @@ until it is made, `instagram.sender` says so plainly rather than pretending to t
 | `assistant/publish/linkedin.py` | Posts API, own feed, text |
 | `assistant/publish/instagram.py` | container-then-publish, professional accounts |
 | `tests/test_publish.py` | that staging sends nothing, and a failure is never a send |
+
+---
+
+## Designed, not built: two identities
+
+Nova is to hold **two sets of accounts**, and speak differently on each:
+
+| Accounts | Who is speaking | Voice |
+|---|---|---|
+| Nova's own Gmail / Instagram / LinkedIn | Nova, as itself | `persona/character.md` — the voice it already has |
+| The owner's accounts | Nova as a proxy for the owner | The owner's voice, not Nova's |
+
+Nothing of this is implemented yet. It is written down because one part of it collides
+with code that already exists, and the collision is not obvious.
+
+### The persona guard would corrupt a proxy post
+
+`persona/guard.py` runs on every agent reply and does two things: it replaces a
+borrowed self-introduction with Nova's own identity line, and it rewrites failures that
+name the plumbing. Both are right for anything Nova says *as Nova*.
+
+On a post written **as the owner**, the first one is actively wrong. A draft that says
+"I'm a developer working on..." is exactly what a proxy post should say, and the guard's
+`IDENTITY_LEAK` pattern is built to catch `I'm a ...` constructions and replace them
+with "I'm Nova." That would silently insert Nova's identity into a post meant to come
+from a person.
+
+So the guard cannot simply run on outbound drafts the way it runs on spoken replies. It
+needs to know which identity a draft belongs to, and skip the identity half when the
+answer is "the owner". The blame half should still run in both cases.
+
+### Two axes, not one
+
+`persona/__init__.py` already has registers -- `OWNER` and `CUSTOMER` -- but those are
+about *audience*: who is being spoken to, and how formally. This is a different
+question: *who is speaking*. They multiply rather than merge, so this wants its own
+field (`speaking_as`, say) on a draft, and not another register value.
+
+### The gate is not symmetric any more
+
+The approval gate exists because "a wrong post is worse than a slow one". Whose
+reputation is at stake changes that calculation, and it now differs per account:
+
+- **On the owner's accounts** the gate stays on. A wrong post goes out under a real
+  person's name to their real professional network, and deleting it does not un-notify
+  anyone who already saw it.
+- **On Nova's own accounts** a looser setting is defensible, because the cost of a bad
+  post falls on the assistant's own account rather than on someone's career.
+
+That asymmetry is the reason this is worth a config field per identity rather than one
+global switch.
+
+### Still open
+
+- **Where the owner's voice comes from.** The profile has no writing-voice section, and
+  a persona description is a weak substitute for samples of how someone actually writes.
+  Samples in the profile are the obvious answer; nothing is decided.
+- **Account types.** Instagram's API needs a Business or Creator account, which is an
+  account setting and not something code can work around. Two accounts means two such
+  switches.
+- **Credentials for two of everything**, which the current single-token-per-platform
+  environment variables do not express.
