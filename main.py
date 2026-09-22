@@ -8,6 +8,7 @@
     python main.py ui controls "Calculator"     # list / click / type into desktop app controls
     python main.py macro run "calculator demo"  # run an automation from automations/
     python main.py sysindex find "invoice"      # local index CLI
+    python main.py voice-check          # is this still the same Nova? (assistant/persona/drift.py)
     python main.py autostart install|remove|status
 
 Works from any folder, from `python -m assistant`, and as the packaged Nova.exe / nova-cli.exe.
@@ -100,6 +101,10 @@ def main(argv: list[str] | None = None) -> int:
         from assistant.stats import main as stats_main
 
         return stats_main(argv[1:])
+    if argv and argv[0] in ("voice-check", "voicecheck"):
+        from assistant.persona.__main__ import main as drift_main
+
+        return drift_main(argv[1:])
     if argv and argv[0] == "voices":
         from assistant.audio.tts import list_installed_voices
 
