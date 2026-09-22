@@ -142,6 +142,7 @@ set as the **default calling SIM**. To make calls use SIM 1, set it in Android's
 | "is my phone there" | health check over Tailscale |
 | "text +91 98765 43210 saying running late" | **asks you first**, then sends |
 | "call +91 98765 43210" | **asks you first**, then dials |
+| "take a picture with my phone" | `termux-camera-photo`; the JPEG comes back in the reply and lands in the capture inbox on the PC |
 
 The confirmation appears wherever you asked from — say it on the phone and the phone
 asks; say it at the desk and the desk asks. Both are refused by the phone itself unless
@@ -161,6 +162,14 @@ or `termux-telephony-call` and Nova reads it back to you.
 
 Teaching it a new app is one line in `APP_LINKS` in `nova_bridge.py`; an unknown app
 name is refused rather than guessed at.
+
+**The camera.** `camera_photo` is newer than the rest of this file, so if the bridge on
+your phone predates it, copy `nova_bridge.py` over again and restart the listener. It is
+a sensor, not an action: it is off until you switch **Camera** on in the Phone section of
+your profile, and Nova says it took a picture every single time. The photo is written to
+a temp file on the phone, read back as base64 inside the reply, and deleted there — a
+picture Nova took should not quietly accumulate on your phone. Anything over 8 MB is
+refused rather than sent.
 
 ---
 

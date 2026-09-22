@@ -176,6 +176,9 @@ SECTIONS: list[dict[str, Any]] = [
                help="Needed for \"where am I\". Off means Nova cannot locate the phone at all."),
             _f("clipboard", "Clipboard", "bool", default=False,
                help="Off by default: whatever you copied last is often a password."),
+            _f("camera", "Camera", "bool", default=False,
+               help="Letting Nova take a photo on the phone. Off by default, and it says "
+                    "so out loud every time it does."),
         ],
     },
     {

@@ -39,6 +39,7 @@ ACTIONS = {
     "sms_list": "{output}",
     "call_log": "{output}",
     "notifications": "{output}",
+    "camera_photo": "Took a picture.",   # the caller says where it landed
 }
 
 NEEDS_CONFIRMATION = {"sms_send", "call_dial"}
@@ -56,6 +57,8 @@ SENSING = {
     # holds a password on its way somewhere.
     "location": "location",
     "clipboard_get": "clipboard",
+    # A camera is the most invasive of these, so it is off unless you switch it on.
+    "camera_photo": "camera",
 }
 
 

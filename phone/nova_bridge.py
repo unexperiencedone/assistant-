@@ -25,6 +25,7 @@ Setup, autostart and the full list of actions: README.md next to this file.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -75,6 +76,9 @@ ACTIONS = {
     "sms_list": None,        # {"limit"}
     "call_log": None,        # {"limit"}
     "notifications": ["termux-notification-list"],
+    # The camera. Gated on the PC like every other sensor, and the picture comes back
+    # in the reply rather than being left on the phone -- there is no file server here.
+    "camera_photo": None,    # {"camera": "0" back | "1" front}
     "sms_send": None,   # {"number", "text"} — destructive: needs "confirmed": true
     "call_dial": None,  # {"number"}          — the same, and louder
 }
@@ -99,6 +103,11 @@ APP_LINKS = {
     "camera": "termux-camera://",
     "settings": "https://www.google.com/android/settings",
 }
+
+# Where a photo is written before it is read back and deleted. Termux's own folder, so
+# it needs no storage permission beyond the one the camera API already asked for.
+PHOTO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nova-photo.jpg")
+MAX_PHOTO_BYTES = 8 * 1024 * 1024
 
 SAFE_TARGET = re.compile(r"^[A-Za-z0-9 _.:/?=&%#+~@,-]{1,400}$")
 # Digits, spaces, brackets, dashes and a leading +. Nothing else reaches the dialler.
@@ -275,6 +284,24 @@ def shape(action: str, args: dict, output: str) -> str:
     contains the wanted text, so a person with three numbers comes back with all
     three and the reply stays a few lines instead of the whole address book.
     """
+    if action == "camera_photo":
+        # termux-camera-photo prints nothing; the picture is the file it wrote. Read it
+        # back, hand it over inside the reply, and delete it -- a photo Nova took should
+        # not quietly accumulate on the phone.
+        try:
+            with open(PHOTO_PATH, "rb") as handle:
+                raw = handle.read(MAX_PHOTO_BYTES + 1)
+        except OSError as error:
+            return json.dumps({"ok": False, "error": f"no photo was written: {error}"})
+        finally:
+            try:
+                os.remove(PHOTO_PATH)
+            except OSError:
+                pass
+        if len(raw) > MAX_PHOTO_BYTES:
+            return json.dumps({"ok": False, "error": "that photo is larger than 8 MB"})
+        return json.dumps({"ok": True, "bytes": len(raw),
+                           "jpeg_base64": base64.b64encode(raw).decode("ascii")})
     if action != "contacts":
         return output
     wanted = " ".join(str(args.get("match", "")).split()).lower()
@@ -315,6 +342,11 @@ def build(action: str, args: dict) -> tuple[list[str] | None, str]:
             return ["termux-open-url", f"https://{target}"], ""
         # An app nobody taught me: say so rather than opening a guess.
         return None, f"I do not know how to open {target}; add it to APP_LINKS in nova_bridge.py"
+    if action == "camera_photo":
+        camera = str(args.get("camera", "0")).strip()
+        if camera not in ("0", "1"):       # 0 is the back camera, 1 the front one
+            return None, "camera must be 0 (back) or 1 (front)"
+        return ["termux-camera-photo", "-c", camera, PHOTO_PATH], ""
     if action == "clipboard_set":
         return ["termux-clipboard-set", str(args.get("text", ""))[:2000]], ""
     if action == "volume":
