@@ -72,7 +72,7 @@ model = ""                     # "" = your Claude Code default; e.g. "sonnet" fo
 # Llama chat models aren't on this key, and groq/compound (Llama-based) refuses tool calls.
 model = "openai/gpt-oss-120b"
 api_key_env = "GROQ_API_KEY"         # put the key in .env next to config.toml (never committed)
-max_tool_calls = 6                   # model/tool rounds per request
+max_tool_calls = 10                  # model/tool rounds per request (orchestrating costs a few)
 # If it runs out of those steps, or Groq can't be reached at all, the whole job is passed
 # to Claude Code instead of coming back as "say use claude for the harder parts". You
 # should never have to do the routing by hand. false reports the failure instead.
@@ -235,6 +235,17 @@ audio = false   # system audio needs a loopback capture device set up first
 # GitHub goes through the gh CLI's own login, so there is no token here at all.
 enabled = true
 db_path = "data/publish.db"
+
+[orchestrate]
+# Several pieces of work for one request, answered once. A step may say what it waits
+# for -- "write it up (after 1, 2)" -- and steps with no dependencies run at the same
+# time, so one mechanism covers both working through a list and fanning it out.
+# max_fanout is the important number: a small model asked to decompose will decompose
+# anything, and four background tasks for "what time is it" would undo the whole point
+# of the cascade above. Extra steps are dropped, not queued.
+enabled = true
+max_fanout = 3
+backend = "claude"   # which brain runs a step; falls back to the current one
 
 [recipes]
 # How a job went when it went well: which tools, in what order, how long, and what

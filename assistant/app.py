@@ -236,6 +236,21 @@ class VoiceAssistant:
             self.recipes = RecipeService(db if db.is_absolute() else settings.base_dir / db,
                                          self.bus, settings.recipes)
 
+        # Several pieces of work for one request, answered once (assistant/orchestrate).
+        # The dispatcher is the one thing it needs from here: a spawned backend per step,
+        # started through the existing task pool so each step gets its own canvas lane.
+        self.orchestrator = None
+        if settings.orchestrate.enabled:
+            from .orchestrate import Orchestrator
+
+            def dispatch(prompt: str, label: str) -> str | None:
+                backend = self.registry.backends.get(settings.orchestrate.backend)
+                if backend is None or not backend.is_available():
+                    backend = self.registry.current
+                return self.runner.start(backend.spawn(), prompt, label)
+
+            self.orchestrator = Orchestrator(dispatch, max_fanout=settings.orchestrate.max_fanout)
+
         # Skills are read from disk once: only the frontmatter, so eighteen of them cost
         # a few milliseconds. The documents themselves are loaded on demand by read_skill.
         installed_skills: dict = {}
@@ -253,7 +268,7 @@ class VoiceAssistant:
             delegate=self._delegate_to_claude, workspace=settings.workspace,
             runner=self.runner, capture=self.capture, publisher=self.publisher, goals=self.goals,
             skills=installed_skills, skill_limit=settings.skills.read_limit,
-            capture_settings=settings.capture,
+            capture_settings=settings.capture, orchestrator=self.orchestrator,
         ))
 
         self.controller = Controller(
@@ -264,6 +279,7 @@ class VoiceAssistant:
             phone=self.phone,
             goals=self.goals,
             recipes=self.recipes,
+            orchestrator=self.orchestrator,
             capture=self.capture,
             publisher=self.publisher,
             capture_settings=settings.capture,

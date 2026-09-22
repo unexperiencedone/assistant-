@@ -85,6 +85,7 @@ class Controller(CaptureCommands):
         phone: Any = None,
         goals: Any = None,
         recipes: Any = None,
+        orchestrator: Any = None,
         capture: Any = None,
         publisher: Any = None,
         capture_settings: Any = None,
@@ -92,6 +93,7 @@ class Controller(CaptureCommands):
         self.profile = profile
         self.goals = goals
         self.recipes = recipes
+        self.orchestrator = orchestrator
         self.capture = capture
         self.publisher = publisher
         self.capture_settings = capture_settings
@@ -375,7 +377,20 @@ class Controller(CaptureCommands):
         self.reply_to = self.task_origins.pop(task_id, "desktop")
         fix_ctx = self._macro_fixes.pop(task_id, None) if task_id else None
         if result.cancelled:
+            if self.orchestrator is not None and self.orchestrator.owns(task_id):
+                self.orchestrator.cancel()   # one cancelled step abandons its group
             return
+        # A step of an orchestrated group stays silent: the group answers once, at the
+        # end. Three tasks each narrating themselves is three voices over each other,
+        # and half-duplex speech turns that into a jumble rather than a result.
+        if self.orchestrator is not None and self.orchestrator.owns(task_id):
+            combined = self.orchestrator.finished(task_id, result.ok, result.summary)
+            if not combined:
+                self.bus.log("a step finished; waiting for the rest of the group")
+                return
+            # The group's single answer takes the ordinary path from here: guard, then
+            # shortened for speech, so it is treated exactly like any other reply.
+            result.summary = combined
         # Strip Claude's own [[TASK: type]] tag (AGENTS.md section 12) before anything
         # below speaks or shows the reply.
         task_type, result.summary = promotion.extract_task(result.summary)

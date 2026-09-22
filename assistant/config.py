@@ -287,6 +287,18 @@ class JournalSettings:
 
 
 @dataclass
+class OrchestrateSettings:
+    """Running several pieces of work for one request, and answering once.
+
+    The fan-out cap is the important number. A small model asked to decompose will
+    decompose anything, and four background tasks for "what time is it" would undo the
+    cost cascade this sits on top of. Three is enough for a real multi-part request."""
+    enabled: bool = True
+    max_fanout: int = 3          # most steps one request may spawn; extras are dropped
+    backend: str = "claude"      # which brain runs a step; falls back to the current one
+
+
+@dataclass
 class RecipeSettings:
     """What worked last time, recorded and fed back (docs/recipes.md).
 
@@ -346,6 +358,7 @@ class Settings:
     publish: PublishSettings = field(default_factory=PublishSettings)
     skills: SkillsSettings = field(default_factory=SkillsSettings)
     recipes: RecipeSettings = field(default_factory=RecipeSettings)
+    orchestrate: OrchestrateSettings = field(default_factory=OrchestrateSettings)
     # Folder containing config.toml; relative paths in the config resolve against it.
     base_dir: Path = field(default_factory=lambda: APP_DIR)
 

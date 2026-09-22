@@ -40,6 +40,7 @@ class ToolContext:
     skills: dict = field(default_factory=dict)   # name -> agents.skills.Skill
     skill_limit: int = 6000
     capture_settings: Any = None      # assistant.config.CaptureSettings (fps, monitor, audio)
+    orchestrator: Any = None          # assistant.orchestrate.Orchestrator
 
 
 def _text(value: Any) -> str:
@@ -181,6 +182,10 @@ def nova_status(ctx: ToolContext) -> str:
             waiting = ""
         if waiting:
             lines.append(waiting)
+    if ctx.orchestrator is not None:
+        group_state = ctx.orchestrator.spoken()
+        if group_state:
+            lines.append(group_state)
     if ctx.goals is not None:
         try:
             spoken = ctx.goals.spoken()
@@ -189,6 +194,47 @@ def nova_status(ctx: ToolContext) -> str:
         if spoken:
             lines.append(spoken)
     return "\n".join(lines) or "Nothing is running; I'm idle."
+
+
+def start_task(ctx: ToolContext, task: str, label: str = "") -> str:
+    """Start one job in the background and carry on talking.
+
+    The point of this over delegate_to_claude is that it returns at once. Delegation
+    runs a whole Claude turn inline, which freezes the turn it was called from -- fine
+    for "do this one thing", useless when the user asked for three.
+    """
+    if ctx.orchestrator is None:
+        return "Background tasks aren't available."
+    group = ctx.orchestrator.start(task, [(task, [])])
+    if group is None:
+        return "I'm already at my limit for parallel work; say it again in a moment."
+    return f"Started that in the background ({group.id}). Say so, and carry on answering the rest."
+
+
+def run_steps(ctx: ToolContext, steps: list, request: str = "") -> str:
+    """Several pieces of work for one request, run together, answered once.
+
+    A step may name what it waits for -- "write it up (after 1, 2)" -- and steps with no
+    dependencies run at the same time. That is the only difference between working
+    through a list and fanning it out, so both come through here.
+    """
+    if ctx.orchestrator is None:
+        return "Running work in parallel isn't available."
+    from ..planning.plan import parse_step_line
+
+    parsed: list[tuple[str, list[int]]] = []
+    for number, raw in enumerate(steps or [], 1):
+        text, after = parse_step_line(str(raw), number)
+        if text:
+            parsed.append((text, after))
+    if not parsed:
+        return "I need the steps as a list of short sentences."
+    group = ctx.orchestrator.start(request or "; ".join(t for t, _a in parsed), parsed)
+    if group is None:
+        return "I couldn't start any of that; something else is using the task slots."
+    running = sum(1 for s in group.steps if s.status == "running")
+    return (f"Running {len(group.steps)} steps ({running} at once). I'll give you one answer "
+            "when they're all done, so don't repeat any of this back yet.")
 
 
 def start_recording(ctx: ToolContext, fps: int = 0) -> str:
@@ -325,6 +371,16 @@ TOOLS: dict[str, tuple[Callable[..., str], dict]] = {
         "nova_status", "What you yourself are doing right now: background tasks, screen recording, "
         "drafts waiting for approval, standing goals. Use this whenever the user asks what you are up to.",
         {}, [])),
+    "start_task": (start_task, _schema(
+        "start_task", "Start ONE job in the background and return immediately, so you can keep answering. "
+        "Use for something slow the user doesn't need to wait on. You'll be told when it finishes.",
+        {"task": STRING, "label": STRING}, ["task"])),
+    "run_steps": (run_steps, _schema(
+        "run_steps", "Run several pieces of work for one request and answer once when they're all done. "
+        "Each step is a short sentence; add '(after 1, 2)' to a step that must wait for others, and leave "
+        "it off for steps that can run at the same time. Only use this when the request really has "
+        "separate parts -- for one job, just do it yourself.",
+        {"steps": {"type": "array", "items": STRING}, "request": STRING}, ["steps"])),
     "start_recording": (start_recording, _schema(
         "start_recording", "Start recording the screen. Footage is saved and never sent anywhere.",
         {"fps": {"type": "integer"}}, [])),
@@ -365,6 +421,8 @@ def schemas(ctx: ToolContext) -> list[dict]:
         # attached it would answer "I'm idle" to everything, which is worse than absent.
         if name == "nova_status" and ctx.runner is None:
             continue
+        if name in ("start_task", "run_steps") and ctx.orchestrator is None:
+            continue
         if name.endswith("_recording") and ctx.capture is None:
             continue
         if name == "draft_post" and ctx.publisher is None:
@@ -388,7 +446,8 @@ def schemas(ctx: ToolContext) -> list[dict]:
 # the user saying "open spotify"), it's worth a visible log line: the prompt asks agents to
 # be careful, but a prompt is a convention, not a boundary.
 CHANGES_THINGS = {"open_item", "click_control", "type_in_app", "press_keys", "run_automation", "write_word",
-                  "start_recording", "stop_recording", "draft_post", "add_goal"}
+                  "start_recording", "stop_recording", "draft_post", "add_goal",
+                  "start_task", "run_steps"}
 
 
 def call(ctx: ToolContext, name: str, arguments: dict[str, Any]) -> str:
