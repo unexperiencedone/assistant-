@@ -74,12 +74,17 @@ class AgentRegistry:
             if hasattr(backend, "context"):
                 backend.context = context
 
-    def apply_profile(self, profile) -> None:
-        """Give each agent the profile summary it's allowed to see (assistant/profile)."""
+    def apply_profile(self, profile, continuity: str = "") -> None:
+        """Give each agent the profile summary it's allowed to see (assistant/profile),
+        plus Nova's own record of the last few days (assistant/journal) when there is one.
+
+        Both travel the same way, because both are standing context: true when the
+        process starts, changing rarely, and needed before the first word of a turn."""
         from ..profile import audience_for
 
         for name, backend in self.backends.items():
-            backend.set_profile(profile.standing(audience_for(name)))
+            standing = profile.standing(audience_for(name))
+            backend.set_profile("\n\n".join(part for part in (standing, continuity) if part))
 
     def spawn_current(self) -> AgentBackend:
         """An independent instance of the selected agent, for a parallel task."""
