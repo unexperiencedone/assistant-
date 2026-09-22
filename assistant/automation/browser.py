@@ -1,9 +1,20 @@
-"""Scripted web actions with Playwright, driving your installed Microsoft Edge.
+"""Scripted web actions with Playwright, driving your installed Chrome (or Edge).
 
-Edge is started once with a DevTools port and a dedicated Nova profile
-(%LOCALAPPDATA%\\Nova\\browser-profile, so your normal Edge profile is untouched and
-logins you make there persist). Playwright attaches over CDP, acts, and detaches:
-the browser window stays open afterwards like a normal browser.
+Chrome is preferred because it is the browser you actually use; Edge is the fallback
+when Chrome isn't installed. Either is started once with a DevTools port and a
+dedicated Nova profile (%LOCALAPPDATA%\\Nova\\browser-profile), Playwright attaches
+over CDP, acts, and detaches: the window stays open afterwards like a normal browser.
+
+**Why a separate profile rather than your own.** Modern Chrome refuses to enable the
+DevTools port when it is pointed at the default user-data directory -- a deliberate
+measure against cookie theft, since anything that can speak CDP to your real profile
+can read every session you are signed into. So automation cannot attach to your Default
+profile at all, and a dedicated one is the only option here. Sign in once inside the
+Nova profile and those logins persist for automations.
+
+That leaves the two jobs split, which is the right split anyway: *showing* you a page
+belongs in your real Chrome with all your logins (a plain `Start-Process chrome <url>`,
+no DevTools port needed), while *reading and clicking* a page happens here.
 
 Playwright's sync API is bound to the thread that started it, so create and use a
 Browser from one thread (the automation runner does).
@@ -20,11 +31,16 @@ from pathlib import Path
 
 log = logging.getLogger("nova.browser")
 
-# Trusted-user tool: Edge runs with a normal (unsandboxed) profile under this account,
+# Trusted-user tool: the browser runs with a normal (unsandboxed) profile under this account,
 # and automations can act on any page it can reach. Not for multi-user or remote use.
 
 CDP_PORT = 9333
-EDGE_CANDIDATES = [
+# Chrome first: it is the browser actually in use here. Edge is the fallback, since it
+# is on every Windows machine and speaks the same DevTools protocol.
+BROWSER_CANDIDATES = [
+    Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Google/Chrome/Application/chrome.exe",
+    Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Google/Chrome/Application/chrome.exe",
+    Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Google/Chrome/Application/chrome.exe",
     Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Microsoft/Edge/Application/msedge.exe",
     Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Microsoft/Edge/Application/msedge.exe",
 ]
@@ -43,21 +59,21 @@ def _cdp_ready() -> bool:
         return False
 
 
-def _launch_edge() -> None:
-    edge = next((p for p in EDGE_CANDIDATES if p.exists()), None)
-    if not edge:
-        raise BrowserError("Microsoft Edge not found.")
+def _launch_browser() -> None:
+    exe = next((p for p in BROWSER_CANDIDATES if p.exists()), None)
+    if not exe:
+        raise BrowserError("Neither Chrome nor Edge could be found.")
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     subprocess.Popen(
-        [str(edge), f"--remote-debugging-port={CDP_PORT}", f"--user-data-dir={PROFILE_DIR}",
+        [str(exe), f"--remote-debugging-port={CDP_PORT}", f"--user-data-dir={PROFILE_DIR}",
          "--no-first-run", "--no-default-browser-check", "about:blank"],
         creationflags=flags, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     deadline = time.time() + 20
     while not _cdp_ready():
         if time.time() > deadline:
-            raise BrowserError("Edge started but its DevTools port never opened.")
+            raise BrowserError(f"{exe.stem} started but its DevTools port never opened.")
         time.sleep(0.25)
 
 
@@ -83,22 +99,24 @@ class Browser:
         from playwright.sync_api import sync_playwright
 
         if not _cdp_ready():
-            _launch_edge()
+            _launch_browser()
         if self._playwright is None:
             self._playwright = sync_playwright().start()  # spawns a driver process: reused after this
         self._browser = self._playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
         context = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
-        pages = [p for p in context.pages if not p.url.startswith(("devtools://", "edge://"))]
+        # Internal pages are not the page the user means, whichever browser this is.
+        pages = [p for p in context.pages
+                 if not p.url.startswith(("devtools://", "edge://", "chrome://", "chrome-extension://"))]
         self._page = pages[-1] if pages else context.new_page()
         self._page.bring_to_front()
 
     def release(self) -> None:
         """Finish a run. The Playwright driver stays connected for the next one:
-        starting it costs a process launch, and the Edge window is unaffected either way."""
+        starting it costs a process launch, and the browser window is unaffected either way."""
         self._page = None
 
     def detach(self) -> None:
-        """Fully disconnect (on shutdown). The Edge window stays open."""
+        """Fully disconnect (on shutdown). The browser window stays open."""
         if self._playwright is not None:
             try:
                 self._playwright.stop()
