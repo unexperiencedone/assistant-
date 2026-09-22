@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -45,10 +46,44 @@ You are {name}, a voice assistant on the user's Windows PC. The user speaks; you
 - Opening apps or files, clicking inside apps, saved automations, Word documents: use the matching tool.
 - Transcripts can contain misheard words ("cloud" for Claude). Interpret them sensibly.
 - If a tool reports an error, say what failed in one sentence; don't retry the same call twice.
-- These are the only tools you have: {tools}. Never call anything else; if a job needs something that isn't there, say so in one sentence.{delegate}"""
+- These are the only tools you have: {tools}. Never call anything else; if a job needs something that isn't there, say so in one sentence.{delegate}{skills}"""
 
-DELEGATE_RULE = ("\n- Coding, editing or creating files, running commands, git, web research, or anything multi-step: "
-                 "call delegate_to_claude with the whole request. Then tell the user what it did.")
+# Only the names, never the descriptions: all of them together cost about fifty tokens,
+# while the descriptions would cost more every single turn than loading one costs once.
+SKILLS_RULE = ("\n- Skills you can load with read_skill, each a document on how to do one kind of job well: "
+               "{names}. When a skill's name covers the subject you were asked about, read it before "
+               "answering, even if you think you already know -- this overrides the rule about answering "
+               "questions without tools, because the skill is more specific and more current than you are. "
+               "Call list_skills if the names alone don't say which fits.")
+
+DELEGATE_RULE = (
+    "\n- Anything you need to look up, including news, prices and current events: search the web yourself "
+    "with web_search, and read_page only if the snippets weren't enough. Do not delegate a lookup."
+    "\n- Coding, editing or creating files, running commands, git, or a job that needs several careful steps: "
+    "call delegate_to_claude with the whole request. Then tell the user what it did. It is slow and costly, "
+    "so it is the last resort, not the first -- try your own tools first and delegate only what they can't do."
+    "\n- If a tool fails in a way that leaves you unable to finish at all, hand the whole request to "
+    "delegate_to_claude rather than reporting a dead end. Only say you couldn't do it when the reason is "
+    "something the user can fix in a word, like a name you need them to confirm.")
+
+
+# A reply that says the job went to Claude, written by a model that never called the
+# tool. Small models do this readily: describing the handover reads, to them, like
+# performing it. Caught rather than trusted, because "I've passed that to Claude" when
+# nothing was passed is the one failure the user cannot detect for themselves.
+CLAIMED_HANDOVER = re.compile(
+    r"\b(?:handed|handing|passed|passing|sent|sending|forwarded|delegated|delegating)\b[^.]{0,40}\bclaude\b"
+    r"|\bclaude\s+(?:will|is going to|is now|has been asked|should)\b"
+    r"|\bI(?:'| a|’)?(?:ll|m going to| will)\s+(?:have|get|ask|hand)\s+[^.]{0,20}claude\b"
+    r"|\basked\s+claude\s+to\b",
+    re.IGNORECASE,
+)
+
+ESCALATION_NOTE = (
+    "Nova's fast model was asked this and could not finish it: {reason}. "
+    "It already tried these tools, so don't just repeat them: {tried}. "
+    "Do the job properly and answer the user directly."
+)
 
 
 class ChatAgent(AgentBackend):
@@ -99,21 +134,70 @@ class ChatAgent(AgentBackend):
     def parse(self, obj: dict[str, Any]) -> Iterable[AgentEvent]:
         return ()
 
-    def _system_prompt(self) -> str:
+    def _system_prompt(self, said: str = "") -> str:
         """Name the tools that exist right now. A model told about a tool it wasn't given
         will try to call it, and Groq rejects the whole turn when it does."""
         names = [schema["function"]["name"] for schema in tool_registry.schemas(self.context)]
         from .. import persona
 
+        from . import skills as skill_registry
+
+        installed = getattr(self.context, "skills", None) or {}
         prompt = SYSTEM_PROMPT.format(
             persona=persona.seed(self.assistant_name),
             name=self.assistant_name,
             tools=", ".join(names) or "none",
-            delegate=DELEGATE_RULE if "delegate_to_claude" in names else "")
+            delegate=DELEGATE_RULE if "delegate_to_claude" in names else "",
+            skills=SKILLS_RULE.format(names=skill_registry.names(installed))
+            if installed and "read_skill" in names else "")
+        # Naming the one skill that fits, rather than leaving the model to notice it.
+        # Without this the rule above is simply ignored on questions it feels sure of.
+        if installed and "read_skill" in names:
+            fits = skill_registry.suggest(installed, said)
+            if fits:
+                prompt += (f"\n\nFor this request in particular: the '{fits}' skill covers it. "
+                           f"Call read_skill with name='{fits}' and follow it before you answer, "
+                           "even if you believe you already know the answer.")
         return f"{prompt}\n\n{self.profile}" if self.profile else prompt
 
     def set_profile(self, standing: str) -> None:
         self.profile = standing  # the system prompt is rebuilt every turn
+
+    # -- escalation ---------------------------------------------------------------------
+    def _tried_so_far(self) -> str:
+        """The tools already called this turn, so Claude doesn't redo dead work."""
+        names = [str(m.get("name") or "") for m in self.history if m.get("role") == "tool"]
+        return ", ".join(dict.fromkeys(n for n in names if n)) or "nothing that worked"
+
+    def _escalate(self, prompt: str, reason: str, on_event: Callable[[AgentEvent], None],
+                  started: float, turn: Any) -> AgentResult | None:
+        """Hand the whole request to Claude when the fast tier cannot finish it.
+
+        The cascade is only honest if its bottom tier failing means the job moves up,
+        not that the job stops. Before this, running out of tool rounds ended the turn
+        with "say use claude" -- asking the user to do the routing by hand, which is the
+        one decision they should never have to make.
+
+        Returns None when escalation isn't possible or didn't help, and the caller then
+        reports the original failure rather than inventing a second one.
+        """
+        delegate = getattr(self.context, "delegate", None)
+        if not delegate or not getattr(self.settings, "escalate_to_claude", True):
+            return None
+        # Reported as a tool call so the canvas shows the handover and the recipe store
+        # records that this kind of request needed Claude (assistant/recipes).
+        on_event(AgentEvent("tool", tool="delegate_to_claude", text=f"handing over: {reason}"))
+        task = f"{prompt}\n\n({ESCALATION_NOTE.format(reason=reason, tried=self._tried_so_far())})"
+        try:
+            answer = (delegate(task) or "").strip()
+        except Exception as exc:          # a failed handover must not replace the real reason
+            turn.raw({"escalation_failed": str(exc)})
+            return None
+        if not answer:
+            return None
+        turn.close(answer, True, time.time() - started)
+        return AgentResult(True, answer, None, time.time() - started,
+                           data={"escalated": reason, "backend_finished": "claude"})
 
     # -- one turn -----------------------------------------------------------------------
     def run(self, prompt: str, on_event: Callable[[AgentEvent], None], cancel: threading.Event) -> AgentResult:
@@ -121,11 +205,12 @@ class ChatAgent(AgentBackend):
             return AgentResult(False, f"No {self.label} key: set {self.settings.api_key_env} in your .env file.")
         started = time.time()
         turn = self.start_turn_log(prompt)
-        system = self._system_prompt()
+        system = self._system_prompt(prompt)
         self.history.append({"role": "user", "content": prompt})
         self._trim_history()
 
         retried = False
+        delegated = False   # did a real handover actually happen this turn?
         for _ in range(max(1, self.settings.max_tool_calls)):
             if cancel.is_set():
                 turn.close("cancelled", False, time.time() - started)
@@ -138,6 +223,12 @@ class ChatAgent(AgentBackend):
                 return AgentResult(False, "Cancelled.", None, time.time() - started, cancelled=True)
             except ChatApiError as exc:
                 if not (exc.retry_without_tools and not retried):
+                    # Groq being down or rate-limited is not a reason for the user to get
+                    # nothing: the job moves up a tier instead.
+                    moved = self._escalate(prompt, "the fast model couldn't be reached",
+                                           on_event, started, turn)
+                    if moved is not None:
+                        return moved
                     turn.close(str(exc), False, time.time() - started)
                     return AgentResult(False, str(exc), None, time.time() - started, detail=str(exc))
                 retried = True  # the model garbled a tool call: let it answer in words instead
@@ -156,6 +247,14 @@ class ChatAgent(AgentBackend):
             if text and calls:
                 on_event(AgentEvent("text", text=text))
             if not calls:
+                # It described a handover instead of making one. Make it true rather
+                # than letting the user be told work started that never did.
+                if not delegated and text and CLAIMED_HANDOVER.search(text):
+                    turn.raw({"claimed_handover_without_calling": text})
+                    moved = self._escalate(prompt, "the fast model said it would pass this to Claude",
+                                           on_event, started, turn)
+                    if moved is not None:
+                        return moved
                 turn.close(text, True, time.time() - started)
                 return AgentResult(True, text or "", None, time.time() - started)
 
@@ -166,11 +265,20 @@ class ChatAgent(AgentBackend):
                 name = call.get("function", {}).get("name", "")
                 arguments = _parse_arguments(call.get("function", {}).get("arguments"))
                 on_event(AgentEvent("tool", tool=name, text=tool_registry.describe_call(name, arguments)))
+                if name == "delegate_to_claude":
+                    delegated = True
                 result = tool_registry.call(self.context, name, arguments)
                 turn.raw({"tool": name, "arguments": arguments, "result": result})
                 on_event(AgentEvent("text", text=result))
                 self.history.append({"role": "tool", "tool_call_id": call.get("id", name), "name": name, "content": result})
 
+        # Out of tool rounds. This is the commonest "too complex for the fast tier"
+        # signal there is, so it is the one that most needs to move up rather than come
+        # back as a request for the user to re-route the job themselves.
+        moved = self._escalate(prompt, f"it used all {self.settings.max_tool_calls} of its steps "
+                               "without finishing", on_event, started, turn)
+        if moved is not None:
+            return moved
         summary = (f"I worked through {self.settings.max_tool_calls} steps without finishing. Say it again with more "
                    "detail, or say use claude for the harder parts.")
         turn.close(summary, True, time.time() - started)
