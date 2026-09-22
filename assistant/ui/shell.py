@@ -11,6 +11,7 @@ tray icon and hotkey run on their own threads.
 
 from __future__ import annotations
 
+import logging
 import threading
 from typing import TYPE_CHECKING
 
@@ -18,6 +19,8 @@ from ..events import Event
 from ..paths import resource_path
 from .icon import make_image
 from .win32 import GlobalHotkey, system_prefers_dark
+
+log = logging.getLogger("nova.shell")
 
 if TYPE_CHECKING:
     from ..app import VoiceAssistant
@@ -30,6 +33,7 @@ class AppShell:
         self.start_hidden = start_hidden
         self.name = app.settings.assistant.name
         self.window = None
+        self.reader = None   # the always-on-top reader, created on demand
         self.tray = None
         self.hotkey: GlobalHotkey | None = None
         self.visible = not start_hidden
@@ -52,6 +56,7 @@ class AppShell:
         )
         self.window.events.closing += self._on_closing
         self._start_tray()
+        self._watch_documents()
         self._start_hotkey()
         icon = resource_path("assistant", "ui", "nova.ico")
         webview.start(gui="edgechromium", icon=str(icon) if icon.exists() else None)
@@ -61,8 +66,79 @@ class AppShell:
         if self.hotkey:
             self.hotkey.stop()
 
+    # -- the reader ---------------------------------------------------------------------
+    def _watch_documents(self) -> None:
+        """Open the always-on-top reader when a long answer arrives.
+
+        The window is deliberately a *second* window rather than a view inside the main
+        one. The canvas is a live activity graph, which is the right thing while work
+        happens and the wrong thing to read a report in; and a reader has to sit over
+        whatever you were working in, which a maximised canvas cannot do.
+
+        Resizable with no remembered size, on purpose: how much of the screen a report
+        deserves depends on the report, and guessing it back wrongly each time is worse
+        than opening at a sensible default.
+        """
+        settings = getattr(self.app.settings, "reader", None)
+        if settings is None or not getattr(settings, "enabled", True):
+            return
+
+        def on_document(event) -> None:
+            if event.topic == "reader":
+                action = event.data.get("action")
+                if action == "hide":
+                    self.close_reader()
+                else:
+                    self.show_reader()
+                return
+            if event.data.get("auto_open", True):
+                self.show_reader()
+
+        self.app.bus.subscribe("document", on_document)
+        self.app.bus.subscribe("reader", on_document)
+
+    def show_reader(self) -> None:
+        """Bring up the reader, or focus it if it is already there."""
+        import webview
+
+        settings = self.app.settings.reader
+        if self.reader is not None:
+            try:
+                self.reader.show()
+                return
+            except Exception:
+                self.reader = None      # it was closed under us; make a new one
+        try:
+            self.reader = webview.create_window(
+                f"{self.name} - reader",
+                f"{self.url.rstrip('/')}/#reader",
+                width=settings.width,
+                height=settings.height,
+                min_size=(360, 320),
+                on_top=True,
+                resizable=True,
+                background_color="#131312" if system_prefers_dark() else "#f5f4f0",
+            )
+            self.reader.events.closed += self._on_reader_closed
+        except Exception as exc:
+            log.warning("couldn't open the reader window: %s", exc)
+            self.reader = None
+
+    def close_reader(self) -> None:
+        if self.reader is None:
+            return
+        try:
+            self.reader.destroy()
+        except Exception:
+            pass
+        self.reader = None
+
+    def _on_reader_closed(self) -> None:
+        self.reader = None
+
     def stop(self) -> None:
         self._quitting = True
+        self.close_reader()
         if self.window:
             try:
                 self.window.destroy()

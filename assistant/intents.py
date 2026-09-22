@@ -79,6 +79,12 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
         ("time", r"^what(?:'s| is) the time\b|^what time is it\b"),
         ("news_briefing", r"^(?:what'?s|what is|pull|get|give|read|run|fetch|show|any)?\s*(?:me)?\s*(?:up)?\s*(?:a|the|my)?\s*(?:news(?:\s+(?:briefing|headlines|update|summary))?|headlines|briefing)(?:\s+(?:briefing|update))?(?:\s+(?:for|on|about)\s+(?P<topic>.+?))?(?:\s+(?:today|now|right now|this morning|please))?[.!?]*$"),
         ("recap", r"^(?:what did (?:we|i|you) (?:do|work on|get done)|(?:give me a |quick )?recap|summari[sz]e (?:the |this |my |our )?(?:session|work|day))(?:\s+(?:in |for |from |of )?(?P<when>today|yesterday|this session|(?:the )?(?:last|previous) session))?\b"),
+        # -- the reader window (assistant/reader.py) ---------------------------------
+        ("hide_reader", r"^(?:close|hide|dismiss|get rid of)\s+(?:the\s+)?(?:reader|document|report|that window|the window)"),
+        ("show_reader", r"^(?:show|open|bring up|put)\s+(?:me\s+)?(?:that|this|it|the\s+(?:reader|document|report|last answer))"
+                        r"(?:\s+(?:on|up|on\s+screen|back))?"
+                        r"|^(?:let me )?read\s+(?:that|it|the\s+(?:document|report))"
+                        r"|^on\s+screen"),
         # -- capture and publishing (assistant/capture, assistant/publish) -----------
         ("stop_recording", r"^(?:stop|end|finish)\s+(?:the\s+)?(?:screen\s+)?record(?:ing)?\b"
                            r"|^(?:that'?s\s+it|cut)[,.!]?\s*(?:stop\s+recording)?$"),

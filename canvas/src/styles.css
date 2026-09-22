@@ -876,3 +876,219 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   .run-view, .run-view.with-inspector { display: block; height: auto; }
   .run-view .canvas { height: 320px; }
 }
+
+/* ── The reader ─────────────────────────────────────────────────────────────────
+   A long answer, in its own small always-on-top window. Measure over density:
+   this is the one screen in Nova whose only job is to be read, so the column is
+   capped near 70 characters and the type is larger than anywhere else.
+   Fraunces for prose, because this is Nova talking; Plex Mono for anything a
+   machine measured -- tables, code, diagram labels. Never the reverse. */
+.app.is-reader {
+  display: block;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.reader {
+  height: 100vh;
+  overflow-y: auto;
+  padding: 30px 30px 72px;
+  color: var(--body);
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 16.5px;
+  line-height: 1.68;
+  /* A comfortable measure whatever the window is dragged to. */
+  max-width: 78ch;
+  margin: 0 auto;
+  scrollbar-gutter: stable;
+}
+
+.reader.is-empty {
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.reader-hint {
+  max-width: 34ch;
+  color: var(--muted);
+  font-size: 15px;
+  text-align: center;
+  text-wrap: pretty;
+}
+
+.reader-title {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-size: 27px;
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.reader-title::after {
+  content: "";
+  display: block;
+  width: 46px;
+  height: 2px;
+  margin-top: 14px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+.reader h2,
+.reader h3,
+.reader h4 {
+  margin: 30px 0 8px;
+  color: var(--ink);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.reader h2 { font-size: 20.5px; }
+.reader h3 { font-size: 17.5px; }
+.reader h4 { font-size: 16px; color: var(--body); }
+
+.reader p { margin: 0 0 13px; text-wrap: pretty; }
+.reader strong { color: var(--ink); font-weight: 600; }
+.reader em { font-style: italic; }
+
+.reader a {
+  color: var(--accent-soft);
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  text-underline-offset: 3px;
+}
+.reader a:hover { color: var(--accent); }
+
+.reader ul,
+.reader ol { margin: 0 0 14px; padding-left: 22px; }
+.reader li { margin-bottom: 5px; text-wrap: pretty; }
+.reader li::marker { color: var(--faint); }
+
+.reader hr {
+  margin: 26px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.reader blockquote {
+  margin: 0 0 15px;
+  padding: 11px 0 11px 17px;
+  border-left: 2px solid var(--violet, #7c5cff);
+  color: var(--ink);
+  background: var(--panel-soft);
+  border-radius: 0 6px 6px 0;
+}
+
+/* A caption carries the takeaway, per docs/document_standards.md -- so the label is
+   set apart and the sentence is readable on its own, without the body text. */
+.reader-caption {
+  margin: -4px 0 20px;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.reader-caption-label {
+  margin-right: 7px;
+  color: var(--accent);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.reader-table-wrap {
+  margin: 0 0 8px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+}
+
+.reader-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12.5px;
+}
+
+.reader-table th,
+.reader-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.reader-table th {
+  color: var(--ink);
+  font-weight: 500;
+  background: var(--panel-soft);
+  white-space: nowrap;
+}
+
+.reader-table tr:last-child td { border-bottom: 0; }
+.reader-table td { color: var(--body); }
+
+.reader-code {
+  margin: 0 0 16px;
+  padding: 13px 15px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--body);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.reader-code[data-lang]::before {
+  content: attr(data-lang);
+  display: block;
+  margin-bottom: 9px;
+  color: var(--faint);
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.reader code {
+  padding: 1.5px 5px;
+  border-radius: 4px;
+  background: var(--panel-hover);
+  color: var(--accent-soft);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.86em;
+}
+
+.reader-diagram {
+  margin: 4px 0 10px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  text-align: center;
+}
+
+.reader-diagram svg { max-width: 100%; height: auto; }
+
+.reader-diagram.is-loading {
+  color: var(--faint);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+}
+
+/* A narrow window is the common case: it sits beside the work, not over all of it. */
+@media (max-width: 520px) {
+  .reader { padding: 22px 18px 60px; font-size: 16px; }
+  .reader-title { font-size: 23px; }
+  .reader h2 { font-size: 19px; }
+}

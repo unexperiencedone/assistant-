@@ -6,6 +6,7 @@ import History from "./History.jsx";
 import Inspector from "./Inspector.jsx";
 import NovaEntity from "./NovaEntity.jsx";
 import Profile from "./Profile.jsx";
+import Reader from "./Reader.jsx";
 import { ResizeHandle, useIsNarrow, useWidth } from "./Resizer.jsx";
 import Sidebar from "./Sidebar.jsx";
 import { useAssistant } from "./useAssistant.js";
@@ -88,7 +89,7 @@ function useInkLevel() {
   return [level, () => setLevel((current) => (current === "dim" ? "bright" : "dim"))];
 }
 
-const VIEWS = { "#profile": "profile", "#history": "history", "#awareness": "awareness" };
+const VIEWS = { "#profile": "profile", "#history": "history", "#awareness": "awareness", "#reader": "reader" };
 
 export default function App() {
   const { snapshot, connected, say, dismissDenials } = useAssistant();
@@ -199,6 +200,17 @@ export default function App() {
     : selected
       ? `${entityW}px minmax(0, 1fr) ${inspectorW}px ${sideW}px`
       : `${entityW}px minmax(0, 1fr) ${sideW}px`;
+
+  // The reader is its own always-on-top window, so it renders bare: no rail, no trays,
+  // no status bar. Those belong to the canvas, which is a live activity graph; this is
+  // a page to read, and chrome around it would only take space from the text.
+  if (view === "reader") {
+    return (
+      <div className="app is-reader">
+        <Reader document={snapshot?.document} />
+      </div>
+    );
+  }
 
   return (
     <div className="app">

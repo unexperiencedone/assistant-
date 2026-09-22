@@ -25,7 +25,7 @@ from .config import Settings
 from .controller_capture import CaptureCommands
 from .events import EventBus
 from .intents import LOCAL_INTENTS, Intent, match_intent, normalize, strip_wake_word
-from . import matching, persona
+from . import matching, persona, reader
 from .persona import guard as persona_guard
 from .classify import classify
 from .intents import example_corpus as intent_examples
@@ -435,6 +435,12 @@ class Controller(CaptureCommands):
             self.bus.log(f"persona guard: {tripped} from {backend.label}", "warn")
         spoken = spoken_reply(result.summary, self.profile.reply_sentences if self.profile else MAX_SPOKEN_SENTENCES)
         shown = full_reply(result.summary)
+        # A document goes to the reader whole, and the voice says a summary of it rather
+        # than its first three sentences. Speech was already discarding the rest; the
+        # difference is that now the rest is in front of you instead of behind a window.
+        if self._open_reader(shown):
+            spoken = reader.gist(shown) or spoken
+            spoken = f"{spoken} I've put the whole thing on screen." if spoken else                 "I've put that on screen; it was too long to read out."
         if PLAN_BLOCK.search(result.summary) and not self.plan.is_empty and "go ahead" not in spoken.lower():
             ask = "Say go ahead when you want me to run it."
             spoken, shown = f"{spoken} {ask}".strip(), f"{shown}\n\n{ask}".strip()
@@ -973,6 +979,32 @@ class Controller(CaptureCommands):
         else:
             self.say(f"Okay, I won't {description}.")
         self._ask_next_phone()   # "text Aadidev and Anant" is two questions, not one
+
+    def _open_reader(self, text: str) -> bool:
+        """Put a long answer in the always-on-top window. True when it went there.
+
+        Publishing is all this does: the window itself is opened by the shell, which is
+        the only part of the app allowed to touch a window. When the reader is disabled
+        the answer is still shown in full on the canvas, exactly as before.
+        """
+        settings = getattr(self.settings, "reader", None)
+        if settings is None or not getattr(settings, "enabled", True):
+            return False
+        if not reader.is_document(text, settings.strong_chars, settings.min_chars,
+                                  settings.long_chars, settings.unspeakable_chars):
+            return False
+        self.bus.publish("document", title=reader.title_of(text, self._persona_name()),
+                         markdown=text, auto_open=bool(getattr(settings, "auto_open", True)))
+        return True
+
+    def _intent_show_reader(self, _text: str) -> None:
+        """"Show me that" / "open the reader": re-open the window on the last document."""
+        self.bus.publish("reader", action="show")
+        self.say("On screen.")
+
+    def _intent_hide_reader(self, _text: str) -> None:
+        self.bus.publish("reader", action="hide")
+        self.say("Closed it.")
 
     def _intent_goals_list(self, _text: str) -> None:
         if self.goals is None:

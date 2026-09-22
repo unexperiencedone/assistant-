@@ -44,6 +44,9 @@ class AppState:
             "history": {"revision": 0, "current": None},   # the open work session; the list is fetched
             "ambient": {"revision": 0, "status": "idle"},  # the briefing cache changed; the panel fetches it
             "awareness": {"revision": 0, "watching": False, "enabled": False},
+            # The long answer currently open in the reader window. Only the newest one
+            # is kept: the reader is a place to read this, not a history of them.
+            "document": {"revision": 0, "title": "", "markdown": "", "at": 0},
         }.items():
             self._set(key, value)
         for key in LIST_LIMITS:
@@ -144,6 +147,12 @@ class AppState:
                 persist = True
             elif topic == "graph":
                 self._set("graph", d)
+            elif topic == "document":
+                current = self._values.get("document") or {}
+                self._set("document", {"revision": int(current.get("revision", 0)) + 1,
+                                       "title": d.get("title", ""),
+                                       "markdown": d.get("markdown", ""),
+                                       "at": event.ts})
             elif topic == "backend":
                 self._set("backend", d["name"])
             elif topic == "mic":

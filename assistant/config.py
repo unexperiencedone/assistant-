@@ -287,6 +287,27 @@ class JournalSettings:
 
 
 @dataclass
+class ReaderSettings:
+    """The always-on-top window a long answer is read in.
+
+    Speech throws away everything past the first few sentences, which is right for "the
+    torch is on" and destructive for a piece of research. When an answer is a document,
+    the whole thing goes here and the voice says a short true summary of it instead, so
+    the two channels stop competing. Resizable, because how much of the screen a report
+    deserves is not a thing code can know."""
+    enabled: bool = True
+    auto_open: bool = True     # open by itself when an answer qualifies; false = on request
+    width: int = 560           # opening size only; it is resizable and remembers nothing
+    height: int = 760
+    # A table or a diagram cannot be spoken at all, so it goes on screen at almost any
+    # size; the other thresholds rise as the structure gets weaker.
+    unspeakable_chars: int = 120   # has a table or a mermaid diagram
+    strong_chars: int = 400    # has numbered figure captions
+    min_chars: int = 700       # with headings
+    long_chars: int = 1800     # with no structure at all
+
+
+@dataclass
 class NarratorSettings:
     """Turning several raw results into one thing Nova would actually say.
 
@@ -375,6 +396,7 @@ class Settings:
     recipes: RecipeSettings = field(default_factory=RecipeSettings)
     orchestrate: OrchestrateSettings = field(default_factory=OrchestrateSettings)
     narrator: NarratorSettings = field(default_factory=NarratorSettings)
+    reader: ReaderSettings = field(default_factory=ReaderSettings)
     # Folder containing config.toml; relative paths in the config resolve against it.
     base_dir: Path = field(default_factory=lambda: APP_DIR)
 
