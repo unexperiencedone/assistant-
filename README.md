@@ -879,6 +879,7 @@ checks — use with care. To always allow specific tools, add entries like
 
 | Document | What it covers |
 |:--|:--|
+| [`EVOLUTION.md`](EVOLUTION.md) | How this got here: what was asked, what broke, and what each thing led to |
 | [`docs/overview.md`](docs/overview.md) | The whole system: architecture, abilities, security, and honest limits |
 | [`AGENTS.md`](AGENTS.md) | The rules any coding agent follows in this repo |
 | [`automations/README.md`](automations/README.md) | The TOML automation format |
