@@ -120,6 +120,9 @@ class ClaudeCliAgent(AgentBackend):
 
     # -- one turn -------------------------------------------------------------------------
     def run(self, prompt: str, on_event: Callable[[AgentEvent], None], cancel: threading.Event) -> AgentResult:
+        # A spawned session starts with no conversation, so anything it was told to
+        # carry goes in front of its first request (base.carry).
+        prompt = self._with_carried(prompt)
         started = time.time()
         turn = self.start_turn_log(prompt)
         with self._lock:
