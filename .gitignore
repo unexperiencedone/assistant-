@@ -10,3 +10,8 @@ dist/
 # Not ignored by default and it held a live token once: keep credentials in .env only.
 env
 debug_screenshots/
+
+# Page snapshots and scratch dumps agents leave in the root while working.
+/contact.yml
+/*.snapshot.yml
+/snapshot*.yml
