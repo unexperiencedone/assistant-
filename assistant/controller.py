@@ -1119,6 +1119,12 @@ class Controller(CaptureCommands):
     def _intent_time(self, _text: str) -> None:
         self.say(time.strftime("It's %I:%M %p.").replace(" 0", " "))
 
+    def _intent_date(self, _text: str) -> None:
+        """The date, locally. A clock and a calendar are the two things a model cannot
+        know and this machine always can."""
+        stamp = time.strftime("It's %A the %d of %B.").replace(" 0", " ")
+        self.say(stamp)
+
 
 def full_reply(text: str) -> str:
     """The agent's reply exactly as it wrote it, for the canvas and the history. Nothing is

@@ -56,7 +56,11 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
                      r"|^(?:so\s+)?(?:what|who)\s+(?:exactly\s+)?am\s+i\s+(?:talking|speaking|dealing)\s+(?:to|with)\b"
                      r"|^are\s+you\s+(?:built|based|running|powered)\s+on\b"),
         ("phone_find", r"^(?:find|locate|ping|ring|where.s|where\s+is)\s+(?:my\s+)?phone\b"),
-        ("phone_call_name", r"^(?:call|ring|dial|phone)\s+(?P<name>(?!it\b|its\b|the\b|a\b|an\b|this\b|that\b|them\b|him\b|her\b|his\b|us\b|me\b|my\b|you\b|your\b|back\b|off\b|out\b|in\b|up\b|on\b|for\b|about\b|later\b|now\b|again\b|someone\b|somebody\b|everyone\b)[a-z][a-z.'-]{1,20}(?:\s+[a-z][a-z.'-]{1,20}){0,2})\s*$"),
+        # The excluded words matter more than the rule: "phone battery" was reaching
+        # this one first and capturing "battery" as a person to ring. Every noun that
+        # follows "phone" in one of the rules below has to be listed here, or asking
+        # about the phone dials somebody.
+        ("phone_call_name", r"^(?:call|ring|dial|phone)\s+(?P<name>(?!it\b|its\b|the\b|a\b|an\b|this\b|that\b|them\b|him\b|her\b|his\b|us\b|me\b|my\b|you\b|your\b|back\b|off\b|out\b|in\b|up\b|on\b|for\b|about\b|later\b|now\b|again\b|someone\b|somebody\b|everyone\b|battery\b|torch\b|flashlight\b|status\b|notifications?\b|clipboard\b|location\b|volume\b|settings\b|camera\b)[a-z][a-z.'-]{1,20}(?:\s+[a-z][a-z.'-]{1,20}){0,2})\s*$"),
         # A number, never a bare word: "call it a day" must not reach the dialler. The
         # phone can be named either side of the number ("call through my phone on 555",
         # "dial 555 on my phone") because that is how people actually say it out loud.
@@ -92,12 +96,32 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
         ("status", r"^(?:status|progress|what'?s (?:it|the agent|claude|antigravity) doing|how'?s it going|are you (?:done|finished))\b"),
         ("open_dashboard", r"^(?:open|show)(?: me)?(?: the)? (?:dashboard|visuali[sz]ation|board|canvas|flow ?chart|graph)\b|^visuali[sz]e(?: it| the plan)?\b"),
         ("new_session", r"^(?:new|fresh|reset)(?: agent)? (?:session|conversation|context)\b"),
-        ("time", r"^what(?:'s| is) the time\b|^what time is it\b"),
+        # The quick-action chip in the canvas sends the bare word "time", and the rule
+        # here matched only two full sentences -- so pressing Nova's own button sent the
+        # question to Groq, which has no clock and answered "I'm not able to get the
+        # current time right now". A local answer that costs nothing was being missed by
+        # punctuation: "whats the time" without the apostrophe missed it too.
+        # Careful with the boundaries: "what time does the post office open" is a
+        # lookup, not this, and must still reach a brain.
+        ("time", r"^(?:the\s+)?time(?:\s+(?:now|please))?[.!?]*$"
+                 r"|^what(?:'?s|s| is)\s+the\s+time\b"
+                 r"|^what\s+time\s+is\s+it\b"
+                 r"|^(?:tell|give)\s+me\s+the\s+time\b"
+                 r"|^(?:the\s+)?current\s+time\b"
+                 r"|^do\s+you\s+(?:have|know)\s+the\s+time\b"),
+        # Same class, same reason: a question with a fixed local answer.
+        # Anchored to the end on purpose: "what is the date of the next release" is a
+        # question about a project, not about the calendar, and an unanchored \b here
+        # swallowed it.
+        ("date", r"^(?:the\s+)?date(?:\s+today)?[.!?]*$"
+                 r"|^what(?:'?s|s| is)\s+(?:the\s+|today'?s\s+)?date(?:\s+today)?[.!?]*$"
+                 r"|^what\s+day\s+is\s+it(?:\s+today)?[.!?]*$"
+                 r"|^what'?s?\s+today'?s?\s+date[.!?]*$"),
         # "brief me on recent news" reached the free-model router, which filled the
         # automation's {topic} with "brief me on recent" and said it back out loud.
         # Catching the phrasing here keeps it instant, free and offline instead.
         ("news_briefing", r"^(?:brief\s+me(?:\s+(?:on|about|with))?|what'?s|what is|pull|get|give|read|run|fetch|show|any)?"
-                          r"\s*(?:me)?\s*(?:up)?\s*(?:a|the|my)?\s*(?:recent|latest|today'?s)?\s*"
+                          r"\s*(?:me)?\s*(?:up)?\s*(?:a|the|my|some|any)?\s*(?:recent|latest|today'?s)?\s*"
                           r"(?:news(?:\s+(?:briefing|headlines|update|summary))?|headlines|briefing)"
                           r"(?:\s+(?:briefing|update))?(?:\s+(?:for|on|about)\s+(?P<topic>.+?))?"
                           r"(?:\s+(?:today|now|right now|this morning|please))?[.!?]*$"),

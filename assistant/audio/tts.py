@@ -38,17 +38,22 @@ def _for_speech(text: str) -> str:
     text = re.sub(r"^\s*[-•]\s+", "", text, flags=re.M)        # list bullets read as pauses, not dashes
     text = re.sub(r"\s+[-–—]\s+", ", ", text)                   # dashes become commas
     text = re.sub(r"\.{3,}|…", ",", text)                       # trailing off -> a short pause
-    # Thousands separators go before any comma handling: the rule below puts a space
-    # after every comma, which splits "10,000" into two tokens and gets it read out as
-    # "ten, zero zero zero". Without the comma it is read as ten thousand.
-    text = re.sub(r"(?<=\d),(?=\d{3}(?!\d))", "", text)
+    # Punctuation inside a number is not punctuation. The rules further down put a
+    # space after every comma and colon, which is right between words and wrong inside
+    # a figure: "10,000" became "10, 000" and was read as "ten, zero zero zero", and
+    # "02:53" became "02: 53". Both are handled here, before those rules run.
+    text = re.sub(r"(?<=\d),(?=\d{3}(?!\d))", "", text)      # 10,000 -> 10000
+    text = re.sub(r"\b0(\d:\d\d)", r"\1", text)               # 02:53 -> 2:53
     for symbol, spoken in _SPOKEN_SYMBOLS.items():
         text = text.replace(symbol, spoken)
     # A line break is a sentence boundary; without punctuation the voice runs straight on.
     # Lines that already end in punctuation just get a space.
     text = re.sub(r"(\S)[ \t]*\n+[ \t]*", lambda m: m.group(1) + (" " if m.group(1) in ".,:;!?" else ". "), text)
     text = re.sub(r"\s+([,.!?;:])", r"\1", text)                # no space before punctuation
-    text = re.sub(r"([,!?;:])(?=\S)", r"\1 ", text)              # space after, except inside file.ext
+    text = re.sub(r"([,!?;])(?=\S)", r"\1 ", text)               # space after, except inside file.ext
+    # A colon between digits is a clock, not punctuation. Spacing it turned "2:53" into
+    # "2: 53", which is read with a pause in the middle of the time.
+    text = re.sub(r"(?<!\d):(?=\S)", ": ", text)
     text = re.sub(r"\.(?=[A-Z])", ". ", text)                    # sentence break, not "notes.txt"
     text = re.sub(r"\s+", " ", text).strip(" ,;:")
     if text and text[-1] not in ".!?":
