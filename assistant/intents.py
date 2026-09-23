@@ -96,6 +96,10 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
         # "brief me on recent news" reached the free-model router, which filled the
         # automation's {topic} with "brief me on recent" and said it back out loud.
         # Catching the phrasing here keeps it instant, free and offline instead.
+        # "you haven't told me proper news" names no topic, so the News briefing
+        # automation had nothing to search for; the spoken headlines are what's meant.
+        ("news_briefing", r"\b(?:have\s*n'?t|have not|did\s*n'?t|did not|never)\s+(?:tell|told|give|given|gave)\s+me\s+"
+                          r"(?:the\s+|any\s+|some\s+)?(?:proper|real|actual|good|the)\s+news\b"),
         ("news_briefing", r"^(?:brief\s+me(?:\s+(?:on|about|with))?|what'?s|what is|pull|get|give|read|run|fetch|show|any)?"
                           r"\s*(?:me)?\s*(?:up)?\s*(?:a|the|my)?\s*(?:recent|latest|today'?s)?\s*"
                           r"(?:news(?:\s+(?:briefing|headlines|update|summary))?|headlines|briefing)"

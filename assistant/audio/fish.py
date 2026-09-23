@@ -1,26 +1,31 @@
-"""Fish Audio's S2.1 voice, with the local voice underneath it.
+"""Fish Audio's S2.1 voice, streamed, with the local voice underneath it.
 
-AGENTS.md has said from the beginning: speech is local on purpose, because free cloud
-voices rate-limit mid-reply and leave the assistant silent halfway through a sentence.
-That rule is about the *failure*, not about the cloud, and this is built so the failure
-cannot happen: every sentence that Fish will not deliver is spoken by SAPI instead,
-immediately, mid-reply. The worst case is that Nova's voice changes partway through a
-sentence boundary -- which is strange for a moment and infinitely better than silence.
+AGENTS.md has said from the beginning that speech is local on purpose, because a free
+cloud voice rate-limits mid-reply and leaves the assistant silent halfway through a
+sentence. That rule is about the failure, not about the cloud, so this is built so the
+failure cannot happen: anything Fish will not deliver is spoken by SAPI immediately,
+mid-reply. A voice that changes partway through is odd for a moment; silence is a bug.
 
-Three things make it usable rather than merely better-sounding:
+**Raw PCM, streamed, not a WAV.** This is the important decision and it was learned the
+hard way. Asked for `format: "wav"`, the API returns a streaming header that declares
+its data chunk as 4,294,967,040 bytes -- a four gigabyte clip. Windows `PlaySound` reads
+that number, refuses the file, and plays nothing, while the request itself looks
+completely successful: correct bytes, no error, no sound. Raw PCM has no header at all,
+so there is nothing to be wrong, and the chunks can be written to the sound card as they
+arrive. Sound starts in about a second instead of after the whole clip is synthesised.
 
-**Sentence at a time.** Synthesising a whole three-sentence reply takes about 3.6
-seconds before any sound at all; the first sentence alone takes about 1.1. So the reply
-is split and each sentence is fetched while the previous one is still playing. Measured
-on this machine, not assumed.
+That also removed a workaround and a whole feature. There is no longer any need to
+measure a file's real duration against its lying header, and no need to split a reply
+into sentences to get early sound -- streaming achieves that better, in one request
+instead of several.
 
-**Cached.** "On it.", "Torch is on.", every confirmation Nova repeats a hundred times a
-week is synthesised once and then read off disk. That is instant, and it keeps the free
-tier's allowance for the sentences that are actually new.
+**Cached.** The lines Nova repeats -- every acknowledgement and confirmation -- are kept
+as PCM on disk and replayed from there. Instant, and it leaves the free allowance for
+what is actually new.
 
-**Tagged.** The model accepts delivery tags -- [chuckle], [emphasis], [long pause] --
-inline in the text. They are passed straight through, and stripped before the local
-voice sees them, because SAPI would read the word "chuckle" out loud.
+**Tagged.** Delivery tags pass straight through: [chuckle], [emphasis], [long pause].
+They are stripped before the local voice or the screen sees them, since SAPI would
+read the word "chuckle" out loud.
 """
 
 from __future__ import annotations
@@ -29,25 +34,23 @@ import hashlib
 import json
 import os
 import re
-import time
-import urllib.error
+import struct
 import urllib.request
-import wave
 from pathlib import Path
 
 from ..config import VoiceSettings
 from ..events import EventBus
-from .tts import SapiSpeaker, Speaker, _for_speech
+from .tts import SapiSpeaker, Speaker
 
 API_URL = "https://api.fish.audio/v1/tts"
-# Sentence boundaries, with the tags left attached to the sentence they belong to.
-_SENTENCE = re.compile(r"(?<=[.!?])\s+")
-# Delivery tags the model understands. Anything in brackets is treated as one, since a
-# tag Fish does not know is ignored by it and must still never be read aloud by SAPI.
+# What the API sends for format="pcm": signed 16-bit, one channel, 44.1 kHz. Confirmed
+# by timing a clip of known length against its byte count.
+RATE, CHANNELS, WIDTH = 44100, 1, 2
+CHUNK = 4096
+FRAME = WIDTH * CHANNELS
+# Delivery tags. Anything bracketed counts: a tag Fish does not know is ignored by it,
+# and must still never be read aloud by SAPI.
 TAG = re.compile(r"\[[^\]\n]{1,40}\]")
-# A sentence longer than this is split further: the point of going sentence by sentence
-# is that sound starts quickly, and one long clause defeats that.
-MAX_CHARS = 240
 
 
 def strip_tags(text: str) -> str:
@@ -55,59 +58,18 @@ def strip_tags(text: str) -> str:
     return " ".join(TAG.sub(" ", text or "").split())
 
 
-# Nothing Nova says in one sentence lasts longer than this. A cap is the difference
-# between a wrong duration costing a moment and costing the rest of the session.
-MAX_SECONDS = 90.0
-
-
-def duration_of(path: Path) -> float:
-    """How long this WAV actually plays for, measured from its bytes.
-
-    The frame count in the header is not trustworthy. Fish returns a streaming WAV whose
-    declared length is nonsense -- a 2.7 second clip announces itself as 48,695 seconds
-    -- and playback here waits for the stated duration before returning. Believing the
-    header meant the speaker thread blocking for thirteen hours after the first
-    sentence, with every later reply queued silently behind it.
-
-    So the duration comes from the size of the file and the format fields, which are
-    reliable, and is capped regardless.
-    """
-    try:
-        with wave.open(str(path)) as handle:
-            rate = handle.getframerate() or 22050
-            width = handle.getsampwidth() or 2
-            channels = handle.getnchannels() or 1
-    except Exception:
-        return 8.0
-    try:
-        audio_bytes = max(0, path.stat().st_size - 44)   # past a standard RIFF header
-    except OSError:
-        return 8.0
-    seconds = audio_bytes / float(rate * width * channels)
-    return min(max(seconds, 0.2), MAX_SECONDS)
-
-
-def sentences(text: str) -> list[str]:
-    """The reply in speakable pieces, each fetched while the last one plays."""
-    parts: list[str] = []
-    for chunk in _SENTENCE.split(text or ""):
-        chunk = chunk.strip()
-        while len(chunk) > MAX_CHARS:
-            # Break at the last comma inside the budget, else just at the budget.
-            cut = chunk.rfind(",", 0, MAX_CHARS)
-            cut = cut + 1 if cut > MAX_CHARS // 2 else MAX_CHARS
-            parts.append(chunk[:cut].strip())
-            chunk = chunk[cut:].strip()
-        if chunk:
-            parts.append(chunk)
-    return parts
+def wav_header(data_bytes: int) -> bytes:
+    """A correct RIFF header, for when a PCM clip has to become a real file."""
+    return (b"RIFF" + struct.pack("<I", 36 + data_bytes) + b"WAVEfmt "
+            + struct.pack("<IHHIIHH", 16, 1, CHANNELS, RATE,
+                          RATE * CHANNELS * WIDTH, FRAME, WIDTH * 8)
+            + b"data" + struct.pack("<I", data_bytes))
 
 
 class FishSpeaker(Speaker):
-    """Fish Audio for the words, SAPI for anything Fish cannot deliver in time."""
+    """Streams Fish Audio to the sound card; falls back to SAPI the moment it cannot."""
 
     def __init__(self, settings: VoiceSettings, bus: EventBus) -> None:
-        self._fallback: SapiSpeaker | None = None
         self._cache_dir: Path | None = None
         self._warned = False
         super().__init__(settings, bus)
@@ -119,8 +81,8 @@ class FishSpeaker(Speaker):
 
         comtypes.CoInitialize()
         self._pump = comtypes.client.PumpEvents
-        # The local voice is opened on this same thread, because it is the one that will
-        # have to finish a reply Fish drops halfway through.
+        # The local voice is opened on this same thread, because it is the one that has
+        # to finish a reply Fish drops halfway through.
         self._voice = comtypes.client.CreateObject("SAPI.SpVoice")
         wanted = (self.settings.voice_contains or "").lower()
         if wanted:
@@ -146,88 +108,108 @@ class FishSpeaker(Speaker):
 
     # -- speaking ----------------------------------------------------------------------
     def _speak(self, text: str) -> None:
-        """Say the line, sentence by sentence, falling back the moment Fish will not."""
         if not self.api_key:
+            self._spoke("local", "no key")
             self._say_locally(text)
             return
-        for piece in sentences(text):
-            if self._interrupt.is_set():
-                return
-            audio = self._audio_for(piece)
-            if audio is None:
-                # Not a reason to go quiet: say this sentence with the local voice and
-                # carry on trying Fish for the next one.
-                self._say_locally(piece)
-                continue
-            self._play(audio)
-
-    def _audio_for(self, piece: str) -> Path | None:
-        """The WAV for one sentence, from the cache or from the API. None means neither."""
-        cached = self._cached_path(piece)
+        cached = self._cache_path(text)
         if cached is not None and cached.exists():
-            return cached
-        body = json.dumps({"text": piece, "format": "wav",
-                           **({"reference_id": self.settings.fish_voice}
-                              if getattr(self.settings, "fish_voice", "") else {})}).encode("utf-8")
-        request = urllib.request.Request(API_URL, data=body, headers={
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "model": getattr(self.settings, "fish_model", "s2.1-pro-free") or "s2.1-pro-free",
-        })
-        try:
-            with urllib.request.urlopen(request, timeout=float(getattr(self.settings, "fish_timeout", 20) or 20)) as response:
-                audio = response.read()
-        except Exception as error:
-            self._warn(error)
-            return None
-        if not audio.startswith(b"RIFF"):
-            self._warn("the reply was not a WAV")
-            return None
-        target = cached or self._temp_path(piece)
-        try:
-            target.write_bytes(audio)
-        except OSError:
-            return None
-        return target
-
-    def _cached_path(self, piece: str) -> Path | None:
-        if self._cache_dir is None:
-            return None
-        key = f"{getattr(self.settings, 'fish_voice', '')}|{piece}".encode("utf-8")
-        return self._cache_dir / f"{hashlib.blake2b(key, digest_size=12).hexdigest()}.wav"
-
-    def _temp_path(self, piece: str) -> Path:
-        import tempfile
-
-        name = hashlib.blake2b(piece.encode("utf-8"), digest_size=8).hexdigest()
-        return Path(tempfile.gettempdir()) / f"nova-tts-{name}.wav"
-
-    def _play(self, path: Path) -> None:
-        """Play a WAV, stopping the moment an interruption is asked for.
-
-        Asynchronous playback plus a poll, rather than a blocking call: "stop" has to cut
-        Nova off mid-word, and a synchronous play cannot be interrupted at all.
-        """
-        import winsound
-
-        seconds = duration_of(path)
-        try:
-            winsound.PlaySound(str(path), winsound.SND_FILENAME | winsound.SND_ASYNC)
-        except Exception as error:
-            self._warn(error)
+            try:
+                if self._play(iter([cached.read_bytes()])):
+                    self._spoke("fish", "cached")
+                    return
+            except OSError:
+                pass
+        if self._stream(text, cached):
+            self._spoke("fish", "streamed")
             return
-        deadline = time.time() + seconds + 0.25
-        while time.time() < deadline:
-            if self._interrupt.is_set():
-                try:
-                    winsound.PlaySound(None, winsound.SND_PURGE)
-                except Exception:
-                    pass
-                return
-            time.sleep(0.05)
+        # Not a reason to go quiet: say it with the local voice instead.
+        self._spoke("local", "fish did not deliver")
+        self._say_locally(text)
+
+    def _spoke(self, engine: str, how: str) -> None:
+        """Say which voice actually answered, every time.
+
+        Every time, not once: the reason was logged once per run and every later
+        fallback was invisible, so "is this Fish or is this SAPI" became unanswerable
+        from the outside -- which is exactly the question that matters when the voice
+        sounds wrong. A silent degradation is the worst kind.
+        """
+        self.bus.publish("voice", engine=engine, how=how)
+
+    def _stream(self, text: str, cache_to: Path | None) -> bool:
+        """Fetch and play at the same time. True if anything was heard."""
+        payload = {"text": text, "format": "pcm"}
+        if getattr(self.settings, "fish_voice", ""):
+            payload["reference_id"] = self.settings.fish_voice
+        request = urllib.request.Request(
+            API_URL, data=json.dumps(payload).encode("utf-8"),
+            headers={"Authorization": f"Bearer {self.api_key}",
+                     "Content-Type": "application/json",
+                     "model": getattr(self.settings, "fish_model", "s2.1-pro-free") or "s2.1-pro-free"})
+        collected = bytearray() if cache_to is not None else None
+        timeout = float(getattr(self.settings, "fish_timeout", 20) or 20)
+        try:
+            response = urllib.request.urlopen(request, timeout=timeout)
+        except Exception as error:
+            self._warn(error)
+            return False
+
+        def chunks():
+            with response:
+                while True:
+                    block = response.read(CHUNK)
+                    if not block:
+                        return
+                    if collected is not None:
+                        # extend, not +=: an augmented assignment inside this generator
+                        # would make `collected` local to it and shadow the buffer.
+                        collected.extend(block)
+                    yield block
+
+        try:
+            played = self._play(chunks())
+        except Exception as error:
+            self._warn(error)
+            return False
+        # Only cache a clip that arrived whole: half a sentence replayed forever is
+        # worse than fetching it again.
+        if played and collected and cache_to is not None and not self._interrupt.is_set():
+            try:
+                cache_to.write_bytes(bytes(collected))
+            except OSError:
+                pass
+        return played
+
+    def _play(self, blocks) -> bool:
+        """Write PCM to the sound card as it arrives. False if there is no output."""
+        stream, write, owner = _open_output()
+        if write is None:
+            self._warn("no sound output device")
+            return False
+        leftover = b""
+        heard = False
+        try:
+            for block in blocks:
+                if self._interrupt.is_set():
+                    break
+                # A frame is two bytes and an HTTP chunk need not end on one, so an odd
+                # trailing byte waits for the next block rather than being played as
+                # half a sample.
+                data = leftover + block
+                usable = len(data) - (len(data) % FRAME)
+                leftover = data[usable:]
+                if usable:
+                    write(data[:usable])
+                    heard = True
+            if leftover and not self._interrupt.is_set():
+                write(leftover + b"\x00" * (FRAME - len(leftover)))
+        finally:
+            _close_output(stream, owner)
+        return heard
 
     def _say_locally(self, text: str) -> None:
-        """SAPI, with the delivery tags removed so they are not read out as words."""
+        """SAPI, with the tags removed so they are not read out as words."""
         spoken = strip_tags(text)
         if not spoken:
             return
@@ -238,21 +220,64 @@ class FishSpeaker(Speaker):
                 return
             self._pump(0.05)
 
+    # -- the cache ---------------------------------------------------------------------
+    def _cache_path(self, text: str) -> Path | None:
+        if self._cache_dir is None:
+            return None
+        key = f"{getattr(self.settings, 'fish_voice', '')}|{text}".encode("utf-8")
+        return self._cache_dir / f"{hashlib.blake2b(key, digest_size=12).hexdigest()}.pcm"
+
     def _warn(self, reason: object) -> None:
-        """Say it once per run. A voice that complains every sentence is worse than one
-        that quietly sounds different."""
+        """Once per run. A voice that complains every sentence is worse than one that
+        quietly sounds different."""
         if self._warned:
             return
         self._warned = True
         self.bus.log(f"Fish Audio unavailable, using the local voice: {reason}", "warn")
 
 
-def cache_line(settings: VoiceSettings, text: str) -> bool:
-    """Synthesise one line into the cache without speaking it.
+def _open_output():
+    """A sound card to write PCM into: (stream, write, owner). write is None if none."""
+    try:
+        import sounddevice
 
-    For the lines Nova repeats constantly -- acknowledgements, confirmations -- so the
-    first time a user hears them is already instant. `python main.py voices --warm` uses
-    this.
+        stream = sounddevice.RawOutputStream(samplerate=RATE, channels=CHANNELS, dtype="int16")
+        stream.start()
+        return stream, stream.write, stream
+    except Exception:
+        pass
+    try:
+        import pyaudio
+
+        audio = pyaudio.PyAudio()
+        stream = audio.open(format=pyaudio.paInt16, channels=CHANNELS, rate=RATE, output=True)
+        return stream, stream.write, audio
+    except Exception:
+        return None, None, None
+
+
+def _close_output(stream, owner) -> None:
+    if stream is None:
+        return
+    try:
+        stream.stop()
+        stream.close()
+        return
+    except Exception:
+        pass
+    try:
+        stream.stop_stream()
+        stream.close()
+        owner.terminate()
+    except Exception:
+        pass
+
+
+def warm_cache(settings: VoiceSettings, lines: list[str]) -> int:
+    """Fetch these lines into the cache without playing them. Returns how many landed.
+
+    For the sentences Nova repeats constantly, so the first time a user hears one it is
+    already instant.
     """
     speaker = FishSpeaker.__new__(FishSpeaker)
     speaker.settings = settings
@@ -262,4 +287,14 @@ def cache_line(settings: VoiceSettings, text: str) -> bool:
     speaker._cache_dir = Path(os.path.expandvars(folder)).expanduser() if folder else None
     if speaker._cache_dir is not None:
         speaker._cache_dir.mkdir(parents=True, exist_ok=True)
-    return all(speaker._audio_for(piece) is not None for piece in sentences(_for_speech(text)))
+    import threading
+
+    speaker._interrupt = threading.Event()
+    done = 0
+    for line in lines:
+        target = speaker._cache_path(line)
+        if target is None:
+            continue
+        if target.exists() or speaker._stream(line, target):
+            done += 1
+    return done

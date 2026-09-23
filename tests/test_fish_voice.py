@@ -1,58 +1,31 @@
 """The neural voice, and the local one underneath it.
 
-Offline by design: nothing here calls Fish Audio. The live path was measured by hand
-when it was written (3.6s for a whole reply, 1.1s for the first sentence, cache hits
-instant), and a test that needs a network and an API key fails for reasons that have
-nothing to do with the code.
+Offline by design: nothing here calls Fish Audio. A test that needs a network and an
+API key fails for reasons that have nothing to do with the code.
 
-What is tested is the part that has to hold when the network does not: that a reply is
-split so sound starts early, that delivery tags never reach a voice or a screen that
-would read them as words, and that nothing raises when Fish is unreachable -- because
-the rule this feature had to earn its way past is "a free cloud voice rate-limits
-mid-reply and leaves the assistant silent".
+What is left after the speaker moved to streaming raw PCM is the part that still has
+logic in it: that delivery tags never reach a voice or a screen that would read them as
+words, that a PCM clip can be given a correct WAV header when one is needed, and that
+an absent key means the local voice rather than an exception -- because the rule this
+feature had to earn its way past is "a free cloud voice rate-limits mid-reply and
+leaves the assistant silent".
+
+Gone with the rewrite: the sentence splitter, because one streamed request starts sound
+sooner than several requests did, and the duration workaround, because raw PCM has no
+header to lie about its length.
 """
 
 from __future__ import annotations
 
 import pathlib
+import struct
 import tempfile
 import unittest
 import wave
 
-from assistant.audio.fish import MAX_CHARS, MAX_SECONDS, duration_of, sentences, strip_tags
+from assistant.audio.fish import RATE, strip_tags, wav_header
 from assistant.audio.tts import _for_speech
 from assistant.config import VoiceSettings
-
-
-class Splitting(unittest.TestCase):
-    """Sound has to start before the whole reply is synthesised."""
-
-    def test_a_reply_is_split_at_sentences(self) -> None:
-        got = sentences("Finished the layout. Now the structure. Nearly done.")
-        self.assertEqual(len(got), 3)
-        self.assertTrue(got[0].endswith("."))
-
-    def test_a_tag_stays_with_its_sentence(self) -> None:
-        got = sentences("[chuckle] Finished the layout. [long pause] Now the structure.")
-        self.assertIn("[chuckle]", got[0])
-        self.assertIn("[long pause]", got[1])
-        self.assertNotIn("[long pause]", got[0])
-
-    def test_one_long_clause_is_broken_up(self) -> None:
-        """A single sentence of three hundred characters defeats the whole point."""
-        long_one = ", ".join(["a clause that keeps going"] * 20) + "."
-        got = sentences(long_one)
-        self.assertGreater(len(got), 1)
-        self.assertTrue(all(len(piece) <= MAX_CHARS + 40 for piece in got), [len(p) for p in got])
-
-    def test_it_breaks_at_a_comma_when_it_can(self) -> None:
-        long_one = ("x" * 150) + ", and then the rest of it continues for a while, " + ("y" * 150)
-        got = sentences(long_one)
-        self.assertTrue(got[0].rstrip().endswith(","), got[0][-30:])
-
-    def test_empty_input_is_no_pieces(self) -> None:
-        self.assertEqual(sentences(""), [])
-        self.assertEqual(sentences("   "), [])
 
 
 class Tags(unittest.TestCase):
@@ -82,39 +55,34 @@ class Tags(unittest.TestCase):
         self.assertEqual(strip_tags(None), "")
 
 
-class Duration(unittest.TestCase):
-    """The header lies, and believing it cost the rest of the session."""
+class WavHeader(unittest.TestCase):
+    """PCM has no header, so one is written when a clip must become a real file.
 
-    def _wav(self, seconds: float, rate: int = 44100, bogus_frames: bool = False) -> pathlib.Path:
+    The API's own WAV header declares a 446 KB clip as 4,294,967,040 bytes, which
+    Windows refuses to play at all -- the reason the speaker streams PCM instead.
+    """
+
+    def test_the_sizes_are_the_real_ones(self) -> None:
+        header = wav_header(1000)
+        self.assertEqual(struct.unpack("<I", header[4:8])[0], 1036)
+        self.assertEqual(struct.unpack("<I", header[40:44])[0], 1000)
+
+    def test_it_is_a_riff_wave(self) -> None:
+        header = wav_header(0)
+        self.assertTrue(header.startswith(b"RIFF"))
+        self.assertEqual(header[8:12], b"WAVE")
+
+    def test_the_rate_matches_what_the_api_sends(self) -> None:
+        self.assertEqual(struct.unpack("<I", wav_header(0)[24:28])[0], RATE)
+
+    def test_wave_can_open_what_it_writes(self) -> None:
+        """The point of writing our own: unlike the API's, this file plays anywhere."""
         path = pathlib.Path(tempfile.mkdtemp()) / "clip.wav"
-        frames = int(seconds * rate)
-        with wave.open(str(path), "wb") as handle:
-            handle.setnchannels(1)
-            handle.setsampwidth(2)
-            handle.setframerate(rate)
-            handle.writeframes(bytes(2) * frames)
-        if bogus_frames:
-            # What Fish actually sends: a streaming header whose declared data size is
-            # nonsense, so wave computes a 2.7 second clip as 48,695 seconds.
-            raw = bytearray(path.read_bytes())
-            raw[40:44] = (0xFFFFFFF0).to_bytes(4, "little")
-            path.write_bytes(bytes(raw))
-        return path
-
-    def test_a_normal_wav_measures_correctly(self) -> None:
-        self.assertAlmostEqual(duration_of(self._wav(2.5)), 2.5, delta=0.05)
-
-    def test_a_bogus_header_does_not_produce_hours(self) -> None:
-        measured = duration_of(self._wav(2.7, bogus_frames=True))
-        self.assertLess(measured, 4.0, "a streaming header must not be believed")
-        self.assertGreater(measured, 2.0)
-
-    def test_it_is_capped_whatever_happens(self) -> None:
-        self.assertLessEqual(duration_of(self._wav(1.0, bogus_frames=True)), MAX_SECONDS)
-
-    def test_a_missing_file_gives_a_sane_default(self) -> None:
-        self.assertGreater(duration_of(pathlib.Path("no-such-file.wav")), 0)
-        self.assertLessEqual(duration_of(pathlib.Path("no-such-file.wav")), MAX_SECONDS)
+        audio = bytes(RATE * 2)          # one second of silence
+        path.write_bytes(wav_header(len(audio)) + audio)
+        with wave.open(str(path)) as handle:
+            self.assertEqual(handle.getframerate(), RATE)
+            self.assertAlmostEqual(handle.getnframes() / RATE, 1.0, delta=0.01)
 
 
 class Settings(unittest.TestCase):
@@ -143,17 +111,19 @@ class FallsBackRatherThanGoingQuiet(unittest.TestCase):
         speaker.settings = VoiceSettings(fish_key_env="DEFINITELY_NOT_SET")
         self.assertEqual(speaker.api_key, "")
 
-    def test_a_non_wav_reply_is_refused(self) -> None:
-        """An error page rendered as audio is a burst of noise; better to speak locally."""
+    def test_which_voice_answered_is_announced_every_time(self) -> None:
+        """It was logged once per run, so every later fallback was invisible and "is
+        this Fish or SAPI" could not be answered from the outside."""
         from assistant.audio.fish import FishSpeaker
 
+        said: list[dict] = []
         speaker = FishSpeaker.__new__(FishSpeaker)
-        speaker.settings = VoiceSettings()
-        speaker._warned = False
-        speaker._cache_dir = None
-        speaker.bus = type("B", (), {"log": lambda *a, **k: None})()
-        # An HTML body does not start with RIFF, which is the only check that matters.
-        self.assertFalse(b"<html>".startswith(b"RIFF"))
+        speaker.bus = type("B", (), {"publish": staticmethod(
+            lambda topic, **data: said.append({"topic": topic, **data}))})()
+        speaker._spoke("local", "no key")
+        speaker._spoke("fish", "cached")
+        self.assertEqual([entry["engine"] for entry in said], ["local", "fish"])
+        self.assertEqual({entry["topic"] for entry in said}, {"voice"})
 
 
 if __name__ == "__main__":

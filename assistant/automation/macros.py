@@ -24,6 +24,7 @@ import threading
 import time
 import tomllib
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -136,6 +137,11 @@ class MacroRunner:
         self.phone = phone  # assistant.phone.PhoneBridge, for do = "phone" steps
         self._busy = threading.Lock()
         self._browser = None  # kept between runs: connecting costs a driver process launch
+        # Every run happens on this one thread. Playwright's sync API is bound to the thread
+        # that started it, so a kept browser used from a fresh thread per run fails with
+        # "cannot switch to a different thread (which happens to have exited)".
+        self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="automation")
+        self._worker_ident: int | None = None
 
     @property
     def running(self) -> bool:
@@ -144,10 +150,16 @@ class MacroRunner:
     def start(self, macro: Macro, params: dict[str, str], utterance: str = "") -> bool:
         if not self._busy.acquire(blocking=False):
             return False
-        threading.Thread(target=self._thread_main, args=(macro, params, utterance), name="automation", daemon=True).start()
+        self._worker.submit(self._thread_main, macro, params, utterance)
         return True
 
+    def _on_worker(self, fn: Callable[..., Any], *args: Any) -> Any:
+        if threading.get_ident() == self._worker_ident:
+            return fn(*args)
+        return self._worker.submit(fn, *args).result()
+
     def _thread_main(self, macro: Macro, params: dict[str, str], utterance: str) -> None:
+        self._worker_ident = threading.get_ident()
         try:
             import comtypes
 
@@ -155,11 +167,15 @@ class MacroRunner:
         except Exception:
             pass
         try:
-            self.run(macro, params, utterance)
+            self._run(macro, params, utterance)
         finally:
             self._busy.release()
 
     def run(self, macro: Macro, params: dict[str, str], utterance: str = "") -> tuple[bool, str]:
+        return self._on_worker(self._run, macro, params, utterance)
+
+    def _run(self, macro: Macro, params: dict[str, str], utterance: str = "") -> tuple[bool, str]:
+        self._worker_ident = threading.get_ident()
         values: dict[str, str] = {}
         for key, value in params.items():
             values[key] = value
@@ -199,9 +215,13 @@ class MacroRunner:
                 self._browser.release()  # keep the connection for the next automation
 
     def close(self) -> None:
-        if self._browser is not None:
-            self._browser.detach()
-            self._browser = None
+        def detach() -> None:
+            if self._browser is not None:
+                self._browser.detach()
+                self._browser = None
+
+        self._on_worker(detach)
+        self._worker.shutdown(wait=False)
 
     def _execute(self, step: dict[str, Any], values: dict[str, str], browser) -> str:
         from . import desktop
