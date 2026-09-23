@@ -140,6 +140,11 @@ class Controller(CaptureCommands):
         self._macro_fixes: dict[str, dict] = {}
         self._last_command = ""
         self._last_task_type = ""
+        # The last few exchanges, so a task that starts its own session can be told
+        # what was just said rather than beginning with nothing.
+        from collections import deque
+
+        self._recent: deque = deque(maxlen=12)
 
     # -- entry points ---------------------------------------------------------
     def say(self, text: str, spoken: str | None = None) -> None:
@@ -152,6 +157,7 @@ class Controller(CaptureCommands):
         be wrong for the same reason.
         """
         heard = text if spoken is None else spoken
+        self._recent.append(("Nova", fish_tts.strip_tags(text)[:300]))
         # Delivery tags ([chuckle], [long pause]) are instructions to the voice, not
         # words: they go to the speaker and never to the screen.
         self.bus.publish("transcript", role="assistant", text=fish_tts.strip_tags(text),
@@ -187,6 +193,7 @@ class Controller(CaptureCommands):
                 self.say("Yes?")  # ends in "?", so the next phrase needs no wake word
                 return
         self.bus.publish("transcript", role="user", text=text)
+        self._recent.append(("You", text[:300]))
 
         # A yes/no answer to "want me to save that as an instant command?" — but only if
         # it really is one. "play karan aujla" is a request, not a "no".
@@ -602,6 +609,14 @@ class Controller(CaptureCommands):
         # conversations never mix.
         parallel = bool(self.runner.active)
         session = self.registry.spawn_current() if parallel else backend
+        if parallel:
+            # A spawned session has no conversation of its own, and while a long job
+            # runs every request is a spawned session -- which is how "fill in the form
+            # on it" came to be answered with "could you tell me the URL". A chat
+            # backend copies its real messages in spawn(); a CLI one cannot share a
+            # session id, so it is told in words what was just said.
+            session.carry(self._recent_exchange())
+
         task_label = label or short(text, 60)
         task_id = self.runner.start(session, prompt, task_label, executing_plan, weight)
         self.task_labels[task_id or ""] = task_label
@@ -1014,6 +1029,11 @@ class Controller(CaptureCommands):
         self.say("Closed it.")
 
     # -- reviewing what Nova wrote for itself (automation/staging.py) ------------------
+    def _recent_exchange(self, turns: int = 4) -> str:
+        """The last few things said, for a session that is about to start from nothing."""
+        lines = [f"{who}: {what}" for who, what in list(self._recent)[-turns * 2:]]
+        return "\n".join(lines)
+
     def _staging_folder(self):
         """Where proposals wait, or None when automations are off."""
         if self.automations is None:

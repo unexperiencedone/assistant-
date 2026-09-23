@@ -150,6 +150,10 @@ class ChatAgent(AgentBackend):
                         and not message.get("tool_calls")][-self.CARRIED_TURNS:]
         return twin
 
+    def carry(self, recent: str) -> None:
+        """Nothing to do: `spawn` copies the real messages, which is better than a
+        summary pasted into the prompt."""
+
     def build_command(self, exe: str, task: str) -> list[str]:  # not a subprocess backend
         return []
 

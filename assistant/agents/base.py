@@ -79,6 +79,29 @@ class AgentBackend(ABC):
         """
         return self
 
+    def carry(self, recent: str) -> None:
+        """Tell a fresh session what was just said, before its first request.
+
+        A session id cannot be shared -- two processes writing one conversation would
+        corrupt it -- so a spawned CLI agent starts with nothing, and while a long job
+        runs *every* new request is a spawned agent. That produced a session where
+        "open this site" worked and "fill in the form on it" was answered with "could
+        you tell me the URL": each turn was a mind that had never seen the one before.
+
+        A chat backend copies its plain turns in `spawn` instead, so it overrides this
+        with nothing.
+        """
+        self._carried = " ".join((recent or "").split())[:1200]
+
+    def _with_carried(self, prompt: str) -> str:
+        """The prompt with the carried conversation in front of it, once."""
+        carried = getattr(self, "_carried", "")
+        if not carried:
+            return prompt
+        self._carried = ""
+        return ("For context, this is what was just said in the conversation you are "
+                f"joining:\n{carried}\n\nNow, the request:\n{prompt}")
+
     def close(self) -> None:
         """Optional: stop any long-lived process."""
 
@@ -96,6 +119,9 @@ class AgentBackend(ABC):
         if not exe:
             return AgentResult(False, f"I can't find the {self.label} command '{self.executable}'.")
 
+        # A spawned session starts with no conversation, so anything it was told to
+        # carry goes in front of its first request (`carry` above).
+        task = self._with_carried(task)
         started = time.time()
         turn = self.start_turn_log(task)
         process = NdjsonProcess(self.build_command(exe, task), self.workspace)

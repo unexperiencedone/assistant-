@@ -123,5 +123,64 @@ class ProgressIsAnsweredNotQueued(unittest.TestCase):
             self.assertNotEqual(getattr(found, "name", None), "status", said)
 
 
+class EveryBrainNotJustGroq(unittest.TestCase):
+    """The amnesia fix started as a chat-backend change, which left the CLI agents with
+    the same bug: Claude and Antigravity spawn a twin with its own session id and no
+    conversation, and a session id cannot be shared -- two processes writing one
+    conversation would corrupt it. So a CLI twin is told in words instead."""
+
+    @staticmethod
+    def _cli_backend():
+        from assistant.agents.base import AgentBackend
+
+        class Fake(AgentBackend):
+            name, label = "fake", "Fake"
+
+            def __init__(self) -> None:
+                super().__init__("x", None, False)
+
+            def resolve_executable(self):
+                return None
+
+            def build_command(self, exe, task):
+                return []
+
+            def parse(self, obj):
+                return ()
+
+        return Fake()
+
+    def test_a_cli_backend_can_be_told_what_was_said(self) -> None:
+        backend = self._cli_backend()
+        backend.carry("You: open kaiketsutech.online\nNova: The site is open in Chrome.")
+        prompt = backend._with_carried("fill in the form")
+        self.assertIn("kaiketsutech.online", prompt)
+        self.assertIn("fill in the form", prompt)
+
+    def test_it_is_carried_once_and_then_cleared(self) -> None:
+        """The second request in that session has the conversation of its own by then."""
+        backend = self._cli_backend()
+        backend.carry("You: something")
+        backend._with_carried("first")
+        self.assertEqual(backend._with_carried("second"), "second")
+
+    def test_nothing_carried_leaves_the_prompt_alone(self) -> None:
+        self.assertEqual(self._cli_backend()._with_carried("just this"), "just this")
+
+    def test_a_chat_backend_ignores_it_deliberately(self) -> None:
+        """It copies the real messages in spawn, which beats a summary in the prompt."""
+        backend = agent()
+        backend.carry("You: something")
+        self.assertEqual(backend._with_carried("the request"), "the request")
+
+    def test_every_backend_has_the_method(self) -> None:
+        from assistant.agents.registry import AgentRegistry
+        from assistant.config import load_settings
+
+        for name, backend in AgentRegistry(load_settings()).backends.items():
+            self.assertTrue(hasattr(backend, "carry"), name)
+            self.assertTrue(hasattr(backend, "_with_carried"), name)
+
+
 if __name__ == "__main__":
     unittest.main()
