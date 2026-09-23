@@ -41,6 +41,7 @@ class ToolContext:
     skill_limit: int = 6000
     capture_settings: Any = None      # assistant.config.CaptureSettings (fps, monitor, audio)
     orchestrator: Any = None          # assistant.orchestrate.Orchestrator
+    plan: Any = None                  # assistant.planning.Plan -- this conversation's plan
 
 
 def _text(value: Any) -> str:
@@ -123,10 +124,37 @@ def read_control(ctx: ToolContext, window: str, name: str = "", auto_id: str = "
 
 
 def list_automations(ctx: ToolContext) -> str:
+    """Saved voice shortcuts. NOT the plan -- see read_plan for that."""
     if not ctx.automations:
         return "Automations are disabled."
     macros = ctx.automations.macros
-    return "\n".join(f"{m.name}: say '{m.phrases[0] if m.phrases else m.name}'" for m in macros) or "No automations yet."
+    listed = "\n".join(f"{m.name}: say '{m.phrases[0] if m.phrases else m.name}'" for m in macros)
+    return listed or "No automations yet."
+
+
+def read_plan(ctx: ToolContext) -> str:
+    """The plan drafted in this conversation. Nothing to do with saved automations.
+
+    These were being confused, and the confusion produced a confidently wrong answer:
+    asked to clear the plans, Nova reported that it could list but not delete the saved
+    automations -- which was true, and about the wrong thing entirely.
+    """
+    if ctx.plan is None:
+        return "Plans aren't available."
+    if ctx.plan.is_empty:
+        return "There is no plan right now. (Saved automations are a different thing: use list_automations.)"
+    return ctx.plan.to_speech()
+
+
+def clear_plan(ctx: ToolContext) -> str:
+    """Throw away the plan drafted in this conversation. Never touches automations."""
+    if ctx.plan is None:
+        return "Plans aren't available."
+    if ctx.plan.is_empty:
+        return "There was no plan to clear."
+    steps = len(ctx.plan.steps)
+    ctx.plan.clear()
+    return f"Cleared the plan ({steps} steps). Saved automations are untouched."
 
 
 def run_automation(ctx: ToolContext, phrase: str) -> str:
@@ -182,6 +210,10 @@ def nova_status(ctx: ToolContext) -> str:
             waiting = ""
         if waiting:
             lines.append(waiting)
+    if ctx.plan is not None and not ctx.plan.is_empty:
+        done = sum(1 for step in ctx.plan.steps if step.status == "done")
+        lines.append(f"There is a plan open: {ctx.plan.title or 'untitled'}, "
+                     f"{done} of {len(ctx.plan.steps)} steps done.")
     if ctx.orchestrator is not None:
         group_state = ctx.orchestrator.spoken()
         if group_state:
@@ -353,7 +385,16 @@ TOOLS: dict[str, tuple[Callable[..., str], dict]] = {
         "read_control", "Read the text of a control in an app window (e.g. a result field).",
         {"window": STRING, "name": STRING, "auto_id": STRING}, ["window"])),
     "list_automations": (list_automations, _schema(
-        "list_automations", "List the user's saved automations and the phrases that trigger them.", {}, [])),
+        "list_automations", "List the user's SAVED AUTOMATIONS: permanent voice shortcuts stored as files. "
+        "These are NOT the plan. If the user asks about plans, steps, or clearing/reading a plan, "
+        "use read_plan or clear_plan instead -- never this.", {}, [])),
+    "read_plan": (read_plan, _schema(
+        "read_plan", "Read back THE PLAN drafted in this conversation: its title and steps. "
+        "A plan is temporary and belongs to this conversation; a saved automation is a different thing.",
+        {}, [])),
+    "clear_plan": (clear_plan, _schema(
+        "clear_plan", "Throw away the plan drafted in this conversation, when the user asks to clear, "
+        "drop, scrap or reset the plan. This does not delete any saved automation.", {}, [])),
     "run_automation": (run_automation, _schema(
         "run_automation", "Run a saved automation by one of its trigger phrases.", {"phrase": STRING}, ["phrase"])),
     "write_word": (write_word, _schema(
@@ -423,6 +464,8 @@ def schemas(ctx: ToolContext) -> list[dict]:
             continue
         if name in ("start_task", "run_steps") and ctx.orchestrator is None:
             continue
+        if name.endswith("_plan") and ctx.plan is None:
+            continue
         if name.endswith("_recording") and ctx.capture is None:
             continue
         if name == "draft_post" and ctx.publisher is None:
@@ -447,7 +490,7 @@ def schemas(ctx: ToolContext) -> list[dict]:
 # be careful, but a prompt is a convention, not a boundary.
 CHANGES_THINGS = {"open_item", "click_control", "type_in_app", "press_keys", "run_automation", "write_word",
                   "start_recording", "stop_recording", "draft_post", "add_goal",
-                  "start_task", "run_steps"}
+                  "start_task", "run_steps", "clear_plan"}
 
 
 def call(ctx: ToolContext, name: str, arguments: dict[str, Any]) -> str:

@@ -276,7 +276,7 @@ class VoiceAssistant:
             delegate=self._delegate_to_claude, workspace=settings.workspace,
             runner=self.runner, capture=self.capture, publisher=self.publisher, goals=self.goals,
             skills=installed_skills, skill_limit=settings.skills.read_limit,
-            capture_settings=settings.capture, orchestrator=self.orchestrator,
+            capture_settings=settings.capture, orchestrator=self.orchestrator, plan=self.plan,
         ))
 
         self.controller = Controller(

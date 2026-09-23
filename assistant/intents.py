@@ -10,6 +10,17 @@ import re
 from dataclasses import dataclass, field
 
 _FILLER = re.compile(r"^(?:ok(?:ay)?|hey|so|um+|uh+|please|now|alright)[\s,]+", re.I)
+# Lead-ins that carry no instruction of their own. Without these, "okay do one thing,
+# clear all the plans" misses the rule that "clear the plans" matches, falls through to
+# an agent, and gets answered about saved automations instead -- which is a wrong answer
+# to a question Nova could have handled locally and for nothing.
+_LEAD = re.compile(
+    r"^(?:(?:can|could|would|will)\s+you(?:\s+please)?"
+    r"|do\s+one\s+thing"
+    r"|i\s+(?:want|need)\s+you\s+to"
+    r"|go\s+ahead\s+and"
+    r"|let'?s"
+    r"|just)[\s,]+", re.I)
 
 
 @dataclass
@@ -66,10 +77,15 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
         ("switch_backend", r"^(?:use|switch to|change to|swap to|go with)\s+(?:the\s+)?(?P<backend>claude(?: code)?|cloud|clod|anti[- ]?gravity|gravity|agy|gemini|open ?router|router|free models?|groq|gro[ck]k?|rock|llama|lama|fast model)\b"),
         ("delegate", r"^(?:tell|ask|have|get)\s+(?P<backend>claude(?: code)?|cloud|anti[- ]?gravity|gravity|agy|groq|gro[ck]k?|llama)\s+(?:to\s+)?(?P<task>.+)$"),
         ("new_plan", r"^(?:let'?s|start|begin|new|make)(?: a)? (?:new )?plan(?:ning)?\b[\s,:]*(?:(?:for|to|about|out)\s+)?(?P<topic>.*)$"),
-        ("clear_plan", r"^(?:clear|scrap|reset|delete|drop|forget|throw away)(?: all)?(?: the)? plans?\b"),
+        # "drop that plan", "clear all the plans that were made". A plan is the thing
+        # drafted in this conversation; a saved automation is not one, and the two must
+        # never be answered for each other.
+        ("clear_plan", r"^(?:clear|scrap|reset|delete|drop|forget|throw away|remove|wipe)"
+                       r"(?:\s+all)?(?:\s+(?:the|that|this|these|those|my|our))?\s+plans?\b"),
         ("remove_step", r"^(?:remove|delete|drop)(?: step)? (?:number )?(?P<number>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b"),
         ("move_step", r"^(?:move|shift)(?: step)? (?:number )?(?P<number>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:to (?:position |step )?(?P<to>\d+|one|two|three|four|five|six|seven|eight|nine|ten)|(?P<direction>up|down|first|last|to the top|to the end))\b"),
-        ("read_plan", r"^(?:read|repeat|what'?s|what is|show|tell me)(?: me)?(?: back)?(?: the)? plan\b|^read it back\b"),
+        ("read_plan", r"^(?:read|repeat|what'?s|what is|show|tell me|list)(?: me)?(?: back)?"
+                      r"(?:\s+(?:the|that|my|our))?\s+plans?\b|^read it back\b"),
         ("resume_queue", r"^resume(?: the)?(?: (?:queue|queued|waiting)(?: (?:requests|tasks|ones))?)?[.!]?$|^(?:start|run|continue)(?: the)? (?:queue|(?:queued|waiting) (?:requests|tasks|ones))[.!]?$"),
         ("clear_queue", r"^(?:clear|empty|forget|drop|cancel)(?: the)? (?:queue|queued (?:requests|tasks)|waiting (?:requests|tasks))\b"),
         ("execute_plan", r"^(?:go ahead|execute|run|start|kick off|ship|do)(?: it| the plan| this| that| work(?:ing)?)?[.!]?$|^(?:execute|run|start)(?: the)? plan\b|^let'?s do it\b"),
@@ -99,7 +115,11 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
                             r"|^(?:show|list)\s+(?:my\s+|the\s+)?drafts?\b"),
         ("publish_approve", r"^(?:post|publish|send)\s+it\b(?:\s+now)?[.!]?$"
                             r"|^(?:yes[,.]?\s+)?(?:go\s+ahead\s+and\s+)?(?:post|publish)\s+(?:it|that|the\s+draft)\b"),
-        ("publish_discard", r"^(?:drop|discard|bin|delete|scrap|forget)\s+(?:it|that|the\s+draft|the\s+post)\b"
+        # "drop that" is a draft; "drop that plan" is the plan. The lookahead is what
+        # keeps this rule from stealing every plan and step phrasing that starts the
+        # same way -- it did, and the answer came back about drafts.
+        ("publish_discard", r"^(?:drop|discard|bin|delete|scrap|forget)\s+"
+                            r"(?:the\s+(?:draft|post)|(?:it|that|this)(?!\s+(?:plan|step|task|goal|automation)))\b"
                             r"|^don'?t\s+(?:post|publish|send)\s+(?:it|that)\b"),
         # -- standing goals (assistant/goals): the things Nova starts by itself ------
         ("goals_list", r"^(?:what|which)\s+(?:are\s+)?(?:your|the|my)?\s*standing\s+goals?\b"
@@ -133,7 +153,8 @@ def normalize(text: str) -> str:
     text = text.strip().strip("\"'")
     previous = None
     while previous != text:
-        previous, text = text, _FILLER.sub("", text)
+        previous = text
+        text = _LEAD.sub("", _FILLER.sub("", text))
     return text.strip()
 
 
