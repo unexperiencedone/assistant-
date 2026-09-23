@@ -26,6 +26,7 @@ from .audio.tts import Speaker
 from .events import EventBus
 from .planning import Plan
 from . import triage
+from .progress import Tracker
 
 NARRATE_EVERY_SECONDS = 30
 _TOOL_PHRASES = {
@@ -51,6 +52,10 @@ class Task:
     started: float = field(default_factory=time.time)
     last_activity: str = ""
     thread: threading.Thread | None = None
+    # What this task has been doing, grouped into kinds of work rather than tool names,
+    # so the spoken progress says "still writing code" instead of "running a command"
+    # for the fifth time (assistant/progress.py).
+    progress: "Tracker | None" = None
 
     @property
     def running(self) -> bool:
@@ -135,6 +140,7 @@ class AgentRunner:
                 return None
             task_id = f"t{next(self._ids)}"
             task = Task(task_id, backend, prompt, label, executing_plan, weight)
+            task.progress = Tracker(label=label or "")
             self.tasks[task_id] = task
             self.focus = task_id
         if executing_plan:
@@ -181,11 +187,15 @@ class AgentRunner:
             self.bus.publish("agent", kind=event.kind, backend=task.backend.label, tool=event.tool,
                              text=event.text, task=task.id)
             if event.kind == "tool":
-                task.last_activity = _phrase(event)
+                if task.progress is None:
+                    task.progress = Tracker(label=task.label or "")
+                task.last_activity = task.progress.saw(event.tool)
                 # Only the focused task narrates; a second voice over the first would be noise.
                 if (self.focus == task.id and time.time() - last_spoken > NARRATE_EVERY_SECONDS
                         and not self.speaker.is_busy):
-                    self.speaker.say(task.last_activity.capitalize() + ".")
+                    # The whole window since the last line, not just the newest call: a
+                    # tool name on its own is the mechanism, and the work is the point.
+                    self.speaker.say(task.progress.line())
                     last_spoken = time.time()
             elif event.kind == "text":
                 self._update_plan(event.text, task)

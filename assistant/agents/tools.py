@@ -30,6 +30,7 @@ class ToolContext:
     local_system: Any = None          # assistant.system.LocalSystem
     automations: Any = None           # assistant.automation.service.AutomationService
     delegate: Callable[[str], str] | None = None  # hand a task to Claude Code, return its reply
+    delegate_agy: Callable[[str], str] | None = None  # ...or to Antigravity, for research
     workspace: Path | None = None
     # Nova's own state, so the cheap tier can answer "what are you doing" and act on
     # what is already in flight instead of handing the question to Claude.
@@ -418,6 +419,19 @@ def read_skill(ctx: ToolContext, name: str, limit: int = 0) -> str:
     return skill_registry.read(ctx.skills, name, limit=int(limit) or ctx.skill_limit)
 
 
+def delegate_to_agy(ctx: ToolContext, task: str) -> str:
+    """Reading around a subject, and pulling content off the web.
+
+    A separate brain from Claude on purpose. Research, scraping and ideation are the
+    bulk of what gets asked for and the cheapest kind of work to get wrong, so sending
+    them to Antigravity keeps Claude for the jobs where being wrong is expensive --
+    code, files, automations.
+    """
+    if not ctx.delegate_agy:
+        return "Antigravity isn't available."
+    return ctx.delegate_agy(task) or "Antigravity finished without a reply."
+
+
 def delegate_to_claude(ctx: ToolContext, task: str, skill: str = "") -> str:
     """Anything needing a terminal, file edits or multi-step coding goes to Claude Code.
 
@@ -546,6 +560,12 @@ TOOLS: dict[str, tuple[Callable[..., str], dict]] = {
     "read_skill": (read_skill, _schema(
         "read_skill", "Load one skill's full instructions by name, then follow them. Use when a skill "
         "covers the job you've been asked to do.", {"name": STRING, "limit": {"type": "integer"}}, ["name"])),
+    "delegate_to_agy": (delegate_to_agy, _schema(
+        "delegate_to_agy", "Hand a RESEARCH or CONTENT job to Antigravity: reading around a subject, "
+        "gathering material from several pages, scraping a site, comparing options, or thinking through "
+        "how something could work. Prefer this over delegate_to_claude for anything that is reading and "
+        "writing prose rather than code -- it is the cheaper of the two. Give it the whole request in "
+        "one self-contained sentence.", {"task": STRING}, ["task"])),
     "delegate_to_claude": (delegate_to_claude, _schema(
         "delegate_to_claude", "Hand a task to Claude Code, which has a terminal, file editing and web access. "
         "Use for coding, editing or creating files, running commands, git, and anything multi-step or open-ended. "
@@ -587,6 +607,8 @@ def schemas(ctx: ToolContext) -> list[dict]:
             if not ctx.automations:
                 continue
         if name == "delegate_to_claude" and not ctx.delegate:
+            continue
+        if name == "delegate_to_agy" and not ctx.delegate_agy:
             continue
         available.append(schema)
     return available

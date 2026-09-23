@@ -273,7 +273,8 @@ class VoiceAssistant:
 
         self.registry.attach_tools(ToolContext(
             local_system=self.local_system, automations=automations,
-            delegate=self._delegate_to_claude, workspace=settings.workspace,
+            delegate=self._delegate_to_claude, delegate_agy=self._delegate_to_agy,
+            workspace=settings.workspace,
             runner=self.runner, capture=self.capture, publisher=self.publisher, goals=self.goals,
             skills=installed_skills, skill_limit=settings.skills.read_limit,
             capture_settings=settings.capture, orchestrator=self.orchestrator, plan=self.plan,
@@ -316,19 +317,33 @@ class VoiceAssistant:
                 self.bus.publish("plan", **self.plan.to_dict())  # draw it on the canvas right away
         self.state.saver = store.Saver(path, self.state.persisted)
 
-    def _delegate_to_claude(self, task: str) -> str:
-        """Run a task in the live Claude Code session and return its reply."""
-        claude = self.registry.backends["claude"]
-        if not claude.is_available():
-            return "Claude Code isn't installed on this machine."
+    def _delegate(self, backend_name: str, task: str, missing: str) -> str:
+        """Run a task in one of the CLI agents and return its reply.
+
+        Shared by both delegates, because the only real difference between them is
+        which brain is better at the job: Antigravity for reading around a subject and
+        pulling content off the web, Claude Code for writing code and automations.
+        Splitting the two is what stops every errand costing a Claude turn.
+        """
+        backend = self.registry.backends.get(backend_name)
+        if backend is None or not backend.is_available():
+            return missing
 
         def on_event(event) -> None:
-            self.bus.publish("agent", kind=event.kind, backend=claude.label, tool=event.tool, text=event.text[:400])
+            self.bus.publish("agent", kind=event.kind, backend=backend.label,
+                             tool=event.tool, text=event.text[:400])
 
-        result = claude.run(task, on_event, self.runner.cancel_event)
+        result = backend.run(task, on_event, self.runner.cancel_event)
         if result.cancelled:
             return "Cancelled."
-        return result.summary or ("Claude Code finished." if result.ok else "Claude Code hit a problem.")
+        return result.summary or (f"{backend.label} finished." if result.ok
+                                  else f"{backend.label} hit a problem.")
+
+    def _delegate_to_claude(self, task: str) -> str:
+        return self._delegate("claude", task, "Claude Code isn't installed on this machine.")
+
+    def _delegate_to_agy(self, task: str) -> str:
+        return self._delegate("antigravity", task, "Antigravity isn't installed on this machine.")
 
     # -- input ------------------------------------------------------------------
     def submit(self, text: str, source: str, origin: str = "desktop") -> None:

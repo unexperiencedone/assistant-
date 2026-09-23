@@ -59,9 +59,13 @@ SKILLS_RULE = ("\n- Skills you can load with read_skill, each a document on how 
 DELEGATE_RULE = (
     "\n- Anything you need to look up, including news, prices and current events: search the web yourself "
     "with web_search, and read_page only if the snippets weren't enough. Do not delegate a lookup."
+    "\n- Reading around a subject, gathering material from several pages, scraping a site, comparing "
+    "options, or thinking through how something might work: call delegate_to_agy. Research and writing "
+    "prose is what it is for, and it is the cheaper of the two agents."
     "\n- Coding, editing or creating files, running commands, git, or a job that needs several careful steps: "
-    "call delegate_to_claude with the whole request. Then tell the user what it did. It is slow and costly, "
-    "so it is the last resort, not the first -- try your own tools first and delegate only what they can't do."
+    "call delegate_to_claude with the whole request. Then tell the user what it did. It is the slowest and "
+    "costliest thing you can do, so it is the last resort -- your own tools first, then agy for reading and "
+    "writing, and Claude only for work on the machine itself."
     "\n- If a tool fails in a way that leaves you unable to finish at all, hand the whole request to "
     "delegate_to_claude rather than reporting a dead end. Only say you couldn't do it when the reason is "
     "something the user can fix in a word, like a name you need them to confirm.")
