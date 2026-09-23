@@ -1167,15 +1167,37 @@ def full_reply(text: str) -> str:
     return text.strip()
 
 
-def spoken_reply(text: str, max_sentences: int = MAX_SPOKEN_SENTENCES) -> str:
-    """The first few sentences of the agent's reply, minus plan blocks and markers.
-    Only for speech: `full_reply` is what the canvas shows."""
+def spoken_reply(text: str, max_sentences: int = MAX_SPOKEN_SENTENCES,
+                 max_chars: int = 450) -> str:
+    """The reply, shortened for speech. `full_reply` is what the canvas shows.
+
+    It used to keep the first few sentences and drop the rest, which meant the *end*
+    was always what went missing -- and the end is where the conclusion and the offer
+    live. A four-sentence reply about a locked Word file was spoken as three, losing
+    "I can fix the writer so it doesn't leave Word running again if you want": the one
+    sentence that needed an answer, cut silently.
+
+    So the opening and the closing sentence are both kept and the middle gives way.
+    Detail belongs in the middle of a reply; a decision to make does not.
+    """
     text = re.sub(r"```.*?```", " ", strip_markup(text), flags=re.S)
     text = re.sub(r"[*`#]+", "", text)
     lines = [ln.strip(" -*#>") for ln in text.splitlines() if ln.strip()]
-    sentences = _SENTENCE_END.split(" ".join(lines))
-    spoken = " ".join(sentences[:max_sentences]).strip()
-    return spoken if len(spoken) <= 450 else spoken[:447].rsplit(" ", 1)[0] + "..."
+    sentences = [s for s in (part.strip() for part in _SENTENCE_END.split(" ".join(lines))) if s]
+    if not sentences:
+        return ""
+
+    kept = sentences if len(sentences) <= max_sentences else (
+        sentences[:max(1, max_sentences - 1)] + [sentences[-1]])
+    # Fit the character budget by dropping whole sentences from the middle rather than
+    # cutting a word in half, and never the first or the last.
+    while len(" ".join(kept)) > max_chars and len(kept) > 2:
+        del kept[1]
+    spoken = " ".join(kept).strip()
+    if len(spoken) <= max_chars:
+        return spoken
+    # One enormous sentence, so there is nothing left to drop.
+    return spoken[:max_chars - 3].rsplit(" ", 1)[0] + "..."
 
 
 def _next_due(spoken: str) -> float:
