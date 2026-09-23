@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from .agent_runner import AgentRunner
 from .agents import AgentRegistry
 from .agents.base import AgentBackend, AgentResult, short  # noqa: F401  (AgentResult used in type hints)
+from .audio import fish as fish_tts
 from .audio.tts import Speaker
 from .config import Settings
 from .controller_capture import CaptureCommands
@@ -151,7 +152,10 @@ class Controller(CaptureCommands):
         be wrong for the same reason.
         """
         heard = text if spoken is None else spoken
-        self.bus.publish("transcript", role="assistant", text=text, origin=self.reply_to)
+        # Delivery tags ([chuckle], [long pause]) are instructions to the voice, not
+        # words: they go to the speaker and never to the screen.
+        self.bus.publish("transcript", role="assistant", text=fish_tts.strip_tags(text),
+                         origin=self.reply_to)
         if self.reply_to == "phone":
             return
         self.speaker.say(heard)

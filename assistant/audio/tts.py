@@ -32,6 +32,8 @@ def _for_speech(text: str) -> str:
     text = re.sub(r"```.*?```", " (code omitted) ", text, flags=re.S)
     text = re.sub(r"`([^`]*)`", r"\1", text)
     text = re.sub(r"[*_#>|~]+", "", text)
+    # Square brackets are left alone: a delivery tag like [long pause] is meaningful to
+    # a neural voice and is stripped further down the chain for one that isn't.
     text = re.sub(r"https?://\S+", "a link", text)
     text = re.sub(r"^\s*[-•]\s+", "", text, flags=re.M)        # list bullets read as pauses, not dashes
     text = re.sub(r"\s+[-–—]\s+", ", ", text)                   # dashes become commas
@@ -189,7 +191,11 @@ def list_installed_voices() -> str:
 
 
 def make_speaker(settings: VoiceSettings, bus: EventBus) -> Speaker:
-    """`engine` picks the voice: sapi (Windows), pyttsx3, or auto for whichever fits."""
+    """`engine` picks the voice: fish (neural, falls back to SAPI), sapi, pyttsx3, auto."""
+    if settings.engine == "fish" and sys.platform == "win32":
+        from .fish import FishSpeaker
+
+        return FishSpeaker(settings, bus)
     if settings.engine == "pyttsx3" or sys.platform != "win32":
         return Pyttsx3Speaker(settings, bus)
     return SapiSpeaker(settings, bus)

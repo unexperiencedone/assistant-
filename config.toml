@@ -37,10 +37,20 @@ min_avg_logprob = -1.0
 [voice]
 # The Windows voice speaks every reply: it is instant, free and never rate-limited.
 # (Cloud voices sound better but the free tiers cut out after a few sentences.)
-engine = "auto"                # auto | sapi (Windows) | pyttsx3
+# "fish" is Fish Audio S2.1, a neural voice, with SAPI underneath it: any sentence Fish
+# will not deliver is spoken locally the moment it fails, so a rate limit changes how
+# Nova sounds mid-reply rather than leaving it silent. Measured here: a whole three-
+# sentence reply takes ~3.6s to synthesise, the first sentence alone ~1.1s, so replies
+# are fetched a sentence at a time and repeated lines are cached to disk.
+engine = "fish"                # fish | sapi (local, instant) | pyttsx3 | auto
 rate = 0                       # SAPI: -10..10, pyttsx3: words per minute (0 = default)
 volume = 100                   # 0..100
-voice_contains = "Zira"        # pick the first installed voice whose name contains this
+voice_contains = "Zira"        # the local fallback voice, by part of its name
+fish_key_env = "FISH_AUDIO_S2.1_PRO"   # the key itself belongs in .env
+fish_model = "s2.1-pro-free"
+fish_voice = ""                # a reference_id from fish.audio; empty = its default voice
+fish_timeout = 20
+fish_cache = "data/tts-cache"  # synthesised lines, reused; delete the folder to reset
 
 [agents]
 # Everything you say (except instant local commands) goes to this agent.

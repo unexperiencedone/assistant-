@@ -50,11 +50,25 @@ class SpeechSettings:
 
 @dataclass
 class VoiceSettings:
-    # Local speech only: cloud voices rate-limit mid-reply on the free tiers.
-    engine: str = "auto"  # auto | sapi (Windows) | pyttsx3
+    """How Nova sounds. Local by default; a neural voice when one is configured.
+
+    The long-standing rule here was local-only, because a free cloud voice that
+    rate-limits mid-reply leaves the assistant silent halfway through a sentence. The
+    rule was about that failure rather than about the cloud, so `fish` is allowed on one
+    condition: every sentence it cannot deliver is spoken by SAPI instead, immediately.
+    A voice that changes partway through is odd for a moment; silence is a bug."""
+    engine: str = "auto"  # auto | sapi (Windows) | pyttsx3 | fish
     rate: int = 0
     volume: int = 100
     voice_contains: str = ""
+    # Fish Audio S2.1 (assistant/audio/fish.py). The key lives in .env, never here.
+    fish_key_env: str = "FISH_AUDIO_S2.1_PRO"
+    fish_model: str = "s2.1-pro-free"
+    fish_voice: str = ""        # a reference_id from fish.audio; empty = the default voice
+    fish_timeout: float = 20
+    # Repeated lines are synthesised once and read off disk afterwards: instant, and it
+    # leaves the free allowance for sentences that are actually new.
+    fish_cache: str = "data/tts-cache"
 
 
 @dataclass
