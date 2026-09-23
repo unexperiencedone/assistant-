@@ -236,6 +236,13 @@ audio = false   # system audio needs a loopback capture device set up first
 enabled = true
 db_path = "data/publish.db"
 
+[browser]
+# Letting a model drive the real browser for pages the keyless read_page can't manage:
+# ones that need JavaScript, a login, or that refuse a scripted fetch. It runs Chrome
+# with a dedicated Nova profile -- never your signed-in one, because Chrome refuses the
+# DevTools port on the default profile and that restriction is a good one.
+enabled = true
+
 [orchestrate]
 # Several pieces of work for one request, answered once. A step may say what it waits
 # for -- "write it up (after 1, 2)" -- and steps with no dependencies run at the same

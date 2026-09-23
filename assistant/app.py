@@ -277,6 +277,8 @@ class VoiceAssistant:
             runner=self.runner, capture=self.capture, publisher=self.publisher, goals=self.goals,
             skills=installed_skills, skill_limit=settings.skills.read_limit,
             capture_settings=settings.capture, orchestrator=self.orchestrator, plan=self.plan,
+            profile=self.profile, assistant_name=settings.assistant.name,
+            browser=settings.browser.enabled,
         ))
 
         self.controller = Controller(

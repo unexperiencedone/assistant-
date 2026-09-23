@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -164,3 +166,32 @@ class Browser:
 
     def read(self, timeout: float = 10, **target: str) -> str:
         return self._locate(**target).inner_text(timeout=timeout * 1000).strip()
+
+    def text(self, limit: int = 4000) -> str:
+        """Everything readable on the page, for when there is no selector to aim at.
+
+        This is what a model needs to answer "what is on this page" -- a directory of
+        businesses, a contact page -- where the useful thing is the prose and not one
+        known element. Capped, because a search results page can run to tens of
+        thousands of characters and none of the tail is the answer.
+        """
+        body = self.page.inner_text("body") or ""
+        body = re.sub(r"[ \t]+", " ", body)
+        body = re.sub(r"\n\s*\n+", "\n", body).strip()
+        if len(body) > limit:
+            body = body[:limit].rsplit("\n", 1)[0] + "\n..."
+        return body
+
+
+# One Browser per thread. Playwright's sync API is bound to the thread that started it,
+# and each agent task runs on its own thread, so a shared instance would be used from
+# the wrong one and fail in a way that looks like the browser being broken.
+_local = threading.local()
+
+
+def thread_browser() -> "Browser":
+    existing = getattr(_local, "browser", None)
+    if existing is None:
+        existing = Browser()
+        _local.browser = existing
+    return existing

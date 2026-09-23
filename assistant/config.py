@@ -287,6 +287,16 @@ class JournalSettings:
 
 
 @dataclass
+class BrowserSettings:
+    """Letting a model drive the real browser (assistant/automation/browser.py).
+
+    Separate from the keyless `read_page`, which is the first choice: this costs seconds
+    and a visible window, and is for pages that need JavaScript, a login, or that refuse
+    a scripted fetch. It runs in a dedicated Nova profile, never your signed-in one."""
+    enabled: bool = True
+
+
+@dataclass
 class ReaderSettings:
     """The always-on-top window a long answer is read in.
 
@@ -397,6 +407,7 @@ class Settings:
     orchestrate: OrchestrateSettings = field(default_factory=OrchestrateSettings)
     narrator: NarratorSettings = field(default_factory=NarratorSettings)
     reader: ReaderSettings = field(default_factory=ReaderSettings)
+    browser: BrowserSettings = field(default_factory=BrowserSettings)
     # Folder containing config.toml; relative paths in the config resolve against it.
     base_dir: Path = field(default_factory=lambda: APP_DIR)
 

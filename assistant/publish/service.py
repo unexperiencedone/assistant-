@@ -27,6 +27,10 @@ class PublishService:
         self.gate.register("instagram_post", instagram.sender)
         self.gate.register("github_release", self._send_release)
         self.gate.register("github_push", self._send_push)
+        # Staged outreach has nowhere to go yet: there is no email arm. Registered all
+        # the same, so approving one gives a straight answer instead of a broken
+        # sentence about an unknown draft kind, and the draft stays for later.
+        self.gate.register("outreach_email", self._send_email)
 
     def close(self) -> None:
         self.gate.close()
@@ -65,6 +69,18 @@ class PublishService:
         return self.gate.spoken()
 
     # -- senders ----------------------------------------------------------------------
+    def _send_email(self, draft: dict[str, Any]) -> tuple[bool, str]:
+        """No email arm yet, said without pretending otherwise.
+
+        The wording matters: an earlier version said the draft was "saved, so it'll go
+        out once there is one", which was not true. A refused send is recorded as failed
+        and leaves the pending queue, so promising it would send itself later was a
+        promise the gate does not keep. It is in the record, and that is all.
+        """
+        return False, ("I can't send email yet -- there's no mailbox set up. Nothing was "
+                       "sent. The draft is in the record but no longer queued, so once "
+                       "email works, ask me to write it again.")
+
     def _send_release(self, draft: dict[str, Any]) -> tuple[bool, str]:
         extra = draft.get("extra") or {}
         tag = extra.get("tag", "")

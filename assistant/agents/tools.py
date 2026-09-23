@@ -42,6 +42,9 @@ class ToolContext:
     capture_settings: Any = None      # assistant.config.CaptureSettings (fps, monitor, audio)
     orchestrator: Any = None          # assistant.orchestrate.Orchestrator
     plan: Any = None                  # assistant.planning.Plan -- this conversation's plan
+    profile: Any = None               # assistant.profile.ProfileService -- for the owner's name
+    assistant_name: str = "Nova"      # so an outbound draft can be checked for signing as Nova
+    browser: bool = False             # drive the real browser (config [browser] enabled)
 
 
 def _text(value: Any) -> str:
@@ -228,6 +231,85 @@ def nova_status(ctx: ToolContext) -> str:
     return "\n".join(lines) or "Nothing is running; I'm idle."
 
 
+def _browser(ctx: ToolContext):
+    from ..automation.browser import thread_browser
+
+    return thread_browser()
+
+
+def browse_open(ctx: ToolContext, url: str, new_tab: bool = False) -> str:
+    """Open a page in the real browser and report what is on it.
+
+    Unlike read_page, this is a browser: JavaScript runs, logins apply, and pages that
+    refuse a scripted fetch work here. It costs seconds and a visible window, so it is
+    the second choice -- read_page first, this when that was not enough.
+    """
+    url = (url or "").strip()
+    if not url.startswith(("http://", "https://")):
+        return "Give a full http or https URL."
+    try:
+        browser = _browser(ctx)
+        title = browser.goto(url, new_tab=bool(new_tab))
+        return f"{title}\n\n{browser.text(1800)}"
+    except Exception as error:
+        return f"I couldn't open that in the browser ({type(error).__name__}: {error})."
+
+
+def browse_read(ctx: ToolContext, limit: int = 3000, text: str = "", selector: str = "") -> str:
+    """Read the page already open: all of it, or one element named by text or selector."""
+    try:
+        browser = _browser(ctx)
+        if text or selector:
+            return browser.read(text=text, selector=selector) or "(that element is empty)"
+        return browser.text(max(200, min(int(limit or 3000), 8000)))
+    except Exception as error:
+        return f"I couldn't read the page ({type(error).__name__}: {error})."
+
+
+def browse_click(ctx: ToolContext, text: str = "", selector: str = "", role: str = "",
+                 name: str = "") -> str:
+    """Click something on the open page, by its visible text, role or selector."""
+    try:
+        _browser(ctx).click(text=text, selector=selector, role=role, name=name)
+        return f"Clicked {text or name or selector}. Read the page again to see what changed."
+    except Exception as error:
+        return f"I couldn't click that ({type(error).__name__}: {error})."
+
+
+def browse_fill(ctx: ToolContext, value: str, text: str = "", selector: str = "",
+                label: str = "", placeholder: str = "", press_enter: bool = False) -> str:
+    """Type into a field on the open page. Does not submit unless press_enter is true."""
+    try:
+        _browser(ctx).fill(value, press_enter=bool(press_enter), text=text,
+                           selector=selector, label=label, placeholder=placeholder)
+        return f"Filled in {len(value)} characters" + (" and pressed Enter." if press_enter else ".")
+    except Exception as error:
+        return f"I couldn't fill that in ({type(error).__name__}: {error})."
+
+
+def draft_outreach(ctx: ToolContext, recipient: str, subject: str, body: str) -> str:
+    """Stage an outreach message for the user's approval. Sends nothing.
+
+    Checked before it is staged (`persona/outreach.py`). A live test produced a draft
+    that signed itself as Nova and offered a stranger a free month of work, so a draft
+    naming a price, a discount, a deadline or a guarantee is handed back with the reason
+    instead of being stored.
+    """
+    if ctx.publisher is None:
+        return "Publishing is turned off in the config."
+    from ..persona import outreach
+
+    owner = getattr(ctx.profile, "preferred_name", "") if ctx.profile is not None else ""
+    refusal = outreach.verdict(f"{subject}\n\n{body}", nova=ctx.assistant_name, owner=owner)
+    if refusal:
+        return refusal
+    draft = ctx.publisher.gate.stage("outreach_email", body.strip(),
+                                     target=recipient.strip() or "(no address yet)",
+                                     extra={"subject": subject.strip()})
+    return (f"Drafted an email to {draft['target']}, subject \"{subject.strip()}\". "
+            "Nothing has been sent; it is waiting for the user to approve it.")
+
+
 def start_task(ctx: ToolContext, task: str, label: str = "") -> str:
     """Start one job in the background and carry on talking.
 
@@ -412,6 +494,27 @@ TOOLS: dict[str, tuple[Callable[..., str], dict]] = {
         "nova_status", "What you yourself are doing right now: background tasks, screen recording, "
         "drafts waiting for approval, standing goals. Use this whenever the user asks what you are up to.",
         {}, [])),
+    "browse_open": (browse_open, _schema(
+        "browse_open", "Open a URL in the real browser and read what is on it. Use when read_page "
+        "wasn't enough: pages that need JavaScript, a login, or that refuse a scripted fetch. "
+        "Slower than read_page, so try that first.",
+        {"url": STRING, "new_tab": {"type": "boolean"}}, ["url"])),
+    "browse_read": (browse_read, _schema(
+        "browse_read", "Read the page currently open in the browser, or one element of it by its "
+        "visible text or CSS selector.",
+        {"limit": {"type": "integer"}, "text": STRING, "selector": STRING}, [])),
+    "browse_click": (browse_click, _schema(
+        "browse_click", "Click something on the open page by its visible text, role or CSS selector.",
+        {"text": STRING, "selector": STRING, "role": STRING, "name": STRING}, [])),
+    "browse_fill": (browse_fill, _schema(
+        "browse_fill", "Type into a field on the open page. Set press_enter to submit a search box.",
+        {"value": STRING, "text": STRING, "selector": STRING, "label": STRING,
+         "placeholder": STRING, "press_enter": {"type": "boolean"}}, ["value"])),
+    "draft_outreach": (draft_outreach, _schema(
+        "draft_outreach", "Stage an outreach email for the user to approve. Write it in the FIRST "
+        "PERSON AS THE USER, never as yourself, and never name a price, a discount, a free offer, a "
+        "deadline or a guarantee -- say those will be confirmed. Sends nothing.",
+        {"recipient": STRING, "subject": STRING, "body": STRING}, ["recipient", "subject", "body"])),
     "start_task": (start_task, _schema(
         "start_task", "Start ONE job in the background and return immediately, so you can keep answering. "
         "Use for something slow the user doesn't need to wait on. You'll be told when it finishes.",
@@ -466,6 +569,10 @@ def schemas(ctx: ToolContext) -> list[dict]:
             continue
         if name.endswith("_plan") and ctx.plan is None:
             continue
+        if name.startswith("browse_") and not ctx.browser:
+            continue
+        if name == "draft_outreach" and ctx.publisher is None:
+            continue
         if name.endswith("_recording") and ctx.capture is None:
             continue
         if name == "draft_post" and ctx.publisher is None:
@@ -490,7 +597,8 @@ def schemas(ctx: ToolContext) -> list[dict]:
 # be careful, but a prompt is a convention, not a boundary.
 CHANGES_THINGS = {"open_item", "click_control", "type_in_app", "press_keys", "run_automation", "write_word",
                   "start_recording", "stop_recording", "draft_post", "add_goal",
-                  "start_task", "run_steps", "clear_plan"}
+                  "start_task", "run_steps", "clear_plan",
+                  "browse_open", "browse_click", "browse_fill", "draft_outreach"}
 
 
 def call(ctx: ToolContext, name: str, arguments: dict[str, Any]) -> str:

@@ -10,8 +10,9 @@ phrases = [
     "show me {topic} news",
     "open {topic} news",
     "find some {topic} news",
-    "{topic} news",
 ]
+# No bare "{topic} news": it swallowed whole sentences that merely end in "news",
+# e.g. a complaint like "you haven't told me proper news", and opened a browser for them.
 
 [[steps]]
 do = "browser_goto"
