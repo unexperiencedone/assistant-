@@ -93,7 +93,16 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
         ("resume_queue", r"^resume(?: the)?(?: (?:queue|queued|waiting)(?: (?:requests|tasks|ones))?)?[.!]?$|^(?:start|run|continue)(?: the)? (?:queue|(?:queued|waiting) (?:requests|tasks|ones))[.!]?$"),
         ("clear_queue", r"^(?:clear|empty|forget|drop|cancel)(?: the)? (?:queue|queued (?:requests|tasks)|waiting (?:requests|tasks))\b"),
         ("execute_plan", r"^(?:go ahead|execute|run|start|kick off|ship|do)(?: it| the plan| this| that| work(?:ing)?)?[.!]?$|^(?:execute|run|start)(?: the)? plan\b|^let'?s do it\b"),
-        ("status", r"^(?:status|progress|what'?s (?:it|the agent|claude|antigravity) doing|how'?s it going|are you (?:done|finished))\b"),
+        # A question about progress must never be queued behind the task it asks about,
+        # which is what happened to "so how much part of the research is done".
+        ("status", r"^(?:status|progress)\b"
+                   r"|^what(?:'?s|s| is)? (?:it|the agent|claude|antigravity|groq|nova) doing\b"
+                   r"|^how'?s it going\b"
+                   r"|^are you (?:done|finished|still (?:working|on it|going))\b"
+                   r"|\bhow (?:much|far|many)\b[^?]{0,40}\b(?:done|left|along|finished|complete[d]?|remaining)\b"
+                   r"|^(?:how|where)\s+(?:far|much)\s+(?:are\s+you|have\s+you\s+got)\b"
+                   r"|^(?:any|what)\s+progress\b"
+                   r"|^what'?s? (?:the )?(?:latest|update) on (?:it|that|the task)\b"),
         ("open_dashboard", r"^(?:open|show)(?: me)?(?: the)? (?:dashboard|visuali[sz]ation|board|canvas|flow ?chart|graph)\b|^visuali[sz]e(?: it| the plan)?\b"),
         ("new_session", r"^(?:new|fresh|reset)(?: agent)? (?:session|conversation|context)\b"),
         # The quick-action chip in the canvas sends the bare word "time", and the rule

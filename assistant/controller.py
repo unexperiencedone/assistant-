@@ -571,9 +571,9 @@ class Controller(CaptureCommands):
             self.waiting.append(text)
             self.bus.publish("queue", items=list(self.waiting))
             if weight == triage.HEAVY and blocker.weight == triage.HEAVY:
-                self.say(f"That's a big one, so I'll start it once {blocker.label} is done.")
+                self.say(f"That's a big one, so I'll start it once {spoken_label(blocker.label)} is done.")
             else:
-                self.say(f"Got it. I'll start that when {blocker.label} finishes.")
+                self.say(f"Got it. I'll start that when {spoken_label(blocker.label)} finishes.")
             return None
         if executing_plan and self.runner.plan_is_running():
             self.say("The plan is already running.")
@@ -611,7 +611,7 @@ class Controller(CaptureCommands):
         self.bus.publish("route", utterance=label or text, route="agent", name=route,
                          backend=backend.label, task=task_id)
         if parallel:
-            self.say(f"Starting that alongside {self.runner.active[0].label}.")
+            self.say(f"Starting that alongside {spoken_label(self.runner.active[0].label)}.")
 
         def acknowledge() -> None:
             if self.runner.running and not self.speaker.is_busy:
@@ -1124,6 +1124,21 @@ class Controller(CaptureCommands):
         know and this machine always can."""
         stamp = time.strftime("It's %A the %d of %B.").replace(" 0", " ")
         self.say(stamp)
+
+
+def spoken_label(label: str) -> str:
+    """How to refer to a running task out loud.
+
+    The label is the request truncated to sixty characters, which is right for the
+    canvas and unreadable in speech: every turn of one session began "Starting that
+    alongside compile a list of all potential customers that can possibly...". A long
+    or truncated label is referred to rather than read, since the canvas is already
+    showing the whole thing.
+    """
+    label = " ".join((label or "").split())
+    if not label or len(label) > 30 or label.endswith(("...", "\u2026")):
+        return "the job already running"
+    return label
 
 
 def full_reply(text: str) -> str:

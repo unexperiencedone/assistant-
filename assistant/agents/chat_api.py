@@ -125,12 +125,29 @@ class ChatAgent(AgentBackend):
         self.history.clear()
         super().reset_session()
 
+    # Plain turns carried into a parallel task, so a follow-up still knows what was
+    # just discussed. Tool messages are deliberately left behind: each one belongs to a
+    # specific assistant tool_calls message, and a copied tail that starts mid-exchange
+    # is rejected by the API outright.
+    CARRIED_TURNS = 6
+
     def spawn(self) -> "ChatAgent":
-        """A parallel task gets its own conversation, not a shared history."""
+        """An independent conversation, but not an amnesiac one.
+
+        A parallel task used to start with nothing at all. That is right for its tool
+        history -- two tasks interleaving tool results would confuse both -- and wrong
+        for the conversation, because while a long job runs *every* new request becomes
+        a parallel task. Asked to open a site, then to fill in the form on it, Nova
+        answered "could you tell me the website URL": the second request was a fresh
+        mind that had never seen the first.
+        """
         twin = type(self)(self.settings, self.workspace, self.continue_session, self.assistant_name)
         twin.context = self.context
         twin.profile = self.profile
         twin.recorder = self.recorder
+        twin.history = [dict(message) for message in self.history
+                        if message.get("role") in ("user", "assistant")
+                        and not message.get("tool_calls")][-self.CARRIED_TURNS:]
         return twin
 
     def build_command(self, exe: str, task: str) -> list[str]:  # not a subprocess backend
