@@ -51,7 +51,10 @@ fish_model = "s2.1-pro-free"
 # Sarah, from fish.audio's own voice library: female, English, and no slower than the
 # default (0.66s to first byte against 0.58s). Any reference_id works here,
 # including a cloned one -- python -c "..." against /model lists what is available.
-fish_voice = "933563129e564b19a115bedd57b7406a"
+# EDITH, cloned on fish.audio. Sarah is 933563129e564b19a115bedd57b7406a if this
+# one feels slow -- measured at 0.82s to first byte against her 0.66s, so the
+# difference is small, but a cloned voice is the one place it could grow.
+fish_voice = "be5f87d18c6e4319a672608cf1d92d08"
 fish_timeout = 20
 fish_cache = "data/tts-cache"  # synthesised lines, reused; delete the folder to reset
 

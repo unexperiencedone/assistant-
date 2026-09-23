@@ -30,7 +30,7 @@ import re
 import urllib.error
 import urllib.request
 
-from .matching import Guess, segments
+from .matching import MAX_SLOT_WORDS, Guess, segments, slots_are_sane  # noqa: F401
 
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 # Groq's edge answers the default urllib agent with a bare Cloudflare 403.
@@ -96,49 +96,6 @@ def _extract_json(text: str) -> dict:
         return json.loads(found.group(0))
     except ValueError:
         return {}
-
-
-# Words that mean the value swallowed the request rather than naming its subject. A slot
-# is a noun phrase -- "finance", "artificial intelligence" -- and never starts like an
-# instruction.
-_NOT_A_SUBJECT = {
-    "brief", "tell", "give", "show", "pull", "open", "find", "get", "fetch", "read",
-    "play", "run", "make", "do", "let", "can", "could", "would", "please",
-    "me", "my", "i", "you", "your", "us", "we", "it", "that", "this", "a", "an", "the",
-    "some", "any", "about", "on", "for", "up", "of", "with", "and", "to",
-}
-MAX_SLOT_WORDS = 6
-
-
-def slots_are_sane(said: str, template: str, args: dict[str, str]) -> bool:
-    """Do these slot values look like they came out of what was actually said?
-
-    Four cheap checks, each for a way the model got this wrong in practice:
-
-    1. **Nothing invented.** Every word of the value has to appear in the request.
-    2. **Not a whole sentence.** A slot names a subject; past a few words it has stopped
-       naming one and started repeating the request.
-    3. **Not an instruction.** A value beginning "brief", "tell me", "show" is the
-       request wearing the slot's clothes.
-    4. **Not the template's own words.** If the script is "{topic} news", a topic
-       containing "news" means the split went in the wrong place.
-    """
-    from .matching import tokens
-
-    said_words = set(tokens(said or "", strip_filler=False))
-    literals = {word for word in re.findall(r"[A-Za-z']+", re.sub(r"\{[^}]*\}", " ", template or ""))}
-    literals = {word.lower() for word in literals}
-    for value in args.values():
-        words = [word.lower() for word in re.findall(r"[A-Za-z0-9']+", value)]
-        if not words or len(words) > MAX_SLOT_WORDS:
-            return False
-        if not set(words) <= said_words:
-            return False
-        if words[0] in _NOT_A_SUBJECT:
-            return False
-        if set(words) & literals:
-            return False
-    return True
 
 
 def validate(answer: dict, corpus: list[tuple[str, str, str]],

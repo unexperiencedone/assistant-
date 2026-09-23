@@ -38,6 +38,10 @@ def _for_speech(text: str) -> str:
     text = re.sub(r"^\s*[-•]\s+", "", text, flags=re.M)        # list bullets read as pauses, not dashes
     text = re.sub(r"\s+[-–—]\s+", ", ", text)                   # dashes become commas
     text = re.sub(r"\.{3,}|…", ",", text)                       # trailing off -> a short pause
+    # Thousands separators go before any comma handling: the rule below puts a space
+    # after every comma, which splits "10,000" into two tokens and gets it read out as
+    # "ten, zero zero zero". Without the comma it is read as ten thousand.
+    text = re.sub(r"(?<=\d),(?=\d{3}(?!\d))", "", text)
     for symbol, spoken in _SPOKEN_SYMBOLS.items():
         text = text.replace(symbol, spoken)
     # A line break is a sentence boundary; without punctuation the voice runs straight on.

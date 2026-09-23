@@ -130,6 +130,54 @@ class Guess:
     phrase: str         # the template that matched, for "did you mean ...?"
 
 
+# Words that mean the value swallowed the request rather than naming its subject. A slot
+# is a noun phrase -- "finance", "artificial intelligence" -- and never starts like an
+# instruction.
+_NOT_A_SUBJECT = {
+    # Imperative verbs: a value starting with one of these is the request itself,
+    # wearing the slot's clothes.
+    "brief", "tell", "give", "show", "pull", "open", "find", "get", "fetch", "read",
+    "play", "run", "make", "do", "let", "put", "search", "look",
+    "can", "could", "would", "will", "please",
+    # ...and the first person, because the subject of a request is never the asker.
+    "me", "my", "i", "mine", "us", "we", "our",
+}
+# Deliberately not here: determiners and prepositions. "some old punk" and "the
+# beatles" are real music queries, and rejecting them broke a matcher test that was
+# right -- the check is meant to catch a swallowed instruction, not a noun phrase that
+# happens to start with a small word.
+MAX_SLOT_WORDS = 6
+
+
+def slots_are_sane(said: str, template: str, args: dict[str, str]) -> bool:
+    """Do these slot values look like they came out of what was actually said?
+
+    Four cheap checks, each for a way the model got this wrong in practice:
+
+    1. **Nothing invented.** Every word of the value has to appear in the request.
+    2. **Not a whole sentence.** A slot names a subject; past a few words it has stopped
+       naming one and started repeating the request.
+    3. **Not an instruction.** A value beginning "brief", "tell me", "show" is the
+       request wearing the slot's clothes.
+    4. **Not the template's own words.** If the script is "{topic} news", a topic
+       containing "news" means the split went in the wrong place.
+    """
+    said_words = set(tokens(said or "", strip_filler=False))
+    literals = {word for word in re.findall(r"[A-Za-z']+", re.sub(r"\{[^}]*\}", " ", template or ""))}
+    literals = {word.lower() for word in literals}
+    for value in args.values():
+        words = [word.lower() for word in re.findall(r"[A-Za-z0-9']+", value)]
+        if not words or len(words) > MAX_SLOT_WORDS:
+            return False
+        if not set(words) <= said_words:
+            return False
+        if words[0] in _NOT_A_SUBJECT:
+            return False
+        if set(words) & literals:
+            return False
+    return True
+
+
 def score_template(template: str, said: list[str]) -> tuple[float, dict] | None:
     """Align a template's anchor words against what was said, in order.
 
@@ -240,6 +288,12 @@ def best_guess(said: str, corpus: list[tuple[str, str, str]]) -> Guess | None:
         if not found:
             continue
         score, slots = found
+        # A high score with a nonsense slot is worse than no match: asked to "pull up
+        # news brief for me and while you are at that play some song on spotify", this
+        # scored 0.90 against "pull up {topic} news" and filled {topic} with "brief
+        # while are at that play song on spotify", which the automation then read out.
+        if slots and not slots_are_sane(said, template, slots):
+            continue
         if best is None or score > best.score:
             best = Guess(route=route, name=name, args=slots, score=score, phrase=template)
     return best if best and best.score >= WORTH_ASKING else None

@@ -8,8 +8,6 @@ phrases = [
     "pull up {topic} news",
     "show me some {topic} news",
     "show me {topic} news",
-    "open {topic} news",
-    "find some {topic} news",
 ]
 # No bare "{topic} news": it swallowed whole sentences that merely end in "news",
 # e.g. a complaint like "you haven't told me proper news", and opened a browser for them.
@@ -24,7 +22,8 @@ timeout = 20
 do = "browser_wait"
 label = "Wait for the headlines"
 selector = ".news-card a.title"
-timeout = 15
+timeout = 25
+optional = true
 
 [[steps]]
 do = "browser_read"

@@ -49,9 +49,19 @@ class SlotSanity(unittest.TestCase):
                                         {"topic": "what is happening in the markets today"}))
 
     def test_a_value_may_not_start_like_an_instruction(self) -> None:
-        for value in ("me finance", "tell finance", "the finance"):
-            self.assertFalse(slots_are_sane("tell me the finance news", TEMPLATE,
+        """An imperative verb or the first person means the value is the request."""
+        for value in ("me finance", "tell finance", "show finance", "my finance"):
+            self.assertFalse(slots_are_sane("tell me show my finance news", TEMPLATE,
                                             {"topic": value}), value)
+
+    def test_a_determiner_is_allowed_to_start_one(self) -> None:
+        """"some old punk" and "the beatles" are real queries. Rejecting them broke a
+        matcher test that was right: the check is for a swallowed instruction, not for
+        a noun phrase beginning with a small word."""
+        for said, value in (("play some old punk on spotify", "some old punk"),
+                            ("put the beatles on spotify", "the beatles")):
+            self.assertTrue(slots_are_sane(said, "play {topic} on spotify",
+                                           {"topic": value}), value)
 
     def test_a_value_may_not_contain_the_templates_own_words(self) -> None:
         """"{topic} news" with topic="recent news" means the split went wrong."""
