@@ -218,6 +218,13 @@ def nova_status(ctx: ToolContext) -> str:
         done = sum(1 for step in ctx.plan.steps if step.status == "done")
         lines.append(f"There is a plan open: {ctx.plan.title or 'untitled'}, "
                      f"{done} of {len(ctx.plan.steps)} steps done.")
+    if ctx.automations is not None and getattr(ctx.automations, "folder", None):
+        from ..automation import staging
+        from ..intents import match_intent
+
+        proposals = staging.spoken(ctx.automations.folder, match_intent)
+        if proposals:
+            lines.append(proposals)
     if ctx.orchestrator is not None:
         group_state = ctx.orchestrator.spoken()
         if group_state:

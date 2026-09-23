@@ -1013,6 +1013,45 @@ class Controller(CaptureCommands):
         self.bus.publish("reader", action="hide")
         self.say("Closed it.")
 
+    # -- reviewing what Nova wrote for itself (automation/staging.py) ------------------
+    def _staging_folder(self):
+        """Where proposals wait, or None when automations are off."""
+        if self.automations is None:
+            return None
+        return getattr(self.automations, "folder", None)
+
+    def _intent_pending_automations(self, _text: str) -> None:
+        folder = self._staging_folder()
+        if folder is None:
+            self.say("Automations are turned off in the config.")
+            return
+        from .automation import staging
+
+        said = staging.spoken(folder, match_intent)
+        self.say(said or "Nothing is waiting. I only propose an automation after a "
+                         "request has come up a few times.")
+
+    def _intent_approve_automation(self, _text: str) -> None:
+        """Put a proposal into service. It does not run until this happens."""
+        folder = self._staging_folder()
+        if folder is None:
+            self.say("Automations are turned off in the config.")
+            return
+        from .automation import staging
+
+        _ok, said = staging.approve(folder, matches_intent=match_intent)
+        self.say(said)
+
+    def _intent_reject_automation(self, _text: str) -> None:
+        folder = self._staging_folder()
+        if folder is None:
+            self.say("Automations are turned off in the config.")
+            return
+        from .automation import staging
+
+        _ok, said = staging.reject(folder)
+        self.say(said)
+
     def _intent_goals_list(self, _text: str) -> None:
         if self.goals is None:
             self.say("Standing goals are turned off in the config.")

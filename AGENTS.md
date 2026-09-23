@@ -204,10 +204,20 @@ The goal over time is to spend pennies on tokens, not dollars: the default shoul
 
 - **Tag your own replies.** When a request is a general, repeatable *kind* of task (not one-off, not personal small talk), end your final reply with a hidden `[[TASK: task_type]]` line, e.g. `[[TASK: play_song]]` or `[[TASK: search_wikipedia]]`. Use a short snake_case name for the *shape* of the request, not its specific words. Leave the tag off anything you can't picture doing the same way again. This is instructed to you automatically on every voice turn (`assistant/agents/rules.py`); it's stripped before anything is spoken or shown, so it costs a few tokens and nothing else.
 - **Nova tracks the tag, not you.** `assistant/automation/promotion.py` counts how often each `task_type` goes through you instead of an existing automation (`data/task_frequency.json`, `[promotion]` in `config.toml`). What happens next depends on how often and how expensive it's been:
-  - **Frequent and general** (`auto_after` repeats, default 3): Nova asks you directly, in a background turn, to save the steps as `automations/<task_type>.toml` -- see section 6 and `automations/README.md` for the format. Base the steps on how you actually did it earlier in the same conversation. Write the file yourself; don't just describe it.
+  - **Frequent and general** (`auto_after` repeats, default 3): Nova asks you directly, in a background turn, to propose the steps as `automations/pending/<task_type>.toml` -- see section 6 and `automations/README.md` for the format. Base the steps on how you actually did it earlier in the same conversation. Write the file yourself; don't just describe it.
   - **Expensive but not frequent yet** (a turn used several tool calls or real cost, below the auto threshold): Nova asks the user once by voice before saving anything. Only write the automation if a fresh request comes back asking you to.
   - **The user says "remember that" / "teach yourself that" / "save that as an automation"**: write it immediately, regardless of count.
 - **When a saved automation fails** a step for some case it didn't expect, Nova runs the request through you instead so the user still gets an answer, then fires a second background turn telling you what failed, where, and the fact that you just did the same request successfully. Open the automation file and patch the one thing that broke (a selector, a control name, a phrase pattern); keep the change minimal and don't break its other phrases.
+- **A proposal is not live, and you never edit what is running.** Write to
+  `automations/pending/<name>.toml`; `macros.py` globs `automations/*.toml` at the top
+  level only, so nothing in `pending/` can fire until the user says "keep that
+  automation". Never edit a file under `automations/` directly and never edit a source
+  file from a promotion turn. `automation/review.py` checks a proposal before it is
+  offered and refuses one that would misbehave, so writing something it rejects wastes
+  the turn: no phrase built from a complaint ("you haven't told me proper news" fires
+  exactly when the user says it went wrong), no phrase an instant intent already
+  answers, no step that repeats the one before it unconditionally, no slot no phrase
+  provides. All four are patches this loop actually produced and shipped unreviewed.
 - **Never write an automation for a step you haven't actually verified once.** If you're not sure a selector or control name is right, do the request live first (Playwright tools / `main.py ui`), then write the file from what really worked -- a wrong automation is worse than none: it fails silently for the user until it's tried.
 - This loop is how the assistant is meant to get cheaper and faster over its lifetime: the first time something is asked, it goes through you; by the fifth time, it shouldn't.
 

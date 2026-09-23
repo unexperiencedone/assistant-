@@ -159,13 +159,16 @@ def write_prompt(task_type: str, utterance: str) -> str:
     """Ask Claude to turn what it just did into a saved automation."""
     return (
         f'You\'ve now handled requests shaped like "{utterance}" (task type: {task_type}) as full turns several '
-        f"times. Per AGENTS.md's automation promotion rule, save this as automations/{task_type}.toml so it runs "
-        "instantly next time without a model. Follow the format in automations/README.md exactly: a `phrases` "
+        f"times. Per AGENTS.md's automation promotion rule, propose this as "
+        f"automations/pending/{task_type}.toml. Write ONLY that one file: it is a proposal the user "
+        "approves out loud before it runs, so do not touch anything under automations/ itself and do not "
+        "edit any source file. Follow the format in automations/README.md exactly: a `phrases` "
         "list with a {placeholder} for whatever part of the request varies (a song name, a search term, ...), "
         "and [[steps]] using the existing step vocabulary (open, click, browser_goto, browser_fill, media, "
         f'say, ...). Base the steps on how you actually completed "{utterance}" earlier in this conversation. '
-        "If a similarly named automation already exists, improve it instead of overwriting something unrelated. "
-        "Reply with exactly one short spoken sentence confirming what you saved."
+        "Every phrase must be a way somebody ASKS for this. Never build a phrase out of a complaint about it "
+        "going wrong -- a trigger like \"you haven't told me proper news\" fires at the exact moment the user "
+        "is saying it was done badly. Reply with exactly one short spoken sentence confirming what you proposed."
     )
 
 
@@ -173,11 +176,18 @@ def fix_prompt(macro_name: str, macro_path: str, utterance: str, step: int | Non
     """Ask Claude to repair an automation that just failed, using its own successful
     fallback run of the same request as the evidence for what should have happened."""
     where = f"step {step}" if step else "a step"
+    # The proposal is a copy, so it needs a file name of its own that the loader will
+    # not pick up until it is approved.
+    macro_name_slug = re.sub(r"\W+", "_", macro_name.strip().lower()).strip("_") or "automation"
     return (
         f'The automation "{macro_name}" ({macro_path}) just failed at {where}: {error or "no detail"}, while '
-        f'trying to do: "{utterance}". You completed that exact request yourself just now, successfully. Open '
-        f"{macro_path} and patch it (fix the selector or control name, add an optional fallback step, or adjust "
-        "the phrase capture) so this case works next time without a model. Keep the change minimal, follow "
-        "automations/README.md's format, and don't break its other phrases. Reply with exactly one short spoken "
-        "sentence confirming what you changed."
+        f'trying to do: "{utterance}". You completed that exact request yourself just now, successfully. Read '
+        f"{macro_path}, then write a corrected COPY of it to automations/pending/{macro_name_slug}.toml -- do "
+        f"not edit {macro_path} itself, and do not edit any source file. It is a proposal the user approves out "
+        "loud before it replaces the one that is running. Fix the one thing that broke: a selector, a control "
+        "name, the phrase capture, or an existing step made optional. Keep the change minimal and don't break "
+        "its other phrases. Two things to avoid, because both have been done here before: never add a step that "
+        "repeats the previous one unconditionally -- that runs the work twice every time rather than retrying on "
+        "failure -- and never add a phrase built from a complaint about the automation failing. Reply with "
+        "exactly one short spoken sentence confirming what you proposed."
     )

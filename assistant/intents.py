@@ -135,6 +135,17 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
         # "every morning tell me what changed in my repos" -> a daily goal whose text is the rest.
         ("goal_add", r"^every\s+(?P<cadence>morning|day|hour|week|monday|evening|night)[,:]?\s+(?P<what>.{4,200})$"
                      r"|^(?:each|each\s+and\s+every)\s+(?P<cadence2>morning|day|hour|week)[,:]?\s+(?P<what2>.{4,200})$"),
+        # -- reviewing what the assistant wrote for itself (automation/staging.py) ---
+        ("pending_automations", r"^(?:what|which|any)\s+(?:automations?|patches?|changes?)\s+"
+                                r"(?:are\s+)?(?:waiting|pending|for\s+(?:me|review))\b"
+                                r"|^(?:show|list)\s+(?:me\s+)?(?:the\s+)?(?:pending|waiting|proposed)\s+automations?\b"),
+        # Deliberately not claiming "anything waiting for me": publish_waiting answers
+        # that about drafts, and two rules competing for one sentence is a coin toss.
+        ("approve_automation", r"^(?:keep|approve|accept|save|use)\s+(?:that|the|this)\s+automation\b"
+                               r"|^(?:keep|approve|accept)\s+(?:it|that)\s+automation\b"
+                               r"|^(?:put|move)\s+(?:that|it)\s+(?:automation\s+)?in(?:to\s+service)?\b"),
+        ("reject_automation", r"^(?:drop|discard|bin|delete|reject|scrap|forget)\s+(?:that|the|this)\s+automation\b"
+                              r"|^don'?t\s+(?:keep|save|use)\s+(?:that|it)\s+automation\b"),
         ("list_automations", r"^(?:list|show|what are)(?: me)?(?: my| the)? (?:automations|macros|routines|scripts)\b"),
         ("remember_automation", r"^(?:remember|teach yourself|learn from)\s+(?:how you (?:did|do)\s+)?(?:that|this|it)\b.*$"
                                  r"|^(?:save|turn)\s+(?:that|this|it)(?:\s+one)?\s+(?:as|into)\s+(?:an?\s+)?(?:automation|instant\s+command|macro|script)\b.*$"),
