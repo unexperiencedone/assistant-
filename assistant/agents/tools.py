@@ -455,7 +455,7 @@ def _schema(name: str, description: str, properties: dict, required: list[str]) 
 STRING = {"type": "string"}
 TOOLS: dict[str, tuple[Callable[..., str], dict]] = {
     "find_items": (find_items, _schema(
-        "find_items", "Find apps, files or folders on this PC by name, ranked by how often the user uses them.",
+        "find_items", "Find apps, files or folders by name, ranked by use.",
         {"query": STRING, "kind": {"type": "string", "enum": ["app", "file", "folder"]}, "limit": {"type": "integer"}}, ["query"])),
     "open_item": (open_item, _schema(
         "open_item", "Open an app, file or folder on this PC.",
@@ -466,7 +466,7 @@ TOOLS: dict[str, tuple[Callable[..., str], dict]] = {
     "list_windows": (list_windows, _schema(
         "list_windows", "List titles of open windows, optionally filtered.", {"filter": STRING}, [])),
     "list_controls": (list_controls, _schema(
-        "list_controls", "List clickable controls (buttons, fields) of an open app window, with their names and AutomationIds.",
+        "list_controls", "List an app window clickable controls with names and AutomationIds.",
         {"window": STRING, "filter": STRING, "limit": {"type": "integer"}}, ["window"])),
     "click_control": (click_control, _schema(
         "click_control", "Click a control in an app window by its name or AutomationId. List controls first if unsure.",
@@ -481,98 +481,143 @@ TOOLS: dict[str, tuple[Callable[..., str], dict]] = {
         "read_control", "Read the text of a control in an app window (e.g. a result field).",
         {"window": STRING, "name": STRING, "auto_id": STRING}, ["window"])),
     "list_automations": (list_automations, _schema(
-        "list_automations", "List the user's SAVED AUTOMATIONS: permanent voice shortcuts stored as files. "
-        "These are NOT the plan. If the user asks about plans, steps, or clearing/reading a plan, "
-        "use read_plan or clear_plan instead -- never this.", {}, [])),
+        "list_automations", "Saved voice shortcuts (files). NOT the plan: for plans use read_plan/clear_plan.", {}, [])),
     "read_plan": (read_plan, _schema(
-        "read_plan", "Read back THE PLAN drafted in this conversation: its title and steps. "
-        "A plan is temporary and belongs to this conversation; a saved automation is a different thing.",
+        "read_plan", "Read back this conversation plan. Not the saved automations.",
         {}, [])),
     "clear_plan": (clear_plan, _schema(
-        "clear_plan", "Throw away the plan drafted in this conversation, when the user asks to clear, "
-        "drop, scrap or reset the plan. This does not delete any saved automation.", {}, [])),
+        "clear_plan", "Throw away this conversation plan. Never touches automations.", {}, [])),
     "run_automation": (run_automation, _schema(
         "run_automation", "Run a saved automation by one of its trigger phrases.", {"phrase": STRING}, ["phrase"])),
     "write_word": (write_word, _schema(
-        "write_word", "Write a Microsoft Word document and open it. Content is Markdown: # headings, - bullets, blank lines between paragraphs.",
+        "write_word", "Write and open a Word document. Content is Markdown.",
         {"title": STRING, "markdown": STRING}, ["title", "markdown"])),
     "web_search": (web_search, _schema(
-        "web_search", "Search the web for current information, facts, news or anything you don't know. "
-        "Returns titles, snippets and links. The snippets are usually enough to answer from directly.",
+        "web_search", "Search the web for anything current or unknown. Snippets usually answer it.",
         {"query": STRING, "count": {"type": "integer"}}, ["query"])),
     "read_page": (read_page, _schema(
-        "read_page", "Read one web page as plain text, given its URL. "
-        "Use only when the search snippets did not answer the question.",
+        "read_page", "Read one web page as text. Only when search snippets were not enough.",
         {"url": STRING, "limit": {"type": "integer"}}, ["url"])),
     "nova_status": (nova_status, _schema(
-        "nova_status", "What you yourself are doing right now: background tasks, screen recording, "
-        "drafts waiting for approval, standing goals. Use this whenever the user asks what you are up to.",
+        "nova_status", "What you are doing now: tasks, recording, drafts, goals, plan.",
         {}, [])),
     "browse_open": (browse_open, _schema(
-        "browse_open", "Open a URL in the real browser and read what is on it. Use when read_page "
-        "wasn't enough: pages that need JavaScript, a login, or that refuse a scripted fetch. "
-        "Slower than read_page, so try that first.",
+        "browse_open", "Open a URL in the real browser and read it. For pages needing JavaScript or a "
+        "login. Slower than read_page; try that first.",
         {"url": STRING, "new_tab": {"type": "boolean"}}, ["url"])),
     "browse_read": (browse_read, _schema(
-        "browse_read", "Read the page currently open in the browser, or one element of it by its "
-        "visible text or CSS selector.",
+        "browse_read", "Read the open page, or one element by text or CSS selector.",
         {"limit": {"type": "integer"}, "text": STRING, "selector": STRING}, [])),
     "browse_click": (browse_click, _schema(
-        "browse_click", "Click something on the open page by its visible text, role or CSS selector.",
+        "browse_click", "Click on the open page by text, role or CSS selector.",
         {"text": STRING, "selector": STRING, "role": STRING, "name": STRING}, [])),
     "browse_fill": (browse_fill, _schema(
-        "browse_fill", "Type into a field on the open page. Set press_enter to submit a search box.",
+        "browse_fill", "Type into a field on the open page; press_enter submits.",
         {"value": STRING, "text": STRING, "selector": STRING, "label": STRING,
          "placeholder": STRING, "press_enter": {"type": "boolean"}}, ["value"])),
     "draft_outreach": (draft_outreach, _schema(
-        "draft_outreach", "Stage an outreach email for the user to approve. Write it in the FIRST "
-        "PERSON AS THE USER, never as yourself, and never name a price, a discount, a free offer, a "
-        "deadline or a guarantee -- say those will be confirmed. Sends nothing.",
+        "draft_outreach", "Stage an outreach email for approval; sends nothing. Write as the USER in "
+        "first person, never as yourself. No prices, discounts, free offers, deadlines or guarantees.",
         {"recipient": STRING, "subject": STRING, "body": STRING}, ["recipient", "subject", "body"])),
     "start_task": (start_task, _schema(
-        "start_task", "Start ONE job in the background and return immediately, so you can keep answering. "
-        "Use for something slow the user doesn't need to wait on. You'll be told when it finishes.",
+        "start_task", "Start one slow job in the background and keep answering. You are told when it ends.",
         {"task": STRING, "label": STRING}, ["task"])),
     "run_steps": (run_steps, _schema(
-        "run_steps", "Run several pieces of work for one request and answer once when they're all done. "
-        "Each step is a short sentence; add '(after 1, 2)' to a step that must wait for others, and leave "
-        "it off for steps that can run at the same time. Only use this when the request really has "
-        "separate parts -- for one job, just do it yourself.",
+        "run_steps", "Run several parts of one request, answering once. Add '(after 1, 2)' to a step that "
+        "must wait. Only when the request genuinely has separate parts.",
         {"steps": {"type": "array", "items": STRING}, "request": STRING}, ["steps"])),
     "start_recording": (start_recording, _schema(
-        "start_recording", "Start recording the screen. Footage is saved and never sent anywhere.",
+        "start_recording", "Start recording the screen.",
         {"fps": {"type": "integer"}}, [])),
     "stop_recording": (stop_recording, _schema(
-        "stop_recording", "Stop the screen recording that is running and save the file.", {}, [])),
+        "stop_recording", "Stop and save the screen recording.", {}, [])),
     "draft_post": (draft_post, _schema(
-        "draft_post", "Write a post for linkedin or instagram and stage it for the user's approval. "
-        "This does NOT publish: the user approves the draft themselves afterwards.",
+        "draft_post", "Write a linkedin or instagram post and stage it for approval. Does not publish.",
         {"platform": {"type": "string", "enum": ["linkedin", "instagram"]}, "text": STRING},
         ["platform", "text"])),
     "add_goal": (add_goal, _schema(
-        "add_goal", "Add a standing goal Nova starts by itself from then on, e.g. every morning.",
+        "add_goal", "Add a standing goal Nova starts by itself, e.g. every morning.",
         {"task": STRING, "cadence": {"type": "string", "enum": ["hourly", "daily", "weekly"]}}, ["task"])),
     "list_goals": (list_goals, _schema(
         "list_goals", "The standing goals Nova runs on its own.", {}, [])),
     "list_skills": (list_skills, _schema(
-        "list_skills", "What each installed skill is for. Use when the skill names in your instructions "
-        "aren't enough to tell which one fits.", {"query": STRING}, [])),
+        "list_skills", "What each skill is for, when the names are not enough.", {"query": STRING}, [])),
     "read_skill": (read_skill, _schema(
-        "read_skill", "Load one skill's full instructions by name, then follow them. Use when a skill "
-        "covers the job you've been asked to do.", {"name": STRING, "limit": {"type": "integer"}}, ["name"])),
+        "read_skill", "Load a skill instructions by name, then follow them.", {"name": STRING, "limit": {"type": "integer"}}, ["name"])),
     "delegate_to_agy": (delegate_to_agy, _schema(
-        "delegate_to_agy", "Hand a RESEARCH or CONTENT job to Antigravity: reading around a subject, "
-        "gathering material from several pages, scraping a site, comparing options, or thinking through "
-        "how something could work. Prefer this over delegate_to_claude for anything that is reading and "
-        "writing prose rather than code -- it is the cheaper of the two. Give it the whole request in "
-        "one self-contained sentence.", {"task": STRING}, ["task"])),
+        "delegate_to_agy", "Research and content: read around a subject, gather from several pages, "
+        "scrape a site, compare options, ideate. Cheaper than Claude; prefer it for prose over code.", {"task": STRING}, ["task"])),
     "delegate_to_claude": (delegate_to_claude, _schema(
-        "delegate_to_claude", "Hand a task to Claude Code, which has a terminal, file editing and web access. "
-        "Use for coding, editing or creating files, running commands, git, and anything multi-step or open-ended. "
-        "Give it the full request in one self-contained sentence. It may take a minute. "
-        "Pass 'skill' with the name of the skill that fits the job, if one does.",
+        "delegate_to_claude", "Code, files, commands, git, multi-step work on this machine. Slowest and "
+        "costliest, so last resort. Pass 'skill' if one fits.",
         {"task": STRING, "skill": STRING}, ["task"])),
 }
+
+
+# Always offered, because these are the ones a turn reaches for without being asked to:
+# looking something up, finding something on the machine, saying what it is doing, and
+# handing the job on when it cannot finish.
+CORE = {
+    "web_search", "read_page", "nova_status", "find_items", "open_item",
+    "delegate_to_agy", "delegate_to_claude", "read_skill", "list_skills",
+}
+# The rest are offered only when the request is about them. Every schema costs tokens on
+# every turn, and the free tier's per-minute budget is small enough that the whole set
+# was eating a fifth of it before a word of the request was sent. Matching locally is
+# the same trick that made skills work: a model will not reliably ask what it has, but
+# it does use what it is given.
+WHEN_MENTIONED: dict[str, tuple[str, ...]] = {
+    "browse_open": ("browser", "chrome", "website", "site", "page", "scrape", "directory", "listing", "form", "login"),
+    "browse_read": ("browser", "chrome", "website", "site", "page", "scrape", "directory", "listing"),
+    "browse_click": ("browser", "chrome", "click", "button", "link", "form", "submit"),
+    "browse_fill": ("browser", "chrome", "type", "fill", "form", "search box", "field"),
+    "draft_post": ("post", "linkedin", "instagram", "publish", "social", "draft"),
+    "draft_outreach": ("email", "mail", "outreach", "customer", "client", "prospect", "draft", "reach out"),
+    "start_recording": ("record", "recording", "screen", "capture", "demo", "video"),
+    "stop_recording": ("record", "recording", "stop", "screen", "capture"),
+    "add_goal": ("goal", "every morning", "every day", "daily", "weekly", "remind", "standing"),
+    "list_goals": ("goal", "standing", "unprompted", "by yourself"),
+    "read_plan": ("plan", "step", "steps"),
+    "clear_plan": ("plan", "step", "steps", "clear", "drop", "scrap"),
+    "run_steps": ("and then", "also", "at the same time", "both", "several", "steps", "parallel"),
+    "start_task": ("background", "while", "meanwhile", "in the background", "carry on"),
+    "write_word": ("word", "document", "docx", "article", "report", "write up", "whitepaper"),
+    "find_duplicates": ("duplicate", "duplicates", "copies", "space"),
+    "list_automations": ("automation", "automations", "macro", "shortcut", "saved"),
+    "run_automation": ("automation", "macro", "shortcut", "run the"),
+    "list_windows": ("window", "windows", "app", "open apps"),
+    "list_controls": ("window", "button", "control", "click", "app", "field"),
+    "click_control": ("window", "button", "control", "click", "app"),
+    "type_in_app": ("window", "type", "app", "into"),
+    "press_keys": ("keys", "keyboard", "shortcut", "ctrl", "press"),
+    "read_control": ("window", "read", "field", "app", "result"),
+}
+
+
+def relevant(ctx: ToolContext, said: str = "") -> list[dict]:
+    """The usable tools worth sending for *this* request.
+
+    With nothing to match against, everything usable is offered -- an empty request is
+    not evidence that a tool is unwanted. Given a request, the core set plus whatever it
+    mentions goes out, which is most often about ten schemas instead of twenty-four.
+
+    A miss costs capability rather than correctness: the delegates are always present,
+    so the worst case is that a job Groq could have done itself is handed on.
+    """
+    usable = schemas(ctx)
+    if not (said or "").strip():
+        return usable
+    lowered = f" {' '.join((said or '').lower().split())} "
+    kept = []
+    for schema in usable:
+        name = schema["function"]["name"]
+        if name in CORE:
+            kept.append(schema)
+            continue
+        words = WHEN_MENTIONED.get(name)
+        if words is None or any(word in lowered for word in words):
+            kept.append(schema)
+    return kept
 
 
 def schemas(ctx: ToolContext) -> list[dict]:

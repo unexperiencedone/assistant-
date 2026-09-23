@@ -25,7 +25,7 @@ from .config import Settings
 from .controller_capture import CaptureCommands
 from .events import EventBus
 from .intents import LOCAL_INTENTS, Intent, match_intent, normalize, strip_wake_word
-from . import matching, persona, reader
+from . import matching, persona, progress, reader
 from .persona import guard as persona_guard
 from .classify import classify
 from .intents import example_corpus as intent_examples
@@ -394,6 +394,9 @@ class Controller(CaptureCommands):
         # Strip Claude's own [[TASK: type]] tag (AGENTS.md section 12) before anything
         # below speaks or shows the reply.
         task_type, result.summary = promotion.extract_task(result.summary)
+        # The agent's own progress markers were for narration while it worked; they
+        # are not words to read out at the end (assistant/progress.py).
+        result.summary = progress.strip_milestones(result.summary).strip()
         # The agent hands an action back when a phrasing missed the instant command
         # (agents/rules.py). The marker is an instruction to Nova, not words to read out.
         asked_for = phone_bridge.parse_markers(result.summary)

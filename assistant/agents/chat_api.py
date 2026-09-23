@@ -105,6 +105,7 @@ class ChatAgent(AgentBackend):
         self.context = tool_registry.ToolContext(workspace=workspace)
         self.history: list[dict[str, Any]] = []
         self.profile = ""  # the user's profile summary, visible to every agent
+        self._offered: list[dict] = []   # schemas chosen for the current turn
 
     # -- availability ------------------------------------------------------------------
     @property
@@ -141,7 +142,10 @@ class ChatAgent(AgentBackend):
     def _system_prompt(self, said: str = "") -> str:
         """Name the tools that exist right now. A model told about a tool it wasn't given
         will try to call it, and Groq rejects the whole turn when it does."""
-        names = [schema["function"]["name"] for schema in tool_registry.schemas(self.context)]
+        # Only the tools worth sending for this request, so the schemas do not eat a
+        # fifth of the free tier per-minute budget before the request is even in.
+        self._offered = tool_registry.relevant(self.context, said)
+        names = [schema["function"]["name"] for schema in self._offered]
         from .. import persona
 
         from . import skills as skill_registry
@@ -299,7 +303,7 @@ class ChatAgent(AgentBackend):
             "temperature": self.settings.temperature,
         }
         if with_tools:
-            body["tools"] = tool_registry.schemas(self.context)
+            body["tools"] = getattr(self, "_offered", None) or tool_registry.schemas(self.context)
         request = urllib.request.Request(self.api_url, data=json.dumps(body).encode("utf-8"), headers={
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",

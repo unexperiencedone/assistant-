@@ -28,7 +28,11 @@ from .planning import Plan
 from . import triage
 from .progress import Tracker
 
-NARRATE_EVERY_SECONDS = 30
+# A milestone the agent declared is worth hearing as soon as it lands, but not more
+# often than this. The inferred fallback is vaguer, so it waits twice as long: hearing
+# "still writing code" every half minute is noise, and was the complaint.
+MILESTONE_EVERY_SECONDS = 60
+NARRATE_EVERY_SECONDS = 120
 _TOOL_PHRASES = {
     "edit": "editing {}", "write": "writing {}", "multiedit": "editing {}", "read": "reading {}",
     "bash": "running a command", "powershell": "running a command", "run_command": "running a command",
@@ -198,6 +202,15 @@ class AgentRunner:
                     self.speaker.say(task.progress.line())
                     last_spoken = time.time()
             elif event.kind == "text":
+                # A phase the agent declared about its own work. Preferred over anything
+                # inferred from tool names, and it is why the narration can say "finished
+                # scaffolding, now writing the copy" rather than "running a command".
+                if task.progress is not None and task.progress.declared(event.text):
+                    if (self.focus == task.id and not self.speaker.is_busy
+                            and time.time() - last_spoken > MILESTONE_EVERY_SECONDS):
+                        self.speaker.say(task.progress.line())
+                        last_spoken = time.time()
+                        task.last_activity = task.progress.latest
                 self._update_plan(event.text, task)
 
         result = task.backend.run(task.prompt, on_event, task.cancel)

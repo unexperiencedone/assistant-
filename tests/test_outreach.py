@@ -123,9 +123,14 @@ class ThroughTheTool(unittest.TestCase):
 
     def test_its_description_tells_the_model_the_rules(self) -> None:
         by_name = {s["function"]["name"]: s["function"]["description"] for s in schemas(self.ctx)}
-        described = by_name["draft_outreach"]
-        self.assertIn("FIRST PERSON AS THE USER", described)
+        described = by_name["draft_outreach"].lower()
+        # Asserted by substance, not wording: the descriptions were trimmed hard to fit
+        # the free tier's per-minute budget, so a test on exact phrasing would just
+        # break every time one is shortened.
+        self.assertIn("first person", described)
+        self.assertIn("as the user", described)
         self.assertIn("price", described)
+        self.assertIn("sends nothing", described)
 
 
 class BrowserTools(unittest.TestCase):
