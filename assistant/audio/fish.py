@@ -72,6 +72,7 @@ class FishSpeaker(Speaker):
     def __init__(self, settings: VoiceSettings, bus: EventBus) -> None:
         self._cache_dir: Path | None = None
         self._warned = False
+        self._out = None            # (stream, write, owner), opened once and kept
         super().__init__(settings, bus)
 
     # -- setup -------------------------------------------------------------------------
@@ -93,6 +94,11 @@ class FishSpeaker(Speaker):
                     break
         self._voice.Rate = max(-10, min(10, self.settings.rate))
         self._voice.Volume = max(0, min(100, self.settings.volume))
+
+        # Opened here, on the worker thread, so the first spoken line does not pay the
+        # second and a half that opening a stream costs.
+        if self.api_key:
+            self._out = _open_output()
 
         folder = getattr(self.settings, "fish_cache", "") or ""
         if folder:
@@ -181,9 +187,28 @@ class FishSpeaker(Speaker):
                 pass
         return played
 
+    def _output(self):
+        """The sound card, opened once and kept.
+
+        Opening a PortAudio stream costs about 1.5 seconds on this machine and closing
+        it another quarter of one, which was being paid on every single line -- more
+        than the API call itself, and it made even a cached line take over two seconds.
+        So the device is opened when the worker thread starts and held for the life of
+        the process, the way any audio application holds one.
+        """
+        if self._out is None:
+            self._out = _open_output()
+        return self._out
+
+    def _drop_output(self) -> None:
+        """Let go of the device so the next line opens a fresh one."""
+        if self._out is not None:
+            _close_output(self._out[0], self._out[2])
+            self._out = None
+
     def _play(self, blocks) -> bool:
         """Write PCM to the sound card as it arrives. False if there is no output."""
-        stream, write, owner = _open_output()
+        stream, write, owner = self._output()
         if write is None:
             self._warn("no sound output device")
             return False
@@ -204,8 +229,13 @@ class FishSpeaker(Speaker):
                     heard = True
             if leftover and not self._interrupt.is_set():
                 write(leftover + b"\x00" * (FRAME - len(leftover)))
-        finally:
-            _close_output(stream, owner)
+        except Exception as error:
+            # A device that has gone away -- unplugged, or switched in Windows -- is let
+            # go of, so the next line opens a fresh one instead of failing forever
+            # against a dead handle. The stream is deliberately *not* closed on the
+            # normal path: opening one costs about a second and a half here.
+            self._drop_output()
+            self._warn(error)
         return heard
 
     def _say_locally(self, text: str) -> None:

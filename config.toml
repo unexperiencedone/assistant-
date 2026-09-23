@@ -48,7 +48,10 @@ volume = 100                   # 0..100
 voice_contains = "Zira"        # the local fallback voice, by part of its name
 fish_key_env = "FISH_AUDIO_S2.1_PRO"   # the key itself belongs in .env
 fish_model = "s2.1-pro-free"
-fish_voice = ""                # a reference_id from fish.audio; empty = its default voice
+# Sarah, from fish.audio's own voice library: female, English, and no slower than the
+# default (0.66s to first byte against 0.58s). Any reference_id works here,
+# including a cloned one -- python -c "..." against /model lists what is available.
+fish_voice = "933563129e564b19a115bedd57b7406a"
 fish_timeout = 20
 fish_cache = "data/tts-cache"  # synthesised lines, reused; delete the folder to reset
 
