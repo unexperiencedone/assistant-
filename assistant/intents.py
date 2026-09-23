@@ -93,7 +93,14 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
         ("open_dashboard", r"^(?:open|show)(?: me)?(?: the)? (?:dashboard|visuali[sz]ation|board|canvas|flow ?chart|graph)\b|^visuali[sz]e(?: it| the plan)?\b"),
         ("new_session", r"^(?:new|fresh|reset)(?: agent)? (?:session|conversation|context)\b"),
         ("time", r"^what(?:'s| is) the time\b|^what time is it\b"),
-        ("news_briefing", r"^(?:what'?s|what is|pull|get|give|read|run|fetch|show|any)?\s*(?:me)?\s*(?:up)?\s*(?:a|the|my)?\s*(?:news(?:\s+(?:briefing|headlines|update|summary))?|headlines|briefing)(?:\s+(?:briefing|update))?(?:\s+(?:for|on|about)\s+(?P<topic>.+?))?(?:\s+(?:today|now|right now|this morning|please))?[.!?]*$"),
+        # "brief me on recent news" reached the free-model router, which filled the
+        # automation's {topic} with "brief me on recent" and said it back out loud.
+        # Catching the phrasing here keeps it instant, free and offline instead.
+        ("news_briefing", r"^(?:brief\s+me(?:\s+(?:on|about|with))?|what'?s|what is|pull|get|give|read|run|fetch|show|any)?"
+                          r"\s*(?:me)?\s*(?:up)?\s*(?:a|the|my)?\s*(?:recent|latest|today'?s)?\s*"
+                          r"(?:news(?:\s+(?:briefing|headlines|update|summary))?|headlines|briefing)"
+                          r"(?:\s+(?:briefing|update))?(?:\s+(?:for|on|about)\s+(?P<topic>.+?))?"
+                          r"(?:\s+(?:today|now|right now|this morning|please))?[.!?]*$"),
         ("recap", r"^(?:what did (?:we|i|you) (?:do|work on|get done)|(?:give me a |quick )?recap|summari[sz]e (?:the |this |my |our )?(?:session|work|day))(?:\s+(?:in |for |from |of )?(?P<when>today|yesterday|this session|(?:the )?(?:last|previous) session))?\b"),
         # -- the reader window (assistant/reader.py) ---------------------------------
         ("hide_reader", r"^(?:close|hide|dismiss|get rid of)\s+(?:the\s+)?(?:reader|document|report|that window|the window)"),

@@ -98,8 +98,51 @@ def _extract_json(text: str) -> dict:
         return {}
 
 
+# Words that mean the value swallowed the request rather than naming its subject. A slot
+# is a noun phrase -- "finance", "artificial intelligence" -- and never starts like an
+# instruction.
+_NOT_A_SUBJECT = {
+    "brief", "tell", "give", "show", "pull", "open", "find", "get", "fetch", "read",
+    "play", "run", "make", "do", "let", "can", "could", "would", "please",
+    "me", "my", "i", "you", "your", "us", "we", "it", "that", "this", "a", "an", "the",
+    "some", "any", "about", "on", "for", "up", "of", "with", "and", "to",
+}
+MAX_SLOT_WORDS = 6
+
+
+def slots_are_sane(said: str, template: str, args: dict[str, str]) -> bool:
+    """Do these slot values look like they came out of what was actually said?
+
+    Four cheap checks, each for a way the model got this wrong in practice:
+
+    1. **Nothing invented.** Every word of the value has to appear in the request.
+    2. **Not a whole sentence.** A slot names a subject; past a few words it has stopped
+       naming one and started repeating the request.
+    3. **Not an instruction.** A value beginning "brief", "tell me", "show" is the
+       request wearing the slot's clothes.
+    4. **Not the template's own words.** If the script is "{topic} news", a topic
+       containing "news" means the split went in the wrong place.
+    """
+    from .matching import tokens
+
+    said_words = set(tokens(said or "", strip_filler=False))
+    literals = {word for word in re.findall(r"[A-Za-z']+", re.sub(r"\{[^}]*\}", " ", template or ""))}
+    literals = {word.lower() for word in literals}
+    for value in args.values():
+        words = [word.lower() for word in re.findall(r"[A-Za-z0-9']+", value)]
+        if not words or len(words) > MAX_SLOT_WORDS:
+            return False
+        if not set(words) <= said_words:
+            return False
+        if words[0] in _NOT_A_SUBJECT:
+            return False
+        if set(words) & literals:
+            return False
+    return True
+
+
 def validate(answer: dict, corpus: list[tuple[str, str, str]],
-             min_confidence: float = MIN_CONFIDENCE) -> Guess | None:
+             min_confidence: float = MIN_CONFIDENCE, said: str | None = None) -> Guess | None:
     """Turn the model's reply into a Guess, or into nothing.
 
     Everything is checked against the corpus. The model is a pointer, not a source.
@@ -127,6 +170,13 @@ def validate(answer: dict, corpus: list[tuple[str, str, str]],
             if key in wanted and str(value).strip()}
     if wanted - set(args):
         return None                                   # a slot it failed to fill
+    # The name was checked against the corpus; the values were not, and that gap showed.
+    # Asked "brief me on recent news", the model picked the right script and handed back
+    # topic="brief me on recent", which the automation then said back out loud: "Here's
+    # the latest on brief me on recent." A pointer, not a source, has to mean the
+    # arguments too.
+    if said is not None and not slots_are_sane(said, template, args):
+        return None
     return Guess(route=route, name=name, args=args, score=confidence, phrase=template)
 
 
@@ -159,4 +209,4 @@ def classify(said: str, corpus: list[tuple[str, str, str]], *, api_key: str,
     if not choices:
         return None
     content = (choices[0].get("message") or {}).get("content") or ""
-    return validate(_extract_json(content), corpus, min_confidence)
+    return validate(_extract_json(content), corpus, min_confidence, said=said)
