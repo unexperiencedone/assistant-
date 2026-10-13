@@ -11,6 +11,11 @@
     ledger               what the ledger holds
     pending              drafts waiting at the gate
     approve [id]         send a waiting draft (the same as saying "post it")
+    schedule <id> <when> approve a draft to go out later ("thursday 10am", "tomorrow 9:30am")
+    unschedule <id>      put it back to waiting
+    scheduled            what's lined up
+    due                  send whatever is due now (Nova does this by itself while running)
+    edit <urn> <file>    replace a live post's text with the contents of a file (images stay)
     drop [id]            discard one
 
 Drafts staged here land in the same SQLite file the running app reads, so "post it"
@@ -63,6 +68,39 @@ def main(argv: list[str]) -> int:
         ok, detail = linkedin.check()
         print(detail)
         return 0 if ok else 1
+
+    if command == "edit":
+        load_settings()
+        urn, _, file = rest.partition(" ")
+        path = Path(file.strip().strip('"'))
+        if not urn.startswith("urn:li:") or not path.is_file():
+            print("Usage: edit <urn:li:...> <text file>")
+            return 2
+        ok, detail = linkedin.update_text(urn, path.read_text(encoding="utf-8").strip())
+        print(detail)
+        return 0 if ok else 1
+
+    if command in ("schedule", "unschedule", "scheduled", "due"):
+        publisher, _ = _services()
+        try:
+            if command == "schedule":
+                draft_id, _, when = rest.partition(" ")
+                print(publisher.schedule(int(draft_id), when.strip().strip('"')) if draft_id.isdigit()
+                      else "Usage: schedule <draft id> <when>")
+            elif command == "unschedule":
+                print(publisher.gate.unschedule(int(rest))[1] if rest.isdigit() else "Usage: unschedule <id>")
+            elif command == "scheduled":
+                import time as _time
+
+                for draft in publisher.gate.scheduled():
+                    when = _time.strftime("%a %d %b %H:%M", _time.localtime(draft["send_at"]))
+                    print(f"[{draft['id']}] {when}  {(draft['extra'] or {}).get('name', '')}  "
+                          f"{len(draft['media'])} image(s)")
+            else:
+                print("\n".join(publisher.send_due()) or "Nothing is due.")
+        finally:
+            publisher.close()
+        return 0
 
     if command in ("approve", "drop", "pending"):
         publisher, _ = _services()

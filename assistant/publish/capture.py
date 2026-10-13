@@ -153,7 +153,12 @@ class LocalRun:
             return self
         port = _free_port()
         env = {**os.environ, "PORT": str(port), "BROWSER": "none", "NODE_ENV": "development"}
-        log = open(self.folder / ".nova-showcase-run.log", "w", encoding="utf-8", errors="replace")
+        # The log lives in Nova's own data folder: running someone's project must not leave
+        # files in it (one ended up staged for a commit before this moved).
+        logs = Path(__file__).resolve().parents[2] / "data" / "showcase" / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        self.log_path = logs / f"{self.folder.name}.log"
+        log = open(self.log_path, "w", encoding="utf-8", errors="replace")
         self.process = subprocess.Popen(
             [part.replace("{port}", str(port)) for part in command], cwd=self.folder, env=env,
             stdout=log, stderr=subprocess.STDOUT, shell=False,
@@ -162,7 +167,7 @@ class LocalRun:
         deadline = time.time() + self.wait
         while time.time() < deadline:
             if self.process.poll() is not None:
-                self.reason = "the dev server exited (see .nova-showcase-run.log in the project)"
+                self.reason = f"the dev server exited (log: {self.log_path})"
                 break
             if _up(url):
                 self.url = url

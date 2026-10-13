@@ -149,6 +149,37 @@ class LedgerAndGate(Folder):
             publisher.close()
 
 
+class Scheduling(Folder):
+    def test_a_scheduled_post_goes_out_once_and_only_when_due(self):
+        publisher = PublishService(self.root / "publish.db")
+        sent = []
+        original = linkedin.sender
+        linkedin.sender = lambda d: (sent.append(d["id"]) or (True, "Posted to LinkedIn (urn:li:share:9)."))
+        try:
+            draft = publisher.gate.stage("linkedin_post", "Thursday's post")
+            ok, said = publisher.gate.schedule(draft["id"], time.time() + 3600)
+            self.assertTrue(ok)
+            self.assertEqual(publisher.gate.send_due(), [])            # not yet
+            self.assertEqual(publisher.gate.pending(), [])             # approved, so not "waiting on you"
+            publisher.gate.send_due(now=time.time() + 7200)
+            publisher.gate.send_due(now=time.time() + 9000)            # a second tick never resends
+            self.assertEqual(sent, [draft["id"]])
+            self.assertEqual(publisher.gate.get(draft["id"])["status"], "sent")
+        finally:
+            linkedin.sender = original
+            publisher.close()
+
+    def test_unscheduling_puts_it_back_in_your_hands(self):
+        publisher = PublishService(self.root / "publish.db")
+        try:
+            draft = publisher.gate.stage("linkedin_post", "maybe later")
+            publisher.gate.schedule(draft["id"], time.time() + 3600)
+            publisher.gate.unschedule(draft["id"])
+            self.assertEqual(publisher.gate.get(draft["id"])["status"], "pending")
+        finally:
+            publisher.close()
+
+
 class Token(Folder):
     def test_an_expired_stored_token_is_not_used(self):
         path = self.root / "token.json"

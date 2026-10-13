@@ -783,8 +783,11 @@ class VoiceAssistant:
             self.goals.start()
         if self.today:
             self.today.start()
-        if self.publisher is not None and self.publisher.showcase is not None:
-            self.publisher.showcase.start()
+        if self.publisher is not None:
+            self.publisher.notify = self._tray_note
+            self.publisher.start()          # sends scheduled posts when their time comes
+            if self.publisher.showcase is not None:
+                self.publisher.showcase.start()
         if self.schedule:
             self.schedule.start()
         if self.afterthought:

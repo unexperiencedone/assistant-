@@ -11,6 +11,8 @@ LinkedIn and Instagram need credentials in .env.
 
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -27,6 +29,7 @@ class PublishService:
         # and never for a failure. The showcase ledger is written from here.
         self.after_send: list[Callable[[dict[str, Any], str], None]] = []
         self.showcase: Any = None   # publish/showcase.py, attached by the app when enabled
+        self.notify: Callable[[str], None] | None = None   # tray note when a scheduled post goes out
         self.gate.register("linkedin_post", self._send_linkedin)
         self.gate.register("instagram_post", instagram.sender)
         self.gate.register("github_release", self._send_release)
@@ -36,7 +39,50 @@ class PublishService:
         # sentence about an unknown draft kind, and the draft stays for later.
         self.gate.register("outreach_email", self._send_email)
 
+    # -- scheduled posts: checked every few minutes while Nova runs -------------------
+    def start(self, every: float = 300) -> None:
+        if getattr(self, "_ticker", None) is not None:
+            return
+        self._halt = threading.Event()
+
+        def loop() -> None:
+            while not self._halt.wait(every if self._ran_once else 30):
+                self._ran_once = True
+                self.send_due()
+
+        self._ran_once = False
+        self._ticker = threading.Thread(target=loop, name="publish-schedule", daemon=True)
+        self._ticker.start()
+
+    def send_due(self) -> list[str]:
+        said = []
+        for draft, ok, detail in self.gate.send_due():
+            line = detail if ok else f"A scheduled post didn't go out. {detail}"
+            said.append(line)
+            if self.bus is not None:
+                self.bus.log(line)
+            if self.notify is not None:
+                try:
+                    self.notify(line)
+                except Exception:
+                    pass
+        return said
+
+    def schedule(self, draft_id: int, when: str) -> str:
+        from ..schedule.when import parse_when
+
+        try:
+            moment = parse_when(when)
+        except Exception:
+            return f"I couldn't tell when '{when}' is."
+        if moment.timestamp() < time.time():
+            return f"{when} is in the past."
+        return self.gate.schedule(draft_id, moment.timestamp())[1]
+
     def close(self) -> None:
+        halt = getattr(self, "_halt", None)
+        if halt is not None:
+            halt.set()
         self.gate.close()
 
     # -- staging (safe: nothing leaves the machine) -----------------------------------

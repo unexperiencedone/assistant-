@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS drafts (
     text       TEXT NOT NULL DEFAULT '',
     media      TEXT NOT NULL DEFAULT '[]', -- local file paths, as JSON
     extra      TEXT NOT NULL DEFAULT '{}',
-    status     TEXT NOT NULL DEFAULT 'pending',  -- pending | sent | failed | discarded
+    status     TEXT NOT NULL DEFAULT 'pending',  -- pending | scheduled | sent | failed | discarded
     decided_at REAL,
     result     TEXT NOT NULL DEFAULT ''
 );
@@ -55,6 +55,9 @@ class PublishGate:
         self._db.row_factory = sqlite3.Row
         with self._lock:
             self._db.executescript(SCHEMA)
+            columns = {row[1] for row in self._db.execute("PRAGMA table_info(drafts)")}
+            if "send_at" not in columns:   # added for scheduled posts; older databases lack it
+                self._db.execute("ALTER TABLE drafts ADD COLUMN send_at REAL")
             self._db.commit()
         self._senders: dict[str, Sender] = {}
 
@@ -89,8 +92,52 @@ class PublishGate:
         draft = self.get(draft_id) if draft_id else self.oldest_pending()
         if draft is None:
             return False, "There's nothing waiting to go out."
-        if draft["status"] != "pending":
+        if draft["status"] not in ("pending", "scheduled"):
             return False, f"That one is already {draft['status']}."
+        return self._send(draft)
+
+    def schedule(self, draft_id: int, send_at: float) -> tuple[bool, str]:
+        """Approve a draft now, to go out later. Scheduling *is* the approval for that one
+        draft at that time -- it is not a mode, and unscheduling puts it back to pending."""
+        draft = self.get(draft_id)
+        if draft is None:
+            return False, f"There's no draft {draft_id}."
+        if draft["status"] not in ("pending", "scheduled"):
+            return False, f"That one is already {draft['status']}."
+        with self._lock:
+            self._db.execute("UPDATE drafts SET status = 'scheduled', send_at = ? WHERE id = ?",
+                             (send_at, draft_id))
+            self._db.commit()
+        if self.bus is not None:
+            self.bus.publish("publish", id=draft_id, kind=draft["kind"], status="scheduled")
+        when = time.strftime("%a %d %b, %H:%M", time.localtime(send_at))
+        return True, f"Scheduled for {when}: {describe(draft)}"
+
+    def unschedule(self, draft_id: int) -> tuple[bool, str]:
+        draft = self.get(draft_id)
+        if draft is None or draft["status"] != "scheduled":
+            return False, "That one isn't scheduled."
+        with self._lock:
+            self._db.execute("UPDATE drafts SET status = 'pending', send_at = NULL WHERE id = ?", (draft_id,))
+            self._db.commit()
+        return True, f"Unscheduled; it's back to waiting for you. {describe(draft)}"
+
+    def scheduled(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM drafts WHERE status = 'scheduled' ORDER BY send_at").fetchall()
+        return [_draft(r) for r in rows]
+
+    def send_due(self, now: float | None = None) -> list[tuple[dict[str, Any], bool, str]]:
+        """Send every scheduled draft whose time has come. A late start sends late, never twice."""
+        moment = time.time() if now is None else now
+        results = []
+        for draft in self.scheduled():
+            if float(draft.get("send_at") or 0) <= moment:
+                ok, detail = self._send(draft)
+                results.append((draft, ok, detail))
+        return results
+
+    def _send(self, draft: dict[str, Any]) -> tuple[bool, str]:
         sender = self._senders.get(draft["kind"])
         if sender is None:
             self._decide(draft["id"], "failed", f"Nothing is wired up to send a {draft['kind']}.")

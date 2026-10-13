@@ -223,8 +223,9 @@ class Showcase:
 
     # -- small helpers ------------------------------------------------------------------
     def _pending(self) -> list[dict[str, Any]]:
-        return [d for d in self.publisher.gate.pending(50)
-                if d["kind"] == "linkedin_post" and (d.get("extra") or {}).get("project")]
+        """Project drafts not yet out: waiting for you, or approved for a later time."""
+        drafts = self.publisher.gate.pending(50) + self.publisher.gate.scheduled()
+        return [d for d in drafts if d["kind"] == "linkedin_post" and (d.get("extra") or {}).get("project")]
 
     def _waiting(self) -> bool:
         return bool(self._pending())

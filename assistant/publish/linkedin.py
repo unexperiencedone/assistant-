@@ -75,11 +75,13 @@ def _headers() -> dict[str, str]:
     }
 
 
-def _call(path: str, payload: dict[str, Any] | None = None, method: str = "") -> tuple[bool, Any]:
+def _call(path: str, payload: dict[str, Any] | None = None, method: str = "",
+          extra_headers: dict[str, str] | None = None) -> tuple[bool, Any]:
     if not configured():
         return False, linkedin_auth.status()[1]
     request = urllib.request.Request(
-        f"{API}{path}", headers=_headers(), method=method or ("POST" if payload is not None else "GET"),
+        f"{API}{path}", headers={**_headers(), **(extra_headers or {})},
+        method=method or ("POST" if payload is not None else "GET"),
         data=json.dumps(payload).encode("utf-8") if payload is not None else None)
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
@@ -214,6 +216,21 @@ def delete_post(urn: str) -> tuple[bool, str]:
         return False, f"That isn't a LinkedIn post id: {urn}"
     ok, detail = _call(f"/rest/posts/{urllib.parse.quote(urn, safe='')}", method="DELETE")
     return (True, f"Deleted the old post ({urn}).") if ok else (False, detail)
+
+
+def update_text(urn: str, text: str) -> tuple[bool, str]:
+    """Replace the text of one of your posts, keeping its images, likes and comments.
+
+    The Posts API allows a partial update of `commentary` only; media can't change after
+    posting, which is why replacing images still means a new post."""
+    if not urn.startswith("urn:li:"):
+        return False, f"That isn't a LinkedIn post id: {urn}"
+    if len(text) > MAX_TEXT:
+        return False, f"That text is {len(text)} characters; LinkedIn's limit is {MAX_TEXT}."
+    ok, detail = _call(f"/rest/posts/{urllib.parse.quote(urn, safe='')}",
+                       {"patch": {"$set": {"commentary": little_text(text)}}},
+                       extra_headers={"X-RestLi-Method": "PARTIAL_UPDATE"})
+    return (True, f"Updated the post's text ({urn}).") if ok else (False, detail)
 
 
 def sender(draft: dict[str, Any]) -> tuple[bool, str]:
