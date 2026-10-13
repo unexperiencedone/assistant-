@@ -298,6 +298,12 @@ capture_text = true       # the focused window's text, via accessibility (UI Aut
 remember_conversations = true
 short_term_days = 7
 consolidate_hour = 3
+# Every app and every tab, except social ones the user excluded (LinkedIn is fine). The
+# private ones in privacy.py (password managers, incognito, banking, payments, sign-in
+# pages) are never read whatever this says. Titles catch the web versions in a browser.
+watch_all = true
+deny_apps = ["whatsapp", "instagram"]
+deny_titles = ['\bwhatsapp\b', '\binstagram\b', 'web\.whatsapp\.com', 'instagram\.com']
 
 [today]
 # What today is, without an agent turn: weather (MSN, the same as the Windows Widgets

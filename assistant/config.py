@@ -340,6 +340,10 @@ class AfterThoughtSettings:
     db_path: str = "data/afterthought.db"
     model: str = "sentence-transformers/all-MiniLM-L6-v2"   # "hashing" = no model, much weaker
     apps: list[str] = field(default_factory=list)  # opted in at first run; afterwards voice/canvas decide
+    # Watch every app (and every browser tab) except the denied ones, instead of an opt-in list.
+    # The built-in denials in privacy.py (password managers, private windows, banking,
+    # payments, sign-in pages) always apply; deny_apps / deny_titles add to them.
+    watch_all: bool = False
     poll_seconds: float = 2
     idle_boundary_seconds: float = 30    # a chunk ends after this long without input...
     min_dwell_seconds: float = 20        # ...or on a switch, once the context lasted this long

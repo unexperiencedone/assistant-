@@ -164,6 +164,10 @@ class AfterThoughtService:
         return list(self.store.meta("consent", []))
 
     def watched(self, app: str) -> bool:
+        """Opted in, or everything is watched. Denied apps never reach this question:
+        tick() drops them (and denied titles, e.g. an Instagram tab) before asking."""
+        if getattr(self.settings, "watch_all", False):
+            return True
         return app.lower() in self.consent()
 
     def set_consent(self, app: str, on: bool) -> str:
@@ -476,7 +480,11 @@ class AfterThoughtService:
     def spoken_status(self) -> str:
         apps = self.consent()
         counts = self.store.counts()
-        watching = ", ".join(apps) if apps else "nothing yet; say remember what I do in, and an app"
+        if getattr(self.settings, "watch_all", False):
+            skipped = ", ".join(getattr(self.settings, "deny_apps", []) or []) or "nothing extra"
+            watching = f"every app and tab, except {skipped}, and the private ones I never read"
+        else:
+            watching = ", ".join(apps) if apps else "nothing yet; say remember what I do in, and an app"
         pause = " Suggestions are paused." if self.paused() else ""
         return (f"I'm watching {watching}. I hold {counts['short']} recent memories and {counts['long']} "
                 f"long-term ones.{pause}")
