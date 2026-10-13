@@ -237,7 +237,7 @@ class Controller(CaptureCommands):
             if not text.strip():
                 self.say("Yes?")  # ends in "?", so the next phrase needs no wake word
                 return
-        self.bus.publish("transcript", role="user", text=text)
+        self.bus.publish("transcript", role="user", text=text, source=source)
         self._recent.append(("You", text[:300]))
 
         # A yes/no answer to "want me to save that as an instant command?" — but only if

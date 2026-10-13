@@ -491,9 +491,11 @@ class AfterThoughtService:
 
     def state(self) -> dict[str, Any]:
         counts = self.store.counts()
+        watch_all = bool(getattr(self.settings, "watch_all", False))
         return {"revision": self._revision, "enabled": bool(getattr(self.settings, "enabled", True)),
                 "ready": self._ready, "watching": len(self.consent()), "short": counts["short"],
-                "long": counts["long"], "paused": self.paused()}
+                "long": counts["long"], "paused": self.paused(), "watch_all": watch_all,
+                "excluded": list(getattr(self.settings, "deny_apps", []) or []) if watch_all else []}
 
     def document(self) -> dict[str, Any]:
         now = self.clock()
@@ -512,7 +514,7 @@ class AfterThoughtService:
             "threshold": float(getattr(self.settings, "threshold", 0.55)),
             "paused_until": float(self.store.meta("paused_until", 0) or 0),
             "consolidated_at": float(self.store.meta("consolidated_at", 0) or 0),
-            "apps": [{"name": a, "watched": a.lower() in consent} for a in
+            "apps": [{"name": a, "watched": self.watched(a)} for a in
                      list(dict.fromkeys(seen + [c for c in consent if c not in {s.lower() for s in seen}]))][:30],
             "suggestions": suggestions,
             "long": [self._shown(m) for m in self.store.listing(tier="long", limit=200)],

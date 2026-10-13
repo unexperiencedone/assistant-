@@ -75,5 +75,17 @@ class Inbox(unittest.TestCase):
         self.assertFalse(self.inbox.act("rocket:1", "launch")[0])
 
 
+class Wiring(unittest.TestCase):
+    def test_the_request_queue_is_never_replaced(self):
+        # app.py's self.inbox is the queue every request goes through. Assigning the
+        # Needs-you service to the same name once broke every request with
+        # "'InboxService' object has no attribute 'get'".
+        source = (Path(__file__).resolve().parents[1] / "assistant" / "app.py").read_text(encoding="utf-8")
+        assignments = [line for line in source.splitlines() if line.strip().startswith("self.inbox")
+                       and "=" in line.split("(")[0] and "==" not in line]
+        self.assertEqual(len(assignments), 1, assignments)
+        self.assertIn("queue.Queue", assignments[0])
+
+
 if __name__ == "__main__":
     unittest.main()

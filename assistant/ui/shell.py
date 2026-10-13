@@ -216,7 +216,7 @@ class AppShell:
             return
         app = self.app
         muted = bool(app.mic and app.mic.muted.is_set())
-        state = "working" if app.runner.running else app.state.status
+        state = "working" if app.runner.running else app.state.value("status", "idle")
         key = f"{state}:{muted}"
         with self._lock:
             if key == self._icon_state:

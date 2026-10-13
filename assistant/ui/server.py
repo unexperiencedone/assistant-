@@ -29,6 +29,7 @@
     GET  /api/usage?days=30     tokens spent and saved (assistant/usage/report.py); days=0 is all time
     POST /api/inbox/act         {"id": "draft:7", "action": "approve"} -> act on one Needs-you item
     GET  /api/studio            drafts, scheduled posts, the posted ledger and which arms work
+    GET  /api/schedule/today    today's items (yours and the calendar's), for the Now timeline
 
 Runs uvicorn in a background thread, bound to `[ui] host` (loopback by default).
 
@@ -114,6 +115,7 @@ class DashboardServer:
         self.usage: Any = None      # assistant.usage.UsageService, set by the app once it exists
         self.inbox: Any = None      # assistant.inbox.InboxService, set by the app
         self.publisher: Any = None  # assistant.publish.PublishService, set by the app
+        self.schedule: Any = None   # assistant.schedule.ScheduleService, set by the app
         self.state = state
         self.port = port
         self.on_text = on_text
@@ -152,11 +154,14 @@ class DashboardServer:
 
         showcase = getattr(self.publisher, "showcase", None)
         signed_in, signin = linkedin_auth.status()
+        everything = gate.recent(60)
+        replaced = {str((d.get("extra") or {}).get("replaces", "")) for d in everything} - {""}
         return {
             "enabled": True,
             "pending": [row(d) for d in gate.pending(50)],
             "scheduled": [row(d) for d in gate.scheduled()],
-            "recent": [row(d) for d in gate.recent(30) if d["status"] in ("sent", "failed")],
+            "recent": [row(d) for d in everything if d["status"] in ("sent", "failed")
+                       and not any(urn in (d.get("result") or "").split("Deleted")[0] for urn in replaced)],
             "ledger": showcase.ledger.entries() if showcase is not None else [],
             "linkedin": {"ok": signed_in, "detail": signin},
         }
@@ -274,6 +279,17 @@ class DashboardServer:
             # Posting talks to LinkedIn and can take seconds: never on the event loop.
             ok, said = await asyncio.get_running_loop().run_in_executor(None, self.inbox.act, item, action)
             return JSONResponse({"ok": ok, "said": said})
+
+        @app.get("/api/schedule/today")
+        async def api_schedule_today() -> JSONResponse:
+            if self.schedule is None:
+                return JSONResponse({"items": []})
+            from datetime import date
+
+            items = await asyncio.get_running_loop().run_in_executor(None, self.schedule.day, date.today())
+            return JSONResponse({"items": [{"title": e["title"], "start": e["start"].timestamp(),
+                                            "all_day": bool(e.get("all_day")), "kind": e.get("kind", "")}
+                                           for e in items]})
 
         @app.get("/api/studio")
         async def api_studio() -> JSONResponse:

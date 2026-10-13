@@ -421,12 +421,14 @@ class VoiceAssistant:
         from .inbox import InboxService
         from .intents import match_intent as _match_intent
 
-        self.inbox = InboxService(self.bus, publisher=self.publisher,
+        # Not self.inbox: that name is the request queue every input goes through.
+        self.needs_you = InboxService(self.bus, publisher=self.publisher,
                                   automations=getattr(self.automations, "folder", None) if self.automations else None,
                                   matches_intent=_match_intent)
         if self.server:
-            self.server.inbox = self.inbox
+            self.server.inbox = self.needs_you
             self.server.publisher = self.publisher
+            self.server.schedule = self.schedule
         self._greeting = threading.Lock()
         if self.local_system:
             self.controller.publish_quick_actions()  # the chips are there before the first request
@@ -614,8 +616,8 @@ class VoiceAssistant:
                 self.today.stop()
             if self.capture and self.capture.running:
                 self.capture.stop()  # a half-written recording is worse than a short one
-            if getattr(self, "inbox", None):
-                self.inbox.stop()
+            if getattr(self, "needs_you", None):
+                self.needs_you.stop()
             if self.publisher:
                 if self.publisher.showcase is not None:
                     self.publisher.showcase.stop()
@@ -795,7 +797,7 @@ class VoiceAssistant:
             self.goals.start()
         if self.today:
             self.today.start()
-        self.inbox.start()
+        self.needs_you.start()
         if self.publisher is not None:
             self.publisher.notify = self._tray_note
             self.publisher.start()          # sends scheduled posts when their time comes

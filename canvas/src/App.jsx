@@ -1,47 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import Awareness from "./Awareness.jsx";
-import Memory from "./Memory.jsx";
 import Briefing from "./Briefing.jsx";
 import FlowCanvas from "./FlowCanvas.jsx";
 import History from "./History.jsx";
-import Usage from "./Usage.jsx";
 import Inspector from "./Inspector.jsx";
 import NovaEntity from "./NovaEntity.jsx";
-import Profile from "./Profile.jsx";
 import Reader from "./Reader.jsx";
 import { ResizeHandle, useIsNarrow, useWidth } from "./Resizer.jsx";
 import Sidebar from "./Sidebar.jsx";
 import { useAssistant } from "./useAssistant.js";
-
-function MicMeter({ mic, status }) {
-  if (status !== "listening" && status !== "transcribing") return null;
-  const level = Math.max(0, Math.min(1, mic?.level ?? 0));
-  const bars = [0.15, 0.4, 0.65, 0.9];
-  return (
-    <span className="mic" title={`Microphone level ${(level * 100).toFixed(0)}%`} aria-label="Microphone level">
-      {bars.map((threshold) => (
-        <i key={threshold} className={level >= threshold ? "on" : ""} />
-      ))}
-    </span>
-  );
-}
-
-// "thinking" is the mechanism; this is the work. Reads the live slice the watcher
-// broadcasts, so this line, the voice answer and the phone all say the same thing.
-function LiveLine({ live }) {
-  const job = live?.running?.[0];
-  const what = job ? job.phase || job.command?.tool?.replace(/_/g, " ") : live?.macro;
-  if (!what) return null;
-  const target = job && !job.phase ? job.command?.target : "";
-  const more = (live?.running?.length ?? 0) - 1;
-  return (
-    <span className="live-line" title={target ? `${what} on ${target}` : what}>
-      {what}
-      {target ? <em>{target}</em> : null}
-      {more > 0 ? <b>+{more}</b> : null}
-    </span>
-  );
-}
+import Masthead, { SPACES } from "./spaces/Masthead.jsx";
+import Now from "./spaces/Now.jsx";
+import Studio from "./spaces/Studio.jsx";
+import You from "./spaces/You.jsx";
+import { typing } from "./spaces/api.js";
 
 function timeLabel(ts) {
   return new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -88,39 +59,25 @@ function useAmbientLine(revision) {
   return line;
 }
 
-/** Two levels of dark: bright by default, dim for night. Survives reloads. */
-function useInkLevel() {
-  const [level, setLevel] = useState(() => {
-    try {
-      return localStorage.getItem("nova-ink") === "dim" ? "dim" : "bright";
-    } catch {
-      return "bright";
-    }
-  });
-  useEffect(() => {
-    document.documentElement.dataset.ink = level;
-    try {
-      localStorage.setItem("nova-ink", level);
-    } catch {
-      /* private window: it just won't be remembered */
-    }
-  }, [level]);
-  return [level, () => setLevel((current) => (current === "dim" ? "bright" : "dim"))];
-}
-
-const VIEWS = { "#profile": "profile", "#history": "history", "#awareness": "awareness", "#memory": "memory", "#usage": "usage", "#reader": "reader" };
+const HASH_SPACE = {
+  "#now": "now", "#work": "work", "#history": "work", "#studio": "studio",
+  "#you": "you", "#memory": "you", "#awareness": "you", "#profile": "you", "#usage": "you",
+};
+const HASH_YOU = { "#memory": "memory", "#awareness": "awareness", "#profile": "profile", "#usage": "usage" };
 
 export default function App() {
   const { snapshot, connected, say, dismissDenials } = useAssistant();
   const status = connected ? snapshot?.status ?? "idle" : "offline";
   const [mode, setMode] = useTaskMode();
-  const [ink, toggleInk] = useInkLevel();
   const [selected, setSelected] = useState(null); // node id shown in the inspector
   const [viewRun, setViewRun] = useState(null); // null = the live run
   const [pastGraph, setPastGraph] = useState(null);
   const [lane, setLane] = useState(null); // null = follow whichever lane moved last
   const [briefing, setBriefing] = useState(false);
-  const [view, setView] = useState(() => VIEWS[location.hash] ?? "canvas");
+  const [view, setView] = useState(() => (location.hash === "#reader" ? "reader" : location.hash === "#history" ? "history" : "canvas"));
+  // Four spaces (docs/ui_rethink.md). Old links still land: #profile opens You on Profile.
+  const [space, setSpace] = useState(() => HASH_SPACE[location.hash] ?? "now");
+  const [youTab, setYouTab] = useState(() => HASH_YOU[location.hash] ?? "memory");
   const mainRef = useRef(null);
 
   // Every tray is draggable, and remembers how wide you left it.
@@ -130,14 +87,26 @@ export default function App() {
   const [inspectorW, setInspectorW, resetInspectorW] = useWidth("inspector", 340, 260, 560);
   const [briefingW, setBriefingW, resetBriefingW] = useWidth("briefing", 372, 300, 640);
 
-  const toggleView = useCallback((name) => setView((current) => (current === name ? "canvas" : name)), []);
   const showCanvas = useCallback(() => setView("canvas"), []);
 
   useEffect(() => {
-    const target = view === "canvas" ? "" : `#${view}`;
+    if (view === "reader") return;
+    const target =
+      space === "now" ? "" : space === "work" ? (view === "history" ? "#history" : "#work") : space === "you" ? `#${youTab}` : `#${space}`;
     // window.history: `history` below is the request rail, this is the browser's.
     if (location.hash !== target) window.history.replaceState(null, "", `${location.pathname}${location.search}${target}`);
-  }, [view]);
+  }, [view, space, youTab]);
+
+  // Keys 1–4 switch spaces, the HUD half of the grammar. Never while typing.
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.ctrlKey || event.altKey || event.metaKey || typing(event)) return;
+      const target = SPACES.find((s) => s.key === event.key);
+      if (target) setSpace(target.id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const lanes = snapshot?.graph?.lanes ?? {};
   const activeLane = lane ?? snapshot?.graph?.lane ?? "agent";
@@ -147,7 +116,6 @@ export default function App() {
   const busyLanes = Object.entries(lanes).filter(([, g]) => g.nodes?.some((n) => n.status === "running"));
   const history = snapshot?.graph?.history ?? [];
   const denials = snapshot?.denials ?? [];
-  const queue = snapshot?.queue ?? [];
   const ambientLine = useAmbientLine(snapshot?.ambient?.revision);
 
   // Loading a past request from the history rail.
@@ -194,6 +162,7 @@ export default function App() {
     if (seenAmbient.current != null && ambientRevision > seenAmbient.current) {
       setBriefing(true);
       setView("canvas");
+      setSpace("work");
     }
     seenAmbient.current = ambientRevision;
   }, [ambientRevision]);
@@ -233,136 +202,20 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-ink" aria-hidden="true" />
-          <h1>{snapshot?.name ?? "Nova"}</h1>
-        </div>
-
-        <nav className="views" aria-label="Screens">
-          <button type="button" className={view === "canvas" ? "on" : ""} onClick={showCanvas} aria-pressed={view === "canvas"}>
-            Canvas
-          </button>
-          <button
-            type="button"
-            className={view === "history" ? "on" : ""}
-            onClick={() => toggleView("history")}
-            aria-pressed={view === "history"}
-            title={snapshot?.history?.current ? "A work session is in progress" : "Past work sessions"}
-          >
-            {snapshot?.history?.current ? <i className="live-dot" /> : null}
-            History
-          </button>
-          <button
-            type="button"
-            className={view === "profile" ? "on" : ""}
-            onClick={() => toggleView("profile")}
-            aria-pressed={view === "profile"}
-          >
-            {snapshot?.profile?.name ? `Profile · ${snapshot.profile.name}` : "Profile"}
-          </button>
-          <button
-            type="button"
-            className={view === "awareness" ? "on" : ""}
-            onClick={() => toggleView("awareness")}
-            aria-pressed={view === "awareness"}
-            title="What you were doing on this PC"
-          >
-            {snapshot?.awareness?.watching ? <i className="live-dot" /> : null}
-            Activity
-          </button>
-          <button
-            type="button"
-            className={view === "memory" ? "on" : ""}
-            onClick={() => toggleView("memory")}
-            aria-pressed={view === "memory"}
-            title={snapshot?.afterthought?.suggestion?.text ?? "What Nova remembers, and what it brought up"}
-          >
-            {snapshot?.afterthought?.watching ? <i className="live-dot" /> : null}
-            Memory
-          </button>
-          <button
-            type="button"
-            className={view === "usage" ? "on" : ""}
-            onClick={() => toggleView("usage")}
-            aria-pressed={view === "usage"}
-            title="Tokens spent and saved"
-          >
-            Usage
-          </button>
-        </nav>
-
-        {snapshot?.talk?.kind ? (
-          <div className={`talk-chip talk-${snapshot.talk.kind}`} title='Say "back to work" to stop. No wake word needed meanwhile.'>
-            <i className="live-dot" />
-            {snapshot.talk.label}
-          </div>
-        ) : null}
-
-        <div className={`status status-${status}`}>
-          <span className="orb" />
-          {status}
-          <MicMeter mic={snapshot?.mic} status={status} />
-        </div>
-
-        <LiveLine live={snapshot?.live} />
-
-        <span className="spacer" />
-
-        <button
-          type="button"
-          className={`pill${briefing ? " on" : ""}`}
-          onClick={() => {
-            setBriefing((open) => !open);
-            setView("canvas");
-          }}
-          aria-pressed={briefing}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-            <path d="M4 6h16M4 12h10M4 18h7" />
-          </svg>
-          Briefing
-        </button>
-
-        <button
-          type="button"
-          className="pill ink-toggle"
-          onClick={toggleInk}
-          title={ink === "dim" ? "Dim — click for brighter" : "Bright — click to dim"}
-          aria-label={ink === "dim" ? "Brighten the canvas" : "Dim the canvas"}
-        >
-          {ink === "dim" ? "◑" : "◐"}
-        </button>
-      </header>
-
-      <div className="statusbar">
-        <span className="where" title={snapshot?.workspace}>
-          <i />
-          {snapshot?.workspace ?? "—"}
-        </span>
-        <span className="sep" />
-        <span>
-          agent <b>{snapshot?.backend ?? "—"}</b>
-        </span>
-        <span className="sep" />
-        <span className="cost" title={`All time: $${(snapshot?.cost_total_usd ?? 0).toFixed(2)}, as reported by the agent.`}>
-          cost <b>{snapshot?.cost_usd ? `$${snapshot.cost_usd.toFixed(3)}` : "free"}</b>
-        </span>
-        <span className="sep" />
-        <span>
-          turns <b>{snapshot?.turns ?? 0}</b>
-        </span>
-        {queue.length ? (
-          <>
-            <span className="sep" />
-            <span title={queue.join("\n")}>
-              waiting <b>{queue.length}</b>
-            </span>
-          </>
-        ) : null}
-        <span className="spacer" />
-        <span className="note">everything below the blob is a summary — full detail lives in History</span>
-      </div>
+      <Masthead
+        space={space}
+        onSpace={setSpace}
+        status={status}
+        working={Boolean(snapshot?.agent_running)}
+        count={snapshot?.inbox?.count ?? 0}
+        live={snapshot?.live}
+        talk={snapshot?.talk}
+        onBriefing={() => {
+          setSpace("work");
+          setView("canvas");
+          setBriefing((open) => !open);
+        }}
+      />
 
       {denials.length > 0 ? (
         <div className="banner banner-denied" role="status">
@@ -376,18 +229,26 @@ export default function App() {
         </div>
       ) : null}
 
-      {view === "profile" ? (
-        <Profile onClose={showCanvas} revision={snapshot?.profile?.revision} />
+      {space === "now" ? (
+        <Now snapshot={snapshot} graph={liveGraph} say={say} active />
+      ) : space === "studio" ? (
+        <Studio snapshot={snapshot} active />
+      ) : space === "you" ? (
+        <You tab={youTab} onTab={setYouTab} snapshot={snapshot} onClose={() => setSpace("now")} />
       ) : view === "history" ? (
-        <History onClose={showCanvas} live={snapshot?.history} />
-      ) : view === "awareness" ? (
-        <Awareness onClose={showCanvas} revision={snapshot?.awareness?.revision} />
-      ) : view === "memory" ? (
-        <Memory onClose={showCanvas} revision={snapshot?.afterthought?.revision} />
-      ) : view === "usage" ? (
-        <Usage onClose={showCanvas} revision={snapshot?.usage?.revision} />
+        <>
+          <div className="m-subtabs" style={{ margin: "16px 32px 0" }} role="toolbar" aria-label="Work">
+            <button type="button" aria-pressed={false} onClick={showCanvas}>Live canvas</button>
+            <button type="button" aria-pressed>Sessions</button>
+          </div>
+          <History onClose={showCanvas} live={snapshot?.history} />
+        </>
       ) : (
         <>
+          <div className="m-subtabs" style={{ margin: "16px 32px 0" }} role="toolbar" aria-label="Work">
+            <button type="button" aria-pressed>Live canvas</button>
+            <button type="button" aria-pressed={false} onClick={() => setView("history")}>Sessions</button>
+          </div>
           {/* One rail, not two: what is running now, then what already ran. Lane chips
               only appear when more than one task is actually in flight. */}
           {busyLanes.length > 1 || history.length > 0 ? (

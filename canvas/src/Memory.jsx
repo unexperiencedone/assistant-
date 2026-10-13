@@ -155,7 +155,11 @@ export default function Memory({ onClose, revision }) {
               {doc?.ready ? (
                 <span className="save-state" style={{ color: "var(--done)" }}>
                   <i className="live-dot" />
-                  {watched ? `watching ${watched} app${watched === 1 ? "" : "s"}` : "watching nothing yet"}
+                  {doc?.watch_all
+                    ? `watching every app${doc.excluded?.length ? ` except ${doc.excluded.join(", ")}` : ""}`
+                    : watched
+                      ? `watching ${watched} app${watched === 1 ? "" : "s"}`
+                      : "watching nothing yet"}
                 </span>
               ) : (
                 <span className="save-state">loading the model…</span>
@@ -320,7 +324,7 @@ export default function Memory({ onClose, revision }) {
 
           <div className="aw-card">
             <h3>
-              What I watch <span>off unless switched on</span>
+              What I watch <span>{doc?.watch_all ? "every app, except the ones below" : "off unless switched on"}</span>
             </h3>
             {(doc?.apps ?? []).length ? (
               doc.apps.map((app) => (
@@ -328,6 +332,7 @@ export default function Memory({ onClose, revision }) {
                   <span>{app.name}</span>
                   <input
                     type="checkbox"
+                    disabled={Boolean(doc?.watch_all)}
                     checked={app.watched}
                     onChange={(event) => act("/api/afterthought/consent", { app: app.name, on: event.target.checked })}
                   />

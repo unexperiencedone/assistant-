@@ -96,6 +96,11 @@ class AppState:
                 self._listeners.remove(listener)
 
     # -- reading ----------------------------------------------------------------------
+    def value(self, key: str, default: Any = None) -> Any:
+        """One slice's current value, without copying the whole snapshot."""
+        with self._lock:
+            return self._values.get(key, default)
+
     def snapshot(self) -> dict[str, Any]:
         return self.snapshot_with_versions()[0]
 
@@ -151,7 +156,7 @@ class AppState:
                 self._set("status", d["state"])
             elif topic == "transcript":
                 self._append("conversation", {"role": d["role"], "text": d["text"], "ts": event.ts,
-                                              "origin": d.get("origin", "desktop")})
+                                              "origin": d.get("origin", "desktop"), "source": d.get("source", "")})
                 persist = True
             elif topic == "plan":
                 self._set("plan", d)
