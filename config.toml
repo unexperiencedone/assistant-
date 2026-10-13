@@ -174,7 +174,7 @@ keep_days = 365
 # Every score is logged so phase 2 is decided on evidence: "how's the voice check doing".
 enabled = true
 enforce = true      # false: score and log only, never drop anything
-threshold = 0.0     # 0 = the bar measured from your own samples at enrolment
+threshold = 0.40    # set by hand; 0 = use the bar measured at enrolment (0.62)
 model = "data/models/wespeaker_en_voxceleb_resnet34.onnx"   # WeSpeaker ResNet34, downloaded once (26 MB)
 profile = "data/voiceprint.json"
 log = "data/voice_scores.jsonl"
