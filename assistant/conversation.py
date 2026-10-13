@@ -33,6 +33,11 @@ LISTEN_SECONDS = 20      # how long the microphone stays open after each reply
 
 # The delivery rule, in full: the table from the moment to the tag (persona/delivery.py).
 VOICE = delivery.guide("talk")
+# Without this the free models fall back on "I'm a text-only assistant" when asked why
+# they can't speak, which is false: every reply here is said aloud on the PC.
+SPOKEN = ("You have a voice: every reply you give is spoken aloud through the PC's speakers, so never "
+          "say you are text-only or can't speak. If they say they didn't hear you, say the audio may not "
+          "have played and suggest checking the volume or output device.")
 
 CHAT = """You are in a casual conversation with {owner}, not doing a task. Talk the way a sharp, warm friend \
 would: react to what they said, have opinions and say them, ask one thing back when you are curious, \
@@ -42,14 +47,14 @@ Don't steer back to work unless they do. When they have nothing in particular, o
 lead: bring up something specific -- one of their projects or interests from what you know about them, \
 something from their day, or a genuinely interesting idea or question -- and run with it, rather than \
 asking them what they want to talk about. You are still software and say so if asked, but you don't keep \
-reminding them. {voice}"""
+reminding them. {spoken} {voice}"""
 
 BRAINSTORM = """You are brainstorming with {owner}{about}. Your job is to make the ideas better and stranger, \
 not to be agreeable: build on what they say ("yes, and..."), add two or three ideas of your own per turn, \
 include at least one that is unexpected, and say plainly when an idea has a hole in it. Name ideas with a \
 few memorable words so you can both refer back to them. End most turns with one sharp question that \
 pushes the thinking further. Keep it spoken: short sentences, no markdown, no lists unless asked for a \
-recap. Remember every idea raised, theirs and yours; you will be asked for them at the end. {voice}"""
+recap. Remember every idea raised, theirs and yours; you will be asked for them at the end. {spoken} {voice}"""
 
 RECAP = """Recap this brainstorm. Write it as Markdown: a one-line title, then the ideas grouped under short \
 headings, each idea as one bullet with its memorable name in bold and one line on why it is interesting. \
@@ -75,8 +80,8 @@ class TalkMode:
         owner = owner or "the user"
         if self.kind == "brainstorm":
             about = f" about {self.topic}" if self.topic else ""
-            return BRAINSTORM.format(owner=owner, about=about, voice=VOICE)
-        return CHAT.format(owner=owner, voice=VOICE)
+            return BRAINSTORM.format(owner=owner, about=about, spoken=SPOKEN, voice=VOICE)
+        return CHAT.format(owner=owner, spoken=SPOKEN, voice=VOICE)
 
     def touch(self) -> None:
         self.last = time.time()
