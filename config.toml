@@ -7,6 +7,7 @@ name = "Nova"
 # "hey Nova ...", "okay Nova ...". Anything else the microphone hears is ignored.
 # Leave empty to treat everything you say as a command. Typed input never needs it.
 wake_word = "nova"
+wake_word_optional = true   # your voice is enough (voice ID): commands and clear requests work without "Nova"
 # Extra spellings to accept when speech recognition mishears the wake word.
 wake_aliases = []
 # When you can reply without the wake word: "questions" = after "Hey Nova" on its

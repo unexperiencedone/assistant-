@@ -25,6 +25,10 @@ class AssistantSettings:
     loose_classifier: bool = True
     wake_word: str = "nova"
     wake_aliases: list[str] = field(default_factory=list)  # extra spellings Whisper produces for the wake word
+    # Speak without "Nova" -- only while voice ID is enrolled and enforcing, so it is
+    # always the owner speaking. Without the wake word Nova acts on commands and clear
+    # requests and keeps an ongoing conversation going; side chatter is ignored.
+    wake_word_optional: bool = False
     # When you may answer without the wake word: "questions" (after "Hey Nova" on its own,
     # or when Nova asked you something), "always" (after every reply), or "off".
     follow_up: str = "questions"

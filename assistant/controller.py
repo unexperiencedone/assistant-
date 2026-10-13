@@ -149,6 +149,7 @@ class Controller(CaptureCommands):
         # When the last talk turn was, and whether anything was said since the last
         # agent task, so an action can be handed the conversation it came out of.
         self._last_talk_at = 0.0
+        self._prejudged: Any = None   # an unaddressed sentence already judged, not judged twice
         self._talked_since_dispatch = False
         self.waiting: list[str] = []  # said while every task slot was busy
         self.task_labels: dict[str, str] = {}
@@ -235,10 +236,17 @@ class Controller(CaptureCommands):
     def handle(self, text: str, source: str, origin: str = "desktop", brain: str = "") -> None:
         self.reply_to = origin  # everything this request says goes back to where it came from
         addressed, text = self._addressed(text, source)  # typed "hey Nova, ..." works too
+        self._prejudged = None
         if source == "voice":
-            if not addressed:
+            if not addressed and not self._voice_trusted():
                 self.bus.publish("heard", text=text, accepted=False, reason="no wake word")
                 self.bus.log(f"(ignored: no wake word) {short(text, 60)}")
+                return
+            if not addressed and not self._meant_for_me(text):
+                # The owner's voice, but not said to Nova: a phone call, someone in the
+                # room. Never shown as if it were a request.
+                self.bus.publish("heard", text=text, accepted=False, reason="not for me")
+                self.bus.log(f"(not for me) {short(text, 60)}")
                 return
             self.awaiting_reply = False
             if not text.strip():
@@ -322,7 +330,8 @@ class Controller(CaptureCommands):
             # Nothing matched strictly. Is it something to do, or something said? Talk
             # goes to the conversation (no tools, same thread); only a request goes on to
             # the loose matcher, the classifier and the agent (assistant/understanding.py).
-            judgement = self._understand(text)
+            judgement = self._prejudged or self._understand(text)
+            self._prejudged = None
             if judgement.kind == understanding.TALK:
                 self.bus.publish("route", utterance=text, route="talk", name=judgement.source)
                 self._talk(text, judgement)
@@ -936,6 +945,23 @@ class Controller(CaptureCommands):
 
     # -- one conversation, no modes (assistant/understanding.py) -----------------------
     CONVERSING_SECONDS = 180
+
+    def _voice_trusted(self) -> bool:
+        """Is the voice itself proof that the owner is speaking? Then the wake word is optional."""
+        vid = self.voice_id
+        return bool(getattr(self.settings.assistant, "wake_word_optional", False) and vid is not None
+                    and getattr(vid, "enrolled", False) and getattr(vid, "enforce", False))
+
+    def _meant_for_me(self, text: str) -> bool:
+        """Owner speech without the wake word: a command, a clear request, or the next
+        line of a conversation already going. Anything else is not for Nova."""
+        if self._conversing():
+            return True
+        if (self.automations and self.automations.match(text)) or match_intent(text):
+            return True
+        judgement = self._understand(text)
+        self._prejudged = judgement
+        return judgement.kind == understanding.ACT and judgement.source != "lean" and judgement.confidence >= 0.75
 
     def _conversing(self) -> bool:
         """Was the last thing a talk turn, recently? Then a fragment is a reply."""

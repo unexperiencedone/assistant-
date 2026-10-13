@@ -86,5 +86,55 @@ class Continuity(unittest.TestCase):
         self.assertNotIn("The conversation this request came out of", prompts[-1])   # once, not forever
 
 
+class NoWakeWord(unittest.TestCase):
+    """With voice ID enrolled and enforcing, the owner's voice is enough."""
+
+    def make(self, trusted=True):
+        from assistant.agent_runner import AgentRunner
+        from assistant.controller import Controller
+        from assistant.events import EventBus
+        from assistant.planning import Plan
+
+        bus, plan = EventBus(), Plan()
+        self.heard, self.shown = [], []
+        bus.subscribe("heard", lambda e: self.heard.append(e.data))
+        bus.subscribe("transcript", lambda e: self.shown.append(e.data["text"]))
+        speaker = SimpleNamespace(say=lambda *a, **k: None, is_busy=False, last_active_at=0.0)
+        runner = AgentRunner(bus, plan, speaker, on_finished=lambda *a: None, max_parallel=2)
+        runner.start = lambda *a, **k: "t1"
+        agent = SimpleNamespace(name="groq", label="Groq", is_available=lambda: True, spawn=lambda: agent,
+                                carry=lambda r: None, talk="")
+        registry = SimpleNamespace(current=agent, current_name="groq", backends={"groq": agent})
+        settings = SimpleNamespace(assistant=SimpleNamespace(filler_after_seconds=30, wake_word="nova", follow_up="questions",
+                                                             follow_up_seconds=8, wake_word_optional=True))
+        self.automations = mock.Mock(); self.automations.match.return_value = None; self.automations.macros = []
+        voice = SimpleNamespace(enrolled=True, enforce=True) if trusted else None
+        return Controller(settings, bus, speaker, registry, plan, runner, request_quit=lambda: None,
+                          show_canvas=lambda: True, automations=self.automations, voice_id=voice)
+
+    def test_a_request_needs_no_wake_word(self):
+        c = self.make()
+        c.handle("open spotify", "voice")
+        self.assertIn("open spotify", self.shown)
+
+    def test_side_chatter_is_ignored_and_never_shown(self):
+        c = self.make()
+        c.handle("yeah i'll call you back after dinner", "voice")
+        self.assertEqual(self.shown, [])
+        self.assertEqual(self.heard[-1]["reason"], "not for me")
+
+    def test_a_conversation_carries_on_without_it(self):
+        c = self.make()
+        c._last_talk_at = time.time()
+        c.handle("the overlay thing mostly", "voice")
+        self.assertIn("the overlay thing mostly", self.shown)
+
+    def test_without_an_enforcing_voiceprint_the_wake_word_is_still_needed(self):
+        c = self.make(trusted=False)
+        c.handle("open spotify", "voice")
+        self.assertEqual(self.shown, [])
+        self.assertEqual(self.heard[-1]["reason"], "no wake word")
+
+
 if __name__ == "__main__":
     unittest.main()
