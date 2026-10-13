@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nova · B · Game HUD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Hind:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="backdrop.css">
+<style>
+:root { --void: #0c0f14; --plate: rgba(14,18,25,.88); --plate-solid: #121821; --line: rgba(232,230,223,.16); --line-2: rgba(232,230,223,.32);
+  --text: #e8e6df; --muted: #9aa0aa; --amber: #ffb000; --amber-ink: #1a1200; --ok: #8fd16a; --bad: #ff6b5e;
+  --hud: Rajdhani, "Arial Narrow", sans-serif; --body: Hind, system-ui, sans-serif; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #05070a; }
+body { font: 400 15px/1.5 var(--body); color: var(--text); }
+::selection { background: var(--amber); color: var(--amber-ink); }
+.switch { display: flex; gap: 8px; padding: 10px 16px; font: 600 14px var(--hud); letter-spacing: .06em; }
+.switch button { font: inherit; text-transform: uppercase; border: 1px solid var(--line-2); background: var(--plate-solid); color: var(--text); padding: 6px 14px; cursor: pointer; }
+.switch button.on { background: var(--amber); color: var(--amber-ink); border-color: var(--amber); }
+.frame { position: relative; width: 1440px; height: 900px; overflow: hidden; }
+.view { display: none; position: absolute; inset: 0; } .view.on { display: block; }
+.label { font: 700 12.5px/1 var(--hud); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.key { display: inline-grid; place-items: center; min-width: 24px; height: 24px; padding: 0 6px; border: 1px solid var(--line-2); border-bottom-width: 3px; font: 700 13px var(--hud); color: var(--text); background: #1a212c; }
+.plate { background: var(--plate); border: 1px solid var(--line); position: relative; }
+/* corner brackets: the HUD's frame language */
+.brk { position: relative; }
+.brk::before, .brk::after { content: ""; position: absolute; width: 14px; height: 14px; border: 2px solid var(--amber); }
+.brk::before { left: -1px; top: -1px; border-right: 0; border-bottom: 0; }
+.brk::after { right: -1px; bottom: -1px; border-left: 0; border-top: 0; }
+.objective { display: grid; grid-template-columns: 18px 1fr; gap: 10px; align-items: start; }
+.diamond { width: 11px; height: 11px; margin-top: 6px; border: 2px solid var(--amber); transform: rotate(45deg); }
+.diamond.done { background: var(--ok); border-color: var(--ok); }
+.diamond.urgent { background: var(--amber); }
+
+/* ── overlay over VS Code ── */
+.lock { position: absolute; left: 286px; top: 68px; width: 700px; height: 280px; pointer-events: none; }
+.lock i { position: absolute; width: 26px; height: 26px; border: 3px solid var(--amber); }
+.lock i:nth-child(1) { left: 0; top: 0; border-right: 0; border-bottom: 0; } .lock i:nth-child(2) { right: 0; top: 0; border-left: 0; border-bottom: 0; }
+.lock i:nth-child(3) { left: 0; bottom: 0; border-right: 0; border-top: 0; } .lock i:nth-child(4) { right: 0; bottom: 0; border-left: 0; border-top: 0; }
+.lock span { position: absolute; left: 0; top: -30px; background: var(--amber); color: var(--amber-ink); font: 700 13px var(--hud); letter-spacing: .1em; padding: 3px 10px; }
+.tracker { position: absolute; right: 26px; top: 56px; width: 330px; padding: 16px 18px; }
+.tracker h3 { margin: 0 0 12px; font: 700 18px var(--hud); letter-spacing: .12em; display: flex; justify-content: space-between; color: var(--amber); }
+.tracker .objective { margin-top: 12px; font-size: 14.5px; }
+.tracker .objective small { display: block; color: var(--muted); font-size: 12.5px; }
+.dialog { position: absolute; left: 50%; bottom: 46px; transform: translateX(-50%); width: 900px; display: grid; grid-template-columns: 120px 1fr; }
+.portrait { border: 1px solid var(--line-2); background: var(--plate-solid); display: grid; place-items: center; position: relative; }
+.portrait .ring { width: 74px; height: 74px; border-radius: 50%; border: 3px solid var(--amber); display: grid; place-items: center; }
+.portrait .ring::after { content: ""; width: 44px; height: 44px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffe3a3, var(--amber) 55%, #7a5300); }
+.nameplate { position: absolute; bottom: -1px; left: -1px; right: -1px; background: var(--amber); color: var(--amber-ink); text-align: center; font: 700 14px var(--hud); letter-spacing: .2em; padding: 3px 0; }
+.dialog .body { padding: 18px 24px 16px; border-left: 0; }
+.dialog .heard { font: 500 14px var(--body); color: var(--muted); }
+.dialog p.say { margin: 8px 0 14px; font: 500 18px/1.5 var(--body); }
+.code { font: 14px Consolas, monospace; color: var(--amber); }
+.choices { display: grid; gap: 4px; border-top: 1px solid var(--line); padding-top: 12px; }
+.choice { display: flex; gap: 12px; align-items: center; padding: 8px 12px; font: 600 17px var(--hud); letter-spacing: .02em; cursor: pointer; }
+.choice:first-child { background: rgba(255,176,0,.14); color: #fff; }
+.choice:first-child .key { background: var(--amber); color: var(--amber-ink); border-color: var(--amber); }
+.choice .say-hint { margin-left: auto; color: var(--muted); font-size: 13px; letter-spacing: .1em; text-transform: uppercase; }
+.status { position: absolute; left: 70px; bottom: 336px; display: flex; gap: 12px; align-items: center; }
+.meter { width: 64px; height: 64px; }
+
+/* ── canvas: the full HUD screen ── */
+#canvas { background: radial-gradient(1200px 700px at 70% 0%, #17202c, var(--void) 60%); }
+.top { display: flex; align-items: center; gap: 26px; padding: 16px 28px; border-bottom: 1px solid var(--line); }
+.logo { font: 700 26px/1 var(--hud); letter-spacing: .3em; }
+.logo b { color: var(--amber); }
+.tabs { display: flex; gap: 2px; }
+.tabs a { display: flex; align-items: center; gap: 10px; padding: 8px 18px; color: var(--muted); text-decoration: none; font: 700 16px var(--hud); letter-spacing: .14em; text-transform: uppercase; border-bottom: 3px solid transparent; }
+.tabs a.on { color: var(--text); border-color: var(--amber); }
+.tabs .n { background: var(--amber); color: var(--amber-ink); font: 700 12px var(--hud); padding: 1px 7px; }
+.spacer { flex: 1; }
+.grid { display: grid; grid-template-columns: 1fr 400px; gap: 20px; padding: 22px 28px; height: calc(900px - 64px - 92px); }
+.log { padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; overflow: hidden; }
+.entry { display: grid; grid-template-columns: 64px 1fr; gap: 14px; }
+.entry .who { font: 700 13px var(--hud); letter-spacing: .14em; color: var(--muted); padding-top: 3px; }
+.entry.nova .who { color: var(--amber); }
+.entry p { margin: 0; font-size: 15.5px; }
+.entry.me p { color: #cfd3da; }
+.mission { margin-left: 78px; padding: 12px 16px; }
+.mission h4 { margin: 0 0 8px; font: 700 16px var(--hud); letter-spacing: .08em; display: flex; justify-content: space-between; }
+.mission h4 em { font-style: normal; color: var(--ok); }
+.quests { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.quest { padding: 16px 18px; }
+.quest .type { display: flex; justify-content: space-between; }
+.quest h3 { margin: 8px 0 4px; font: 700 20px/1.15 var(--hud); letter-spacing: .02em; }
+.quest p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.quest .acts { display: flex; gap: 14px; margin-top: 12px; font: 700 14px var(--hud); letter-spacing: .08em; text-transform: uppercase; align-items: center; }
+.bar { position: absolute; left: 0; right: 0; bottom: 0; height: 92px; border-top: 1px solid var(--line); display: grid; grid-template-columns: 340px 1fr 380px; gap: 22px; align-items: center; padding: 0 28px; background: rgba(8,10,14,.7); }
+.cool { height: 8px; background: #1d2530; margin-top: 8px; position: relative; }
+.cool i { position: absolute; inset: 0 auto 0 0; background: var(--amber); }
+.timeline { position: relative; height: 40px; border-top: 1px solid var(--line-2); }
+.timeline span { position: absolute; top: 8px; font: 600 13.5px var(--hud); letter-spacing: .01em; color: var(--muted); transform: translateX(-50%); white-space: nowrap; }
+.timeline span::before { content: ""; position: absolute; left: 50%; top: -12px; width: 1px; height: 8px; background: var(--line-2); }
+.timeline .now { color: var(--amber); }
+.timeline .now::before { background: var(--amber); height: 14px; top: -16px; width: 2px; }
+.compose { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid var(--line-2); background: var(--plate-solid); }
+.compose > span:first-child { flex: 1; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="switch"><button data-v="overlay" class="on">Over any app</button><button data-v="canvas">Canvas · Now</button></div>
+<div class="frame">
+  <section class="view on" id="overlay">
+    <div id="backdrop"></div>
+    <div class="lock" aria-hidden="true"><span>NOVA IS LOOKING AT · 14 LINES</span><i></i><i></i><i></i><i></i></div>
+
+    <aside class="plate tracker brk" aria-label="Needs you">
+      <h3>NEEDS YOU <span>3</span></h3>
+      <div class="objective"><i class="diamond urgent"></i><div>Approve the NutriSafe post<small>Scheduled · Thu 10:00 · 3 images</small></div></div>
+      <div class="objective"><i class="diamond"></i><div>Keep “play some lofi” as a command<small>Asked 4× this week</small></div></div>
+      <div class="objective"><i class="diamond"></i><div>LinkedIn sign-in<small>59 days left</small></div></div>
+    </aside>
+
+    <div class="status" aria-label="Nova status">
+      <svg class="meter" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="27" fill="none" stroke="#1d2530" stroke-width="6"/><circle cx="32" cy="32" r="27" fill="none" stroke="#ffb000" stroke-width="6" stroke-dasharray="70 200" transform="rotate(-90 32 32)"/></svg>
+      <div><div class="label" style="color:var(--amber)">Answered · 3.1 s</div><div style="font:600 14px var(--hud);letter-spacing:.06em">groq · free · no window opened</div></div>
+    </div>
+
+    <div class="dialog" role="dialog" aria-label="Nova">
+      <div class="portrait"><div class="ring"></div><div class="nameplate">NOVA</div></div>
+      <div class="plate body brk">
+        <div class="heard"><span class="label" style="color:var(--amber)">Heard</span> &nbsp;“why is this scan taking ninety seconds?”</div>
+        <p class="say">It's reading OneDrive files that only live in the cloud, so every <span class="code">stat()</span> and <span class="code">read_text()</span> downloads one. Skip files flagged <span class="code">RECALL_ON_DATA_ACCESS</span> and this scan drops to about 16 seconds.</p>
+        <div class="choices">
+          <div class="choice"><span class="key">1</span>Apply the fix<span class="say-hint">say “one”</span></div>
+          <div class="choice"><span class="key">2</span>Show me the diff first</div>
+          <div class="choice"><span class="key">3</span>Send it to Work and keep going</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="canvas">
+    <header class="top">
+      <span class="logo">N<b>O</b>VA</span>
+      <nav class="tabs" aria-label="Spaces">
+        <a href="#" class="on"><span class="key">1</span>Now<span class="n">3</span></a>
+        <a href="#"><span class="key">2</span>Work</a>
+        <a href="#"><span class="key">3</span>Studio</a>
+        <a href="#"><span class="key">4</span>You</a>
+      </nav>
+      <span class="spacer"></span>
+      <span class="label" style="color:var(--amber)">● Listening</span>
+    </header>
+
+    <div class="grid">
+      <section class="plate log brk" aria-label="Comms log">
+        <div class="label">Comms · today</div>
+        <div class="entry me"><span class="who">YOU</span><p>schedule the posts for the week, and write each project up on my portfolio</p></div>
+        <div class="entry nova"><span class="who">NOVA</span><p>Done. Two posts go out this week, each linking to its story and technical write-up. I held CivicPulse back: it isn't live yet.</p></div>
+        <div class="plate mission"><h4>MISSION · WEEK OF POSTS <em>COMPLETE 7/7</em></h4>
+          <div class="objective"><i class="diamond done"></i><div>Read NutriSafe, AirGated and Ved Code from their repos</div></div>
+          <div class="objective"><i class="diamond done"></i><div>Wrote six articles · story + technical</div></div>
+          <div class="objective"><i class="diamond done"></i><div>Scheduled Thu 10:00 and Sat 10:00</div></div></div>
+        <div class="entry me"><span class="who">YOU</span><p>remind me to check the NutriSafe post with Anant before Thursday</p></div>
+        <div class="entry nova"><span class="who">NOVA</span><p>Wednesday at 6 pm. I'll say it and send it to your phone.</p></div>
+        <div style="margin-top:auto" class="compose"><span>Talk, or press <span class="key">Ctrl</span> <span class="key">K</span> and type. Nova decides when to act.</span><span class="key">Mic</span></div>
+      </section>
+
+      <aside class="quests" aria-label="Needs you">
+        <div class="label" style="color:var(--amber)">Needs you · 3 active</div>
+        <article class="plate quest brk"><div class="type"><span class="label">Scheduled post</span><span class="label" style="color:var(--amber)">Thu 10:00</span></div>
+          <h3>NutriSafe: reading the label so you don't have to</h3><p>LinkedIn · 3 images · built with Anant Tirupati</p>
+          <div class="acts"><span><span class="key">F1</span> Looks good</span><span style="color:var(--muted)">Edit</span><span style="color:var(--muted)">Unschedule</span></div></article>
+        <article class="plate quest"><div class="type"><span class="label">Automation</span><span class="label">Asked 4×</span></div>
+          <h3>Save “play some lofi” as an instant command</h3><p>Reviewed · runs without Claude</p>
+          <div class="acts"><span><span class="key">F2</span> Keep it</span><span style="color:var(--muted)">Steps</span><span style="color:var(--muted)">Discard</span></div></article>
+        <article class="plate quest"><div class="type"><span class="label">Sign-in</span><span class="label">59 days</span></div>
+          <h3>LinkedIn sign-in lapses 12 Dec</h3><div class="acts"><span style="color:var(--muted)">Remind me a week before</span></div></article>
+      </aside>
+    </div>
+
+    <footer class="bar">
+      <div><div class="label">Running · 1</div><div style="font:600 16px var(--hud);letter-spacing:.04em;margin-top:4px">Screenshots of CivicPulse</div><div class="cool"><i style="width:50%"></i></div></div>
+      <div class="timeline" aria-label="Today">
+        <span style="left:8%">09:00 VS Code</span><span style="left:34%">14:00 DBMS lab</span><span class="now" style="left:52%">NOW 16:40</span><span style="left:74%">18:00 Check post w/ Anant</span><span style="left:94%">21:30 Journal</span>
+      </div>
+      <div style="text-align:right"><div class="label">This week</div><div style="font:600 15px var(--hud);letter-spacing:.04em;margin-top:4px">78% handled free · $4.12 on Claude</div></div>
+    </footer>
+  </section>
+</div>
+<script src="backdrop.js"></script>
+<script>
+document.querySelectorAll(".switch button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll(".switch button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === b.dataset.v));
+});
+</script>
+</body>
+</html>

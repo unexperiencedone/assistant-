@@ -1,0 +1,22 @@
+/* VS Code, dark+ — the same screen behind every variant's overlay. Not part of any direction. */
+.vsc { position: absolute; inset: 0; display: flex; flex-direction: column; background: #1e1e1e; color: #ccc; font: 13px/1.5 Consolas, "Cascadia Mono", monospace; }
+.vsc-title { height: 30px; display: flex; align-items: center; gap: 18px; padding: 0 12px; background: #3c3c3c; color: #ccc; font: 12px system-ui, sans-serif; }
+.vsc-title span { color: #888; letter-spacing: 2px; }
+.vsc-body { flex: 1; display: flex; min-height: 0; }
+.vsc-act { width: 48px; background: #333; display: flex; flex-direction: column; gap: 22px; padding: 14px 12px; }
+.vsc-act i { width: 24px; height: 24px; border: 2px solid #858585; border-radius: 4px; }
+.vsc-side { width: 230px; background: #252526; padding: 8px 0; font: 13px system-ui, sans-serif; }
+.vsc-side p { margin: 0; padding: 3px 20px; color: #ccc; }
+.vsc-side p:first-child { font-size: 11px; color: #bbb; padding-bottom: 8px; }
+.vsc-side p.dir { color: #ddd; padding-left: 12px; }
+.vsc-side p.on { background: #37373d; color: #fff; }
+.vsc-ed { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.vsc-tabs { display: flex; background: #252526; }
+.vsc-tabs span { padding: 8px 16px; font: 13px system-ui, sans-serif; color: #999; background: #2d2d2d; border-right: 1px solid #252526; }
+.vsc-tabs span.on { background: #1e1e1e; color: #fff; }
+.vsc-code { padding: 8px 0; overflow: hidden; }
+.ln { white-space: pre; padding-left: 8px; }
+.ln b { display: inline-block; width: 46px; text-align: right; padding-right: 22px; color: #6e7681; font-weight: 400; }
+.ln.sel { background: #264f78; }
+.kw { color: #c586c0; } .fn { color: #dcdcaa; } .str { color: #ce9178; } .cls { color: #4ec9b0; }
+.vsc-status { height: 22px; background: #007acc; color: #fff; display: flex; gap: 22px; align-items: center; padding: 0 12px; font: 12px system-ui, sans-serif; }

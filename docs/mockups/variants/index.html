@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nova UI directions</title>
+<style>
+:root { --bg: #f4f3ef; --ink: #141414; --muted: #5b5b5b; --line: #d6d4cc; --pick: #ff5a36; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 16px/1.55 "Segoe UI", system-ui, sans-serif; }
+::selection { background: var(--pick); color: #fff; }
+main { max-width: 1480px; margin: 0 auto; padding: 48px 32px 80px; }
+h1 { margin: 0; font: 700 40px/1.1 "Segoe UI", system-ui, sans-serif; letter-spacing: -.02em; }
+.lede { max-width: 72ch; color: var(--muted); margin: 14px 0 40px; font-size: 17px; }
+.dir { display: grid; grid-template-columns: 340px 1fr; gap: 32px; padding: 36px 0; border-top: 2px solid var(--ink); }
+.dir h2 { margin: 0; font: 700 28px/1.15 "Segoe UI", system-ui, sans-serif; letter-spacing: -.01em; }
+.dir .tag { display: inline-block; margin-top: 10px; font: 600 12.5px "Segoe UI", sans-serif; letter-spacing: .04em; text-transform: uppercase; border: 1.5px solid var(--ink); padding: 3px 9px; }
+.dir .tag.pick { background: var(--ink); color: #fff; }
+.dir p { margin: 14px 0 0; }
+.dir dl { margin: 16px 0 0; display: grid; gap: 10px; }
+.dir dt { font-weight: 700; font-size: 14px; }
+.dir dd { margin: 2px 0 0; color: var(--muted); font-size: 15px; }
+.dir a.open { display: inline-block; margin-top: 18px; font-weight: 700; color: var(--ink); text-decoration: underline 2px var(--pick); text-underline-offset: 4px; }
+.shots { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.shots figure { margin: 0; }
+.shots img { width: 100%; height: auto; display: block; border: 1px solid var(--line); }
+.shots figcaption { font-size: 13.5px; color: var(--muted); margin-top: 6px; }
+table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 15px; }
+th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 13px; color: var(--muted); font-weight: 600; }
+.compare { border-top: 2px solid var(--ink); padding-top: 32px; margin-top: 8px; }
+.compare h2 { margin: 0 0 6px; font-size: 26px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Nova: four directions</h1>
+  <p class="lede">Same content in all four: you're in VS Code and ask “why is this scan taking ninety seconds?” (the real OneDrive bug from today), and the canvas's Now space with your real Needs-you items. Open each to switch between the two views. Pick one, mix parts, or ask for another round.</p>
+
+  <section class="dir">
+    <div>
+      <h2>A · Manga panels</h2><span class="tag">The roll's assignment</span>
+      <p>Nova speaks in speech balloons and its state is SFX lettering. Ink frames on paper, one pink spot ink for the next action. It's your portfolio's own visual language, so Nova and your portfolio become one personal identity.</p>
+      <dl><dt>Strongest at</dt><dd>Talking with it: a conversation reads like a page you want to read.</dd>
+      <dt>Honest risk</dt><dd>A bright paper panel over a dark editor is loud; it may need a softer state for quick answers. Shares its look with the portfolio, which is a pro or a con depending on how separate you want them.</dd></dl>
+      <a class="open" href="a-manga.html">Open A</a>
+    </div>
+    <div class="shots"><figure><img src="a-manga-overlay.png" alt="Manga overlay over VS Code"><figcaption>Over any app</figcaption></figure><figure><img src="a-manga-canvas.png" alt="Manga canvas"><figcaption>Canvas · Now</figcaption></figure></div>
+  </section>
+
+  <section class="dir">
+    <div>
+      <h2>B · Game HUD</h2><span class="tag pick">My pick</span>
+      <p>Nova draws a target-lock around exactly what it's reading, answers in an RPG dialogue box, and ends every answer with numbered choices you can just say (“one”). Needs you is a quest tracker; keys 1–4 switch spaces; a timeline of today runs along the bottom.</p>
+      <dl><dt>Strongest at</dt><dd>Seeing what Nova is doing and deciding fast, without leaving the app you're in. The lock makes “help me with what's on the screen” visible.</dd>
+      <dt>Honest risk</dt><dd>It's the most familiar of the four: HUD language is everywhere in games, so it's easy to read and less distinctive.</dd></dl>
+      <a class="open" href="b-hud.html">Open B</a>
+    </div>
+    <div class="shots"><figure><img src="b-hud-overlay.png" alt="HUD overlay over VS Code"><figcaption>Over any app</figcaption></figure><figure><img src="b-hud-canvas.png" alt="HUD canvas"><figcaption>Canvas · Now</figcaption></figure></div>
+  </section>
+
+  <section class="dir">
+    <div>
+      <h2>C · Wayfinding</h2><span class="tag">Challenger</span>
+      <p>Indian-airport signage: bilingual yellow bands, black type, white pictograms. Over an app, Nova drops in as one sign band with a “You are here” marker on your code. The canvas shows only the next decision at monumental scale, then a departures board of everything lined up.</p>
+      <dl><dt>Strongest at</dt><dd>Deciding fast. You can read the next decision and its time from across the room.</dd>
+      <dt>Honest risk</dt><dd>Saturated yellow is a lot for an all-day tool, and the conversation is the weakest part here.</dd></dl>
+      <a class="open" href="c-wayfinding.html">Open C</a>
+    </div>
+    <div class="shots"><figure><img src="c-wayfinding-overlay.png" alt="Wayfinding overlay over VS Code"><figcaption>Over any app</figcaption></figure><figure><img src="c-wayfinding-canvas.png" alt="Wayfinding canvas"><figcaption>Canvas · Now</figcaption></figure></div>
+  </section>
+
+  <section class="dir">
+    <div>
+      <h2>D · Living Ink, refined</h2><span class="tag">Your current look, polished</span>
+      <p>The direction you liked, pushed further: a quiet ink capsule rises over the app with a violet lens on what Nova reads; the canvas lets the conversation lead, the blob lives in the composer, today runs as a ribbon, and Needs you shows a real preview of the post.</p>
+      <dl><dt>Strongest at</dt><dd>Calm, all-day use. Nothing shouts, and it changes least from today's canvas.</dd>
+      <dt>Honest risk</dt><dd>The least distinctive: dark-with-serif is close to what many AI tools ship, and the detector flags Fraunces as overused.</dd></dl>
+      <a class="open" href="d-living-ink.html">Open D</a>
+    </div>
+    <div class="shots"><figure><img src="d-living-ink-overlay.png" alt="Living Ink overlay over VS Code"><figcaption>Over any app</figcaption></figure><figure><img src="d-living-ink-canvas.png" alt="Living Ink canvas"><figcaption>Canvas · Now</figcaption></figure></div>
+  </section>
+
+  <section class="compare">
+    <h2>Side by side, against your four jobs</h2>
+    <table>
+      <thead><tr><th></th><th>A · Manga</th><th>B · HUD</th><th>C · Wayfinding</th><th>D · Living Ink</th></tr></thead>
+      <tbody>
+        <tr><td>Deciding fast</td><td>Good</td><td>Strong: quest tracker + say “one”</td><td>Strongest: next decision only</td><td>Good</td></tr>
+        <tr><td>Seeing what Nova does</td><td>Good</td><td>Strongest: target lock on what it reads</td><td>Good: departures board</td><td>Good: lens + ribbon</td></tr>
+        <tr><td>Talking with it</td><td>Strongest: balloons</td><td>Good: comms log</td><td>Weakest</td><td>Strong</td></tr>
+        <tr><td>Recalling your stuff</td><td colspan="4">Lives in the You space in every direction; designed once you've picked</td></tr>
+        <tr><td>All-day calm</td><td>Medium</td><td>Medium</td><td>Low</td><td>High</td></tr>
+        <tr><td>Uniquely yours</td><td>Highest: matches your portfolio</td><td>Medium</td><td>High</td><td>Low</td></tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+</body>
+</html>

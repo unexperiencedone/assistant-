@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nova · A · Manga panels</title>
+<link rel="stylesheet" href="backdrop.css">
+<style>
+@font-face { font-family: Dela; src: url(fonts/dela-gothic-one-latin-400-normal.woff2); }
+@font-face { font-family: Zen; src: url(fonts/zen-kaku-gothic-new-latin-400-normal.woff2); font-weight: 400; }
+@font-face { font-family: Zen; src: url(fonts/zen-kaku-gothic-new-latin-700-normal.woff2); font-weight: 700; }
+@font-face { font-family: Zen; src: url(fonts/zen-kaku-gothic-new-latin-900-normal.woff2); font-weight: 900; }
+@font-face { font-family: Klee; src: url(fonts/klee-one-latin-600-normal.woff2); }
+@font-face { font-family: Rozha; src: url(fonts/rozha-one-devanagari-400-normal.woff2); unicode-range: U+0900-097F; }
+@font-face { font-family: Mukta; src: url(fonts/mukta-devanagari-800-normal.woff2); unicode-range: U+0900-097F; font-weight: 700 900; }
+@font-face { font-family: Mukta; src: url(fonts/mukta-devanagari-500-normal.woff2); unicode-range: U+0900-097F; font-weight: 400 600; }
+:root { --paper: #f5f5f2; --ink: #0d0d0d; --ink-2: #3b3b3b; --guide: #a9c8e8; --spot: #ff1f6f;
+  --sfx: Dela, Rozha, "Arial Black", sans-serif; --text: Zen, Mukta, system-ui, sans-serif; --pencil: Klee, cursive; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #d9d9d4; }
+body { font: 400 15px/1.55 var(--text); color: var(--ink); }
+::selection { background: var(--spot); color: var(--ink); }
+.switch { display: flex; gap: 8px; padding: 10px 16px; font: 700 13px var(--text); }
+.switch button { font: inherit; border: 2px solid var(--ink); background: var(--paper); padding: 6px 14px; cursor: pointer; }
+.switch button.on { background: var(--ink); color: var(--paper); }
+.frame { position: relative; width: 1440px; height: 900px; overflow: hidden; }
+.view { display: none; position: absolute; inset: 0; }
+.view.on { display: block; }
+[lang="hi"] { font-family: Rozha, Mukta, serif; }
+
+/* panel grammar: 2 / 3 / 5px ink frames over a rough blue underdrawing */
+.panel { position: relative; background: var(--paper); }
+.panel::before { content: ""; position: absolute; inset: 0; border: 3px solid var(--ink); pointer-events: none; z-index: 2; }
+.panel::after { content: ""; position: absolute; inset: 5px -6px -6px 5px; border: 1.5px solid var(--guide); transform: rotate(-.4deg); opacity: .6; z-index: -1; }
+.panel.splash::before { border-width: 5px; }
+.panel.inset::before { border-width: 2px; }
+.caption { position: relative; border: 2px solid var(--ink); background: var(--paper); padding: 14px 14px 15px; }
+.tab { position: absolute; left: -2px; top: 0; transform: translateY(-100%); background: var(--ink); color: var(--paper); font: 900 11.5px/1 var(--text); letter-spacing: .08em; text-transform: uppercase; padding: 4px 8px 5px; }
+.tab [lang="hi"] { font: 700 12px Mukta, sans-serif; letter-spacing: 0; }
+.btn { font: 900 14px var(--text); border: 3px solid var(--ink); background: var(--paper); padding: 0 16px; min-height: 42px; cursor: pointer; transition: background 120ms, color 120ms; }
+.btn:hover { background: var(--ink); color: var(--paper); }
+.btn.spot { background: var(--spot); }
+.btn.spot:hover { color: var(--spot); background: var(--ink); }
+.btn:focus-visible { outline: 3px solid var(--spot); outline-offset: 3px; }
+.stamp { display: inline-block; border: 3px solid var(--ink); font: 900 11.5px var(--text); letter-spacing: .07em; text-transform: uppercase; padding: 3px 9px 4px; transform: rotate(-2deg); }
+.stamp.solid { background: var(--ink); color: var(--paper); }
+.stamp.dash { border-style: dashed; }
+.tone { background-image: radial-gradient(var(--ink) .95px, transparent 1.15px); background-size: 6px 6px; }
+
+/* balloon: the one curved form, because Nova speaks */
+.balloon { position: relative; background: #fff; border: 3px solid var(--ink); border-radius: 46% 54% 50% 50% / 30% 30% 70% 70%; padding: 30px 42px 34px; }
+.balloon.rect { border-radius: 26px; }
+.balloon .tail { position: absolute; width: 34px; height: 30px; }
+.said { font: 700 17px/1.5 var(--text); }
+.mono { font-family: Consolas, monospace; font-size: .92em; }
+
+/* the orb, inked: a disc with G-pen speed lines, state drawn as an SFX word */
+.orb { width: 92px; height: 92px; border-radius: 50%; border: 4px solid var(--ink); background:
+  radial-gradient(circle at 34% 30%, #fff 0 16%, transparent 17%), radial-gradient(var(--ink) 1.1px, transparent 1.3px) 0 0 / 5px 5px, var(--paper); position: relative; }
+.sfx { font: 400 30px/1 var(--sfx); color: var(--ink); paint-order: stroke fill; -webkit-text-stroke: .16em var(--paper); }
+
+/* ── overlay ── */
+#overlay .dim { position: absolute; inset: 0; background: rgba(13,13,13,.18); }
+.summon { position: absolute; right: 56px; bottom: 54px; width: 620px; padding: 26px 28px 28px; transform: rotate(-.6deg); }
+.summon .lines { position: absolute; inset: -70px -40px -30px -90px; opacity: .55; z-index: -2; pointer-events: none; }
+.summon-head { display: flex; align-items: center; gap: 16px; }
+.summon-head .sfx { font-size: 34px; transform: rotate(-4deg); position: relative; z-index: 3; }
+.you { margin-top: 26px; }
+.you p { margin: 0; font: 700 16px var(--text); }
+.answer { margin-top: 18px; margin-left: -10px; }
+.acts { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+.pencil { font: 600 22px var(--pencil); color: var(--spot); transform: rotate(-3deg); }
+
+/* ── canvas ── */
+#canvas { background: var(--paper); }
+#canvas::before, #canvas::after { content: ""; position: absolute; top: 0; bottom: 0; width: 1px; background: var(--guide); }
+#canvas::before { left: 22px; } #canvas::after { right: 22px; }
+.mast { display: flex; align-items: center; gap: 30px; padding: 16px 44px 14px; border-bottom: 3px solid var(--ink); }
+.mark { display: grid; grid-template-columns: 11px 11px; gap: 2px; }
+.mark i { width: 11px; height: 11px; background: var(--ink); } .mark i:nth-child(2) { background: var(--spot); }
+.name { font: 400 26px/1 var(--sfx); }
+.nav { display: flex; gap: 26px; margin-left: 18px; }
+.nav a { color: var(--ink); text-decoration: none; display: grid; line-height: 1.1; }
+.nav a b { font: 700 15px var(--text); }
+.nav a small { font: 700 12.5px Mukta, sans-serif; color: var(--ink-2); }
+.nav a.on b { text-decoration: underline 3px var(--spot); text-underline-offset: 5px; }
+.nav .count { display: inline-grid; place-items: center; min-width: 22px; height: 22px; margin-left: 6px; background: var(--spot); border: 2px solid var(--ink); font: 900 12px var(--text); }
+.spacer { flex: 1; }
+.state { display: flex; align-items: center; gap: 12px; }
+.state .orb { width: 40px; height: 40px; border-width: 3px; }
+.page { display: grid; grid-template-columns: 7fr 5fr; gap: 16px; padding: 24px 44px 0; height: calc(900px - 76px); }
+.story { display: grid; grid-template-rows: 1fr auto; gap: 16px; min-height: 0; }
+.convo { padding: 28px 30px; display: flex; flex-direction: column; gap: 18px; overflow: hidden; }
+.turn-me { align-self: flex-end; max-width: 72%; margin-top: 14px; }
+.turn-me .caption { background: var(--paper); }
+.turn-nova { display: flex; gap: 16px; align-items: flex-start; max-width: 88%; }
+.turn-nova .orb { width: 46px; height: 46px; flex: none; border-width: 3px; margin-top: 6px; }
+.turn-nova .balloon { padding: 18px 26px 20px; border-radius: 28px; }
+.turn-nova .said { font-size: 15.5px; }
+.work-panel { margin-left: 62px; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-weight: 700; font-size: 14px; }
+.steps li { display: flex; gap: 10px; align-items: center; }
+.steps li::before { content: ""; width: 14px; height: 14px; border: 2.5px solid var(--ink); background: var(--ink); flex: none; }
+.compose { padding: 14px 16px 14px 24px; display: flex; gap: 14px; align-items: center; }
+.compose > span:first-child { flex: 1; font: 700 17px var(--text); color: var(--ink-2); }
+.compose .mic { width: 48px; height: 48px; border: 3px solid var(--ink); background: var(--spot); display: grid; place-items: center; }
+.rail { display: flex; flex-direction: column; gap: 16px; min-height: 0; overflow: hidden; }
+.head { padding: 18px 22px 16px; }
+.head h2 { margin: 0; font: 900 28px/1 var(--text); letter-spacing: -.02em; }
+.head p { margin: 6px 0 0; font: 400 27px/1 Rozha, serif; }
+.need { padding: 16px 18px 18px; }
+.need .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.need h3 { margin: 10px 0 2px; font: 900 18px/1.2 var(--text); letter-spacing: -.01em; }
+.need .ctx { font-size: 13.5px; color: var(--ink-2); font-weight: 700; }
+.need .acts { margin-top: 12px; }
+.need .btn { min-height: 36px; font-size: 13px; padding: 0 12px; border-width: 2px; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.mini { padding: 14px 16px; font-size: 13.5px; }
+.mini b { display: block; font: 900 15px var(--text); margin-bottom: 4px; }
+.progress { height: 14px; border: 2px solid var(--ink); margin-top: 10px; position: relative; }
+.progress i { position: absolute; inset: 0 50% 0 0; }
+</style>
+</head>
+<body>
+<div class="switch"><button data-v="overlay" class="on">Over any app</button><button data-v="canvas">Canvas · Now</button></div>
+<div class="frame">
+
+  <!-- ─────────── summoned over VS Code ─────────── -->
+  <section class="view on" id="overlay">
+    <div id="backdrop"></div>
+    <div class="dim"></div>
+    <div class="panel splash summon" role="dialog" aria-label="Nova">
+      <svg class="lines" viewBox="0 0 900 500" aria-hidden="true">
+        <g fill="var(--ink)" opacity=".9">
+          <path d="M600 330 L60 120 L70 112Z"/><path d="M600 330 L40 260 L42 250Z"/><path d="M600 330 L120 40 L130 36Z"/>
+          <path d="M600 330 L260 10 L268 8Z"/><path d="M600 330 L20 380 L20 370Z"/><path d="M600 330 L90 470 L86 462Z"/>
+          <path d="M600 330 L400 0 L408 0Z"/><path d="M600 330 L0 330 L0 322Z"/>
+        </g>
+      </svg>
+      <div class="summon-head">
+        <div class="orb" aria-hidden="true"></div>
+        <div>
+          <div class="sfx">GOT IT!</div>
+          <div class="caption" style="margin-top:34px;padding:10px 12px">
+            <span class="tab">Looking at · <span lang="hi">नज़र में</span></span>
+            <span style="font-weight:700;font-size:14px">VS Code · projects.py · lines 233–246</span>
+          </div>
+        </div>
+      </div>
+      <div class="caption you">
+        <span class="tab">You said · <span lang="hi">आपने कहा</span></span>
+        <p>“Why is this scan taking ninety seconds?”</p>
+      </div>
+      <div class="balloon rect answer">
+        <p class="said" style="margin:0">It's reading OneDrive files that only live in the cloud. Every <span class="mono">stat()</span> and <span class="mono">read_text()</span> pulls one down. Skip anything flagged <span class="mono">RECALL_ON_DATA_ACCESS</span> and the same scan takes about 16 seconds.</p>
+      </div>
+      <div class="acts">
+        <button class="btn spot">Apply the fix</button>
+        <button class="btn">Show me the diff</button>
+        <button class="btn">Send to Work</button>
+      </div>
+    </div>
+    <p class="pencil" style="position:absolute;left:420px;bottom:200px;margin:0;background:var(--paper);padding:2px 10px;border:2px solid var(--ink)" lang="hi">बस पूछिए</p>
+  </section>
+
+  <!-- ─────────── the canvas, Now ─────────── -->
+  <section class="view" id="canvas">
+    <header class="mast">
+      <span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span class="name">Nova</span>
+      <nav class="nav" aria-label="Spaces">
+        <a href="#" class="on"><b>Now<span class="count">3</span></b><small>अभी</small></a>
+        <a href="#"><b>Work</b><small>काम</small></a>
+        <a href="#"><b>Studio</b><small>स्टूडियो</small></a>
+        <a href="#"><b>You</b><small>आप</small></a>
+      </nav>
+      <span class="spacer"></span>
+      <span class="state"><span class="sfx" style="font-size:22px">listening…</span><span class="orb" aria-hidden="true"></span></span>
+    </header>
+
+    <div class="page">
+      <div class="story">
+        <article class="panel splash convo" aria-label="Conversation">
+          <div class="turn-me"><div class="caption"><span class="tab">You · <span lang="hi">आप</span></span><b>schedule the posts for the week, and write each project up on my portfolio</b></div></div>
+          <div class="turn-nova"><span class="orb" aria-hidden="true"></span>
+            <div class="balloon"><p class="said" style="margin:0">Done. Two posts go out this week, each linking to its story and its technical write-up. I held CivicPulse back: it isn't live yet.</p></div></div>
+          <div class="panel inset work-panel" style="padding:16px 18px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-weight:900">Week of posts + portfolio</b><span class="stamp solid">Done · 7 of 7</span></div>
+            <ul class="steps"><li>Read NutriSafe, AirGated and Ved Code from their repos</li><li>Wrote six articles · story and technical</li><li>Scheduled NutriSafe Thu 10:00 · AirGated Sat 10:00</li></ul>
+          </div>
+          <div class="turn-me"><div class="caption"><span class="tab">You · <span lang="hi">आप</span></span><b>remind me to check the NutriSafe post with Anant before Thursday</b></div></div>
+          <div class="turn-nova"><span class="orb" aria-hidden="true"></span>
+            <div class="balloon"><p class="said" style="margin:0">Wednesday, 6 in the evening. I'll say it out loud and put it on your phone.</p></div></div>
+        </article>
+        <div class="panel compose"><span>Say it, or type it. Nova decides when to act.</span><span class="mic" aria-label="Talk"><svg width="18" height="22" viewBox="0 0 18 22" fill="none" stroke="#0d0d0d" stroke-width="2.6" stroke-linecap="square"><rect x="5" y="1.5" width="8" height="12"/><path d="M1.5 10.5c0 4.5 3.3 7.5 7.5 7.5s7.5-3 7.5-7.5M9 18v3"/></svg></span></div>
+      </div>
+
+      <aside class="rail">
+        <div class="panel splash head"><h2>Needs you</h2><p lang="hi">आपकी बारी</p></div>
+        <article class="panel need">
+          <div class="row"><span class="stamp dash">Scheduled post</span><b class="mono" style="font-size:13px">THU 15 · 10:00</b></div>
+          <h3>NutriSafe: reading the label so you don't have to</h3>
+          <div class="ctx">LinkedIn · 3 images · built with Anant Tirupati</div>
+          <div class="acts"><button class="btn spot">Looks good</button><button class="btn">Edit</button><button class="btn">Unschedule</button></div>
+        </article>
+        <article class="panel need">
+          <div class="row"><span class="stamp dash">Automation</span><b style="font-size:13px">asked 4× this week</b></div>
+          <h3>Save “play some lofi” as an instant command</h3>
+          <div class="acts"><button class="btn spot">Keep it</button><button class="btn">See steps</button><button class="btn">Discard</button></div>
+        </article>
+        <div class="pair">
+          <div class="panel mini"><b>Running</b>Screenshots of CivicPulse<div class="progress"><i class="tone"></i></div></div>
+          <div class="panel mini"><b>Today</b>18:00 · Check the post with Anant<br><span style="color:var(--ink-2)">LinkedIn sign-in: 59 days left</span></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+</div>
+<script src="backdrop.js"></script>
+<script>
+document.querySelectorAll(".switch button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll(".switch button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === b.dataset.v));
+});
+</script>
+</body>
+</html>
