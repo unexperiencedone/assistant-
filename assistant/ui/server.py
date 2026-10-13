@@ -23,6 +23,10 @@
     POST /api/awareness/ask     {"question": ...} -> an answer written from the rows
     POST /api/awareness/forget  delete every recorded event and session
     GET  /api/phone/bridge      the Termux bridge script, so the phone can fetch it itself
+    WS   /ext                   the Chrome extension's connection (assistant/automation/extension.py)
+    GET  /api/ext               is the extension connected
+    POST /api/ext               {"method": ..., "params": {...}} -> one extension call (`main.py web`)
+    GET  /api/usage?days=30     tokens spent and saved (assistant/usage/report.py); days=0 is all time
 
 Runs uvicorn in a background thread, bound to `[ui] host` (loopback by default).
 
@@ -49,6 +53,7 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+from ..automation.extension import BRIDGE as EXTENSION
 from ..paths import resource_path
 from ..state import LIST_LIMITS, AppState
 from . import auth
@@ -103,6 +108,8 @@ class DashboardServer:
         self.history = history      # assistant.history.HistoryRecorder
         self.ambient = ambient      # assistant.ambient.AmbientService
         self.awareness = awareness  # assistant.awareness.AwarenessService
+        self.afterthought: Any = None   # assistant.afterthought.AfterThoughtService, set by the app
+        self.usage: Any = None      # assistant.usage.UsageService, set by the app once it exists
         self.state = state
         self.port = port
         self.on_text = on_text
@@ -328,6 +335,65 @@ class DashboardServer:
                 return JSONResponse({"error": "activity awareness is off"}, status_code=404)
             return JSONResponse(await asyncio.to_thread(self.awareness.forget))
 
+        # -- AfterThought: the Memory screen ----------------------------------------------
+        def _memory_off() -> JSONResponse:
+            return JSONResponse({"error": "AfterThought is off"}, status_code=404)
+
+        @app.get("/api/afterthought")
+        async def api_afterthought() -> JSONResponse:
+            if self.afterthought is None:
+                return _memory_off()
+            return JSONResponse(await asyncio.to_thread(self.afterthought.document))
+
+        @app.post("/api/afterthought/answer")
+        async def api_afterthought_answer(body: dict[str, Any]) -> JSONResponse:
+            if self.afterthought is None:
+                return _memory_off()
+            text = await asyncio.to_thread(self.afterthought.answer, bool(body.get("useful")),
+                                           int(body["id"]) if body.get("id") is not None else None)
+            return JSONResponse({"ok": True, "text": text})
+
+        @app.post("/api/afterthought/forget")
+        async def api_afterthought_forget(body: dict[str, Any]) -> JSONResponse:
+            if self.afterthought is None:
+                return _memory_off()
+            if body.get("all"):
+                await asyncio.to_thread(self.afterthought.store.forget_all)
+                return JSONResponse({"ok": True, "text": "Everything forgotten."})
+            text = await asyncio.to_thread(self.afterthought.forget, int(body["id"]))
+            return JSONResponse({"ok": True, "text": text})
+
+        @app.post("/api/afterthought/consent")
+        async def api_afterthought_consent(body: dict[str, Any]) -> JSONResponse:
+            if self.afterthought is None:
+                return _memory_off()
+            name = self.afterthought.set_consent(str(body.get("app", "")), bool(body.get("on")))
+            return JSONResponse({"ok": True, "app": name})
+
+        @app.post("/api/afterthought/pause")
+        async def api_afterthought_pause(body: dict[str, Any]) -> JSONResponse:
+            if self.afterthought is None:
+                return _memory_off()
+            seconds = float(body.get("seconds", 3600))
+            self.afterthought.pause(seconds) if seconds > 0 else self.afterthought.resume()
+            return JSONResponse({"ok": True})
+
+        @app.post("/api/afterthought/recall")
+        async def api_afterthought_recall(body: dict[str, Any]) -> JSONResponse:
+            if self.afterthought is None:
+                return _memory_off()
+            hits = await asyncio.to_thread(self.afterthought.recall, str(body.get("query", "")), 6)
+            return JSONResponse({"hits": [{"id": h["memory"]["id"], "title": h["memory"]["title"],
+                                           "focus": h["focus"], "similarity": round(h["similarity"], 3),
+                                           "score": round(h["score"], 3), "sources": h["memory"]["sources"],
+                                           "tier": h["memory"]["tier"]} for h in hits]})
+
+        @app.post("/api/afterthought/consolidate")
+        async def api_afterthought_consolidate() -> JSONResponse:
+            if self.afterthought is None:
+                return _memory_off()
+            return JSONResponse(await asyncio.to_thread(self.afterthought.consolidate))
+
         @app.get("/api/phone/bridge")
         async def api_phone_bridge():
             """The Termux bridge script itself.
@@ -376,6 +442,43 @@ class DashboardServer:
             finally:
                 sender.cancel()
                 self._clients.discard(client)
+
+        @app.get("/api/usage")
+        async def api_usage(days: float = 30) -> JSONResponse:
+            if self.usage is None:
+                return JSONResponse({"enabled": False})
+            summary = await asyncio.to_thread(self.usage.summary, days or None)
+            return JSONResponse({"enabled": True, **summary})
+
+        @app.websocket("/ext")
+        async def ext(websocket: WebSocket) -> None:
+            """The Chrome extension (extension/). Same token as everything else: the
+            extension reads it from the canvas cookie, or it was pasted into its popup."""
+            supplied = auth.supplied_token(websocket.headers, websocket.query_params, websocket.cookies)
+            if not auth.matches(self.token, supplied):
+                await websocket.close(code=1008)
+                return
+            await websocket.accept()
+            await EXTENSION.serve(websocket)
+
+        @app.get("/api/ext")
+        async def api_ext_status() -> JSONResponse:
+            return JSONResponse({"connected": EXTENSION.connected, "driver": EXTENSION.driver,
+                                 "calls": EXTENSION.calls, "last": EXTENSION.last, **EXTENSION.info})
+
+        @app.post("/api/ext")
+        async def api_ext_call(body: dict[str, Any]) -> JSONResponse:
+            """One extension call for `main.py web ...`: {"method": ..., "params": {...}}.
+            The call blocks until Chrome answers, so it waits off the event loop."""
+            from ..automation.extension import ExtensionError
+
+            method = str(body.get("method", "")).strip()
+            params = body.get("params") if isinstance(body.get("params"), dict) else {}
+            try:
+                result = await asyncio.to_thread(EXTENSION.call, method, params)
+            except ExtensionError as exc:
+                return JSONResponse({"ok": False, "error": str(exc)}, status_code=503 if not EXTENSION.connected else 400)
+            return JSONResponse({"ok": True, "result": result})
 
         if (self.dist / "index.html").exists():
             app.mount("/", StaticFiles(directory=self.dist, html=True), name="canvas")

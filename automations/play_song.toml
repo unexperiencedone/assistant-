@@ -1,5 +1,5 @@
 name = "Play something on Spotify"
-description = "Searches Spotify for {query} and plays the top result. For a genre or a mood, say \"play some {query}\" instead."
+description = "Searches Spotify for {query}, plays the result that best matches it, and says what is actually playing. For a genre or a mood, say \"play some {query}\" instead."
 phrases = [
   "play {query} on spotify",
   "play the song {query} on spotify",
@@ -22,37 +22,56 @@ do = "wait_window"
 title = "exe:spotify"
 timeout = 25
 
+# What Spotify's title says now: "Spotify Premium" when paused, "Artist - Song" when playing.
+[[steps]]
+do = "title"
+window = "exe:spotify"
+save_as = "before"
+optional = true
+
+# Proof the results on screen are for *this* search: Spotify sometimes ignores the link
+# when it is already open and keeps the last search ("tera didarva" was looked for in the
+# results for "didarwa", and failed). The box holds the query; the link is re-sent once.
+[[steps]]
+do = "wait_value"
+label = "Check Spotify is showing the search for {query}"
+window = "exe:spotify"
+name = "What do you want to play?"
+contains = "{query}"
+reopen = "spotify:search:{query_url}"
+timeout = 8
+
+# Let the results under that box finish replacing the last ones.
 [[steps]]
 do = "wait"
-seconds = 2.5
+seconds = 1.5
 
-# The top result's play button is the only control named exactly "Play" while music is playing.
-# When playback is paused the player bar is called "Play" too and comes first, so this first click
-# resumes the bar and the second one lands on the result. Whichever happens, {query} ends up playing.
+# Results are buttons named "Play <title>", in Spotify's own order. The bare "Play" is the
+# player bar and " • " names are the library sidebar, so neither can win. A spoken name is
+# spelt loosely ("didarva" for "didarwa"), so close spellings count; if nothing matches,
+# Spotify's top result is its best guess at what was heard, and the next step says
+# exactly what started, so a wrong guess is obvious and easy to correct.
 [[steps]]
-do = "click"
-label = "Play the top result"
+do = "click_best"
+label = "Play the best match for {query}"
 window = "exe:spotify"
-name = "Play"
+query = "{query}"
+prefix = "Play "
 control_type = "Button"
-exact = true
-optional = true
+exclude = " • "
+fallback_first = true
 timeout = 6
 
+# Done means the title changed to a track, not that a click went through.
 [[steps]]
-do = "wait"
-seconds = 1
-
-[[steps]]
-do = "click"
-label = "Play the top result"
+do = "wait_title"
+label = "Check it is playing"
 window = "exe:spotify"
-name = "Play"
-control_type = "Button"
-exact = true
-optional = true
-timeout = 3
+changed_from = "{before}"
+ignore = "^Spotify( Premium| Free)?$"
+save_as = "playing"
+timeout = 8
 
 [[steps]]
 do = "say"
-text = "Playing {query}."
+text = "Playing {playing}."

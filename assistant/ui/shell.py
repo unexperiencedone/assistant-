@@ -149,6 +149,9 @@ class AppShell:
     def show(self) -> None:
         if not self.window:
             return
+        if not self.visible:
+            # Opened from the tray: Nova may say hello again if it has been a while.
+            threading.Thread(target=self.app.on_window_shown, name="shown", daemon=True).start()
         self.window.show()
         self.window.restore()
         # Nudge it to the foreground: Windows won't let background apps steal focus otherwise.

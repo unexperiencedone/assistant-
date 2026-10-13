@@ -15,7 +15,7 @@ import re
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 log = logging.getLogger("nova.desktop")
 
@@ -311,6 +311,117 @@ def click(title: str, name: str = "", auto_id: str = "", control_type: str = "",
     focus(title)
     control.click_input()  # last resort: a real mouse click at the control's position
     return label
+
+
+# Words that say what kind of thing was asked for, not which one.
+_KIND_WORDS = {"song", "songs", "music", "track", "tracks", "playlist", "album", "by", "the", "of", "some",
+               "a", "an", "and", "on", "spotify", "latest", "best", "top", "all", "hits"}
+
+
+def _sounds_like(word: str, words: set[str]) -> bool:
+    """A spoken, transliterated name is spelt differently every time: "didarva" is
+    Spotify's "didarwa", "deedar" its "didar". Close enough counts."""
+    from difflib import SequenceMatcher
+
+    return word in words or any(len(w) > 3 and SequenceMatcher(None, word, w).ratio() >= 0.8 for w in words)
+
+
+def best_match(names: list[str], query: str, prefix: str = "", exclude: str = "",
+               fallback_first: bool = False) -> str | None:
+    """The first result that has something to do with what was asked for, or None.
+
+    A results list is already ranked by the app, which knows far more about relevance
+    and misheard names than counting words does: for "gulzar ali songs", most shared
+    words picked "Zindagi Gulzar Hai - Written by Ali Zafar", a TV soundtrack, over
+    Spotify's own top result. So the order is the app's, and the words only rule out
+    what is not a result at all. A name that is only the prefix ("Play" -- a player
+    bar) or matches `exclude` (a sidebar entry) never wins.
+    """
+    wanted = [w for w in re.findall(r"[a-z0-9]+", query.lower()) if w not in _KIND_WORDS]
+    if not wanted:
+        # Nothing to go on ("play the song": both words only say what kind of thing).
+        return None
+    eligible = [name for name in names
+                if not (prefix and (not name.startswith(prefix) or not name[len(prefix):].strip()))
+                and not (exclude and re.search(exclude, name))]
+    for name in eligible:
+        words = set(re.findall(r"[a-z0-9]+", name[len(prefix):].lower()))
+        if any(_sounds_like(w, words) for w in wanted):
+            return name
+    # Only safe once the page is known to show *this* search (wait_value): then the app's
+    # own top result is its best guess at a name we heard, which beats failing.
+    return eligible[0] if fallback_first and eligible else None
+
+
+def wait_value(title: str, name: str, contains: str, timeout: float = 8,
+               reopen: Callable[[], None] | None = None) -> str:
+    """Wait for a control (a search box) to show `contains`, re-sending once if it doesn't.
+
+    Spotify sometimes ignores a spotify:search: link when it's already open, and keeps
+    showing the previous search: "play tera didarva" then looked through the results for
+    "didarwa", found nothing, and failed. Reading the box says which search is on screen.
+    """
+    want = " ".join(contains.lower().split())
+    deadline = time.time() + timeout
+    halfway = time.time() + timeout / 2
+    value = ""
+    while time.time() <= deadline:
+        try:
+            value = read(title, name)
+        except Exception:
+            value = ""
+        if want in " ".join(value.lower().split()):
+            return value
+        if reopen is not None and time.time() >= halfway:
+            reopen()
+            reopen = None
+        time.sleep(0.4)
+    raise AutomationError(f"'{name}' in {title} still shows '{value}', not '{contains}'")
+
+
+def click_best(title: str, query: str, prefix: str = "", control_type: str = "", exclude: str = "",
+               timeout: float = 5, fallback_first: bool = False) -> str:
+    """Click the control that best matches `query`: the search result someone asked for,
+    rather than the first control with the right word in it.
+
+    Spotify's "click the button named Play" pressed the player bar whenever playback was
+    paused, which resumed the old track; the results are named "Play <title>".
+    """
+    deadline = time.time() + timeout
+    missed = ""
+    while True:
+        names = [c.name for c in list_controls(title, prefix.strip(), control_type, limit=200)]
+        name = best_match(names, query, prefix, exclude, fallback_first)
+        if name:
+            try:
+                return click(title, name, control_type=control_type, timeout=1.5, exact=True)
+            except AutomationError as exc:
+                # Gone between the listing and the click: the results were being redrawn
+                # (a new search replacing the last one). List again rather than fail.
+                missed = f" ('{name}' disappeared: {exc})"
+        if time.time() > deadline:
+            break
+        time.sleep(0.4)
+    raise AutomationError(f"nothing in {title} matches '{query}'{missed}")
+
+
+def wait_title(title: str, changed_from: str = "", ignore: str = "", timeout: float = 10) -> str:
+    """Wait for a window's title to become something new, and return it.
+
+    Players put what is playing in their title ("Ghulam Ali - Chupke Chupke"), so this is
+    how an automation checks it worked instead of announcing success it never saw.
+    """
+    deadline = time.time() + timeout
+    current = ""
+    while time.time() <= deadline:
+        try:
+            current = find_window(title).window_text()
+        except Exception:
+            current = ""
+        if current and current != changed_from and not (ignore and re.search(ignore, current)):
+            return current
+        time.sleep(0.4)
+    raise AutomationError(f"{title} still says '{current}' after {timeout:.0f}s")
 
 
 def type_text(title: str, text: str, into: str = "", auto_id: str = "") -> None:

@@ -93,10 +93,12 @@ class HowATaskIsNamedAloud(unittest.TestCase):
     def test_a_long_label_too(self) -> None:
         self.assertEqual(spoken_label("x" * 60), "the job already running")
 
-    def test_a_short_label_is_used_as_it_is(self) -> None:
-        """Naming it is useful when two are running; only unreadable ones are hidden."""
-        for label in ("the plan", "learning: play_song", "fixing: News briefing"):
-            self.assertEqual(spoken_label(label), label)
+    def test_a_short_label_is_named_not_quoted(self) -> None:
+        """Naming it is useful when two are running; the name is a title, not the transcript."""
+        for label, said in (("the plan", "the plan"), ("learning: play_song", "learning play song"),
+                            ("fixing: News briefing", "fixing news briefing"),
+                            ("hey nova can you play big hailey please", "play big hailey")):
+            self.assertEqual(spoken_label(label), said)
 
     def test_nothing_is_still_something(self) -> None:
         self.assertEqual(spoken_label(""), "the job already running")

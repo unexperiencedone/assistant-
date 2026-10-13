@@ -20,6 +20,7 @@ from __future__ import annotations
 import pathlib
 import struct
 import tempfile
+import time
 import unittest
 import wave
 
@@ -124,6 +125,78 @@ class FallsBackRatherThanGoingQuiet(unittest.TestCase):
         speaker._spoke("fish", "cached")
         self.assertEqual([entry["engine"] for entry in said], ["local", "fish"])
         self.assertEqual({entry["topic"] for entry in said}, {"voice"})
+
+
+class CacheHasACeiling(unittest.TestCase):
+    """Every distinct sentence Nova had ever spoken, kept forever, was 33 MB and climbing.
+
+    The cache is the right idea -- the acknowledgements and confirmations are the same
+    lines over and over, and replaying them is instant and free. What it lacked was an
+    upper bound, so it grew for the life of the install with nothing to stop it. Coldest
+    clip goes first, measured by when it was last *played*: modification time would make
+    every clip look as old as the day it was synthesised and evict the lines Nova says
+    most.
+    """
+
+    def speaker(self, folder: pathlib.Path, mb: int):
+        from assistant.audio.fish import FishSpeaker
+
+        made = FishSpeaker.__new__(FishSpeaker)
+        made.settings = VoiceSettings(fish_cache_mb=mb)
+        made._cache_dir = folder
+        made.bus = type("B", (), {"log": staticmethod(lambda *a, **k: None)})()
+        return made
+
+    def clips(self, folder: pathlib.Path, sizes: dict[str, int], ages: dict[str, float]) -> None:
+        import os
+
+        now = time.time()
+        for name, size in sizes.items():
+            path = folder / f"{name}.pcm"
+            path.write_bytes(b"\0" * size)
+            os.utime(path, (now - ages[name], now))
+
+    def test_under_the_cap_nothing_is_touched(self) -> None:
+        folder = pathlib.Path(tempfile.mkdtemp())
+        self.clips(folder, {"a": 1000, "b": 1000}, {"a": 100, "b": 1})
+        self.speaker(folder, 1)._sweep()
+        self.assertEqual(2, len(list(folder.glob("*.pcm"))))
+
+    def test_over_the_cap_the_coldest_clips_go(self) -> None:
+        folder = pathlib.Path(tempfile.mkdtemp())
+        sizes = {name: 300_000 for name in "abcdef"}          # ~1.8 MB against a 1 MB cap
+        ages = {"a": 600, "b": 500, "c": 400, "d": 300, "e": 200, "f": 1}
+        self.clips(folder, sizes, ages)
+        self.speaker(folder, 1)._sweep()
+        left = {p.stem for p in folder.glob("*.pcm")}
+        self.assertIn("f", left)            # played a second ago
+        self.assertNotIn("a", left)         # played ten minutes ago
+        total = sum(p.stat().st_size for p in folder.glob("*.pcm"))
+        self.assertLessEqual(total, 1024 * 1024)
+
+    def test_zero_means_no_limit(self) -> None:
+        """Someone who wants the old behaviour should be able to say so."""
+        folder = pathlib.Path(tempfile.mkdtemp())
+        self.clips(folder, {name: 500_000 for name in "abcd"}, {name: 10 for name in "abcd"})
+        self.speaker(folder, 0)._sweep()
+        self.assertEqual(4, len(list(folder.glob("*.pcm"))))
+
+    def test_no_cache_folder_is_not_an_error(self) -> None:
+        from assistant.audio.fish import FishSpeaker
+
+        made = FishSpeaker.__new__(FishSpeaker)
+        made.settings = VoiceSettings(fish_cache_mb=1)
+        made._cache_dir = None
+        made._sweep()          # must not raise
+
+    def test_a_played_clip_is_marked_as_recent(self) -> None:
+        """Without this the sweep cannot tell a warm clip from a cold one."""
+        folder = pathlib.Path(tempfile.mkdtemp())
+        self.clips(folder, {"a": 100}, {"a": 9999})
+        clip = folder / "a.pcm"
+        before = clip.stat().st_atime
+        self.speaker(folder, 1)._touch(clip)
+        self.assertGreater(clip.stat().st_atime, before)
 
 
 if __name__ == "__main__":

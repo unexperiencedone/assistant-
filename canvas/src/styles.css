@@ -141,6 +141,22 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .status-speaking .orb { background: var(--done); box-shadow: 0 0 8px rgba(166, 245, 207, .8); animation: pulse-dot .8s ease-in-out infinite; }
 .status-offline { background: rgba(255, 138, 138, 0.08); color: var(--failed); }
 .status-offline .orb { background: var(--failed); }
+
+/* What is actually being run, next to the pill that only says that something is.
+   Mono throughout: every part of it is a name a machine reported. */
+.live-line {
+  display: flex; align-items: baseline; gap: 7px; min-width: 0;
+  font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+  white-space: nowrap; overflow: hidden;
+}
+.live-line em { font-style: normal; color: var(--accent-soft); overflow: hidden; text-overflow: ellipsis; }
+.live-line b {
+  font-weight: 500; color: var(--violet); flex: none;
+  border: 1px solid rgba(124, 92, 255, 0.4); border-radius: 999px; padding: 1px 6px; font-size: 10.5px;
+}
+/* On the laptop screen the topbar has no room to spare; the voice still answers. */
+@media (max-width: 1100px) { .live-line { display: none; } }
+
 .spacer { flex: 1; }
 
 .mic { display: inline-flex; align-items: flex-end; gap: 2px; height: 15px; }
@@ -588,6 +604,33 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .aw-meter .bar i { display: block; height: 4px; border-radius: 999px; }
 .aw-off { text-align: center; padding: 40px 20px; color: var(--muted); }
 .aw-off p { max-width: 46ch; margin: 0 auto 16px; line-height: 1.6; }
+
+/* ---------------------------------------------------------------- memory (AfterThought) */
+.mem-note { background: var(--done-bg); border-color: rgba(166, 245, 207, 0.25); }
+.mem-suggestion { border-left: 2px solid var(--accent); padding: 10px 12px; margin-bottom: 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.02); }
+.mem-said { margin: 0 0 8px; font-family: var(--serif); font-size: 15px; line-height: 1.5; color: var(--ink); }
+.mem-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.mem-actions { display: flex; gap: 8px; margin-top: 10px; }
+.mem-outcome { display: inline-block; margin-top: 8px; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; }
+.mem-entry { padding: 12px 0; border-top: 1px solid var(--line); }
+.mem-entry:first-of-type { border-top: 0; }
+.mem-entry-top { display: flex; align-items: baseline; gap: 12px; }
+.mem-entry-top b { flex: 1; min-width: 0; font-family: var(--serif); font-weight: 500; font-size: 15px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mem-entry-top .mono { font-size: 10.5px; color: var(--faint); flex: none; }
+.mem-text { margin: 6px 0 8px; font-family: var(--mono); font-size: 11.5px; line-height: 1.55; color: var(--body); white-space: pre-wrap; max-height: 9.5em; overflow: hidden; }
+.mem-tag { color: var(--accent-soft); border-color: rgba(255, 138, 101, 0.25); }
+.mem-sources { margin-top: 6px; }
+.mem-forget { flex: none; padding: 2px 9px; font-size: 11px; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.mem-forget:hover { color: var(--failed); border-color: rgba(255, 138, 138, 0.4); }
+.mem-filter { margin: 0 0 6px; }
+.mem-hit { padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--line); }
+.mem-app { display: flex; align-items: center; justify-content: space-between; padding: 7px 4px; border-bottom: 1px solid var(--line); font-size: 13.5px; color: var(--body); cursor: pointer; }
+.mem-app input { accent-color: var(--accent); width: 16px; height: 16px; }
+.mem-stats { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 11.5px; margin-bottom: 4px; }
+.mem-stats span { color: var(--muted); }
+.mem-stats b { font-weight: 400; color: var(--accent-soft); }
+button.danger { color: var(--failed); border-color: rgba(255, 138, 138, 0.35); }
+@media (max-width: 980px) { .memory .awareness-body { grid-template-columns: minmax(0, 1fr); } }
 
 /* ---------------------------------------------------------------- profile */
 .profile { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -1092,3 +1135,44 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   .reader-title { font-size: 23px; }
   .reader h2 { font-size: 19px; }
 }
+
+/* -- Usage: tokens spent and saved (Usage.jsx) ------------------------------------- */
+.usage-body { padding: 0 26px 40px; }
+.us-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+.us-tile { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; background: rgba(255, 255, 255, 0.012); display: flex; flex-direction: column; gap: 4px; }
+.us-tile .label { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.us-tile b { font-family: var(--serif); font-size: 30px; font-weight: 500; color: var(--ink); line-height: 1.15; }
+.us-tile .sub { font-family: var(--mono); font-size: 11px; color: var(--faint); line-height: 1.45; }
+.usage-grid { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 22px; align-items: start; }
+.us-chart { position: relative; margin-top: 10px; }
+.us-chart svg { display: block; overflow: visible; }
+.us-grid { stroke: var(--grid); stroke-width: 1; }
+.us-axis { fill: var(--faint); font-family: var(--mono); font-size: 10px; }
+.us-tip { position: absolute; transform: translateX(-50%); pointer-events: none; min-width: 150px; padding: 8px 10px; border-radius: 10px;
+  background: var(--bg-lift); border: 1px solid var(--line-strong); font-family: var(--mono); font-size: 11px; color: var(--body); z-index: 2; }
+.us-tip b { display: block; color: var(--ink); font-weight: 500; margin-bottom: 4px; }
+.us-tip div { display: flex; align-items: center; gap: 6px; }
+.us-tip i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.us-tip span { flex: 1; color: var(--muted); }
+.us-tip em { font-style: normal; color: var(--ink); }
+.us-range { display: flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; }
+.us-range button { border: 0; background: none; color: var(--muted); font-family: var(--mono); font-size: 11px; padding: 4px 10px; border-radius: 999px; cursor: pointer; }
+.us-range button.on { background: var(--panel-hover); color: var(--ink); }
+.us-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11.5px; }
+.us-table th { text-align: right; font-weight: 400; color: var(--faint); padding: 0 6px 8px; font-size: 10.5px; }
+.us-table td { text-align: right; padding: 7px 6px; border-top: 1px solid var(--line); color: var(--body); white-space: nowrap; }
+.us-table th:first-child, .us-table td:first-child { text-align: left; }
+.us-turns th:nth-child(3), .us-turns td:nth-child(3) { text-align: left; }
+.us-turns td.req { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.us-turns tr.failed td { color: var(--failed); }
+.us-key { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 8px; }
+.us-note { color: var(--faint); }
+.us-type { color: var(--accent-soft); margin-right: 8px; }
+@media (max-width: 1100px) { .usage-grid { grid-template-columns: minmax(0, 1fr); } .us-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .us-tiles { grid-template-columns: minmax(0, 1fr); } .usage-body { padding: 0 16px 32px; } }
+
+/* -- Talk modes: just talking, or brainstorming (assistant/conversation.py) ---------- */
+.talk-chip { display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px; border-radius: 999px;
+  font-family: var(--serif); font-size: 13px; color: var(--ink); border: 1px solid rgba(124, 92, 255, 0.45);
+  background: rgba(124, 92, 255, 0.12); white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+.talk-chip.talk-brainstorm { border-color: rgba(255, 138, 101, 0.5); background: rgba(255, 138, 101, 0.1); }

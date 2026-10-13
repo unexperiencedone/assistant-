@@ -7,6 +7,9 @@
     python main.py demo                 # scripted canvas demo: no mic, no Claude usage
     python main.py ui controls "Calculator"     # list / click / type into desktop app controls
     python main.py macro run "calculator demo"  # run an automation from automations/
+    python main.py web open https://example.com # drive your Chrome through the Nova extension
+    python main.py usage [--days 7|--all]       # tokens spent and saved (assistant/usage)
+    python main.py linkedin auth|status|scan|draft|seed|mark|ledger   # projects -> LinkedIn
     python main.py sysindex find "invoice"      # local index CLI
     python main.py voice-check          # is this still the same Nova? (assistant/persona/drift.py)
     python main.py autostart install|remove|status
@@ -83,10 +86,10 @@ def main(argv: list[str] | None = None) -> int:
         from assistant.system.__main__ import main as sysindex_main
 
         return sysindex_main(argv[1:])
-    if argv and argv[0] in ("ui", "macro", "word"):
-        from assistant.automation.__main__ import macro_main, ui_main, word_main
+    if argv and argv[0] in ("ui", "macro", "word", "web"):
+        from assistant.automation.__main__ import macro_main, ui_main, web_main, word_main
 
-        return {"ui": ui_main, "macro": macro_main, "word": word_main}[argv[0]](argv[1:])
+        return {"ui": ui_main, "macro": macro_main, "word": word_main, "web": web_main}[argv[0]](argv[1:])
     if argv and argv[0] == "models":
         from assistant.agents.chat_api import GroqAgent, OpenRouterAgent, list_models
         from assistant.config import load_settings
@@ -97,6 +100,22 @@ def main(argv: list[str] | None = None) -> int:
         config = settings.agents.openrouter if agent_type is OpenRouterAgent else settings.agents.groq
         print(list_models(agent_type(config, settings.workspace, False, settings.assistant.name)))
         return 0
+    if argv and argv[0] == "usage":
+        from assistant.usage.__main__ import main as usage_main
+
+        return usage_main(argv[1:])
+    if argv and argv[0] == "linkedin":
+        from assistant.publish.__main__ import main as linkedin_main
+
+        return linkedin_main(argv[1:])
+    if argv and argv[0] == "memory":
+        from assistant.afterthought.__main__ import main as memory_main
+
+        return memory_main(argv[1:])
+    if argv and argv[0] == "schedule":
+        from assistant.schedule.__main__ import main as schedule_main
+
+        return schedule_main(argv[1:])
     if argv and argv[0] == "stats":
         from assistant.stats import main as stats_main
 

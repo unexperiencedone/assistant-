@@ -27,6 +27,7 @@ from .controller_capture import CaptureCommands
 from .events import EventBus
 from .intents import LOCAL_INTENTS, Intent, match_intent, normalize, strip_wake_word
 from . import matching, persona, progress, reader
+from .persona import delivery
 from .persona import guard as persona_guard
 from .classify import classify
 from .intents import example_corpus as intent_examples
@@ -35,7 +36,7 @@ from .planning import Plan
 from .planning.plan import PLAN_BLOCK, strip_markup
 from .system.voice import LocalVoiceCommands
 from .automation import promotion
-from . import triage
+from . import conversation, titles, triage
 
 if TYPE_CHECKING:
     from .automation.promotion import PromotionStore
@@ -45,8 +46,17 @@ if TYPE_CHECKING:
 
 ACKS = ["On it.", "Working on it.", "Okay, give me a moment.", "Sure, one sec."]
 URGENT_INTENTS = {"stop_speaking", "cancel_agent", "quit"}
+# The only commands heard during a conversation: leaving it, recapping, starting another.
+TALK_COMMANDS = URGENT_INTENTS | {"talk_mode_on", "talk_mode_off", "brainstorm_on", "brainstorm_recap"}
 MAX_SPOKEN_SENTENCES = 3
-_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+# A reply this long or shorter is spoken whole, however many sentences it has. The
+# profile's "spoken reply length" sets it (profile/render.py SPOKEN_CHARS).
+SPOKEN_WHOLE_CHARS = 1200
+SKIPPED_NOTE = "I've skipped some detail; it's on screen."
+# A standing goal's "looked, nothing to report" (assistant/goals): logged, never spoken.
+QUIET = re.compile(r"\[\[QUIET\]\]\.?")
+# A sentence also ends after a closing quote or bracket: `... Brain Freeze." It's a ...`
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+|(?<=[.!?][\"'”’)\]])\s+")
 
 
 # What counts as answering a yes/no question. Anything else is a new request, not an
@@ -86,15 +96,27 @@ class Controller(CaptureCommands):
         phone: Any = None,
         goals: Any = None,
         recipes: Any = None,
+        ladders: Any = None,
+        voice_id: Any = None,
         orchestrator: Any = None,
+        watcher: Any = None,
         capture: Any = None,
         publisher: Any = None,
         capture_settings: Any = None,
     ) -> None:
         self.profile = profile
         self.goals = goals
+        # What today is and what's on it (assistant/today, assistant/schedule); set by the app.
+        self.today: Any = None
+        self.schedule: Any = None
+        self.afterthought: Any = None   # assistant.afterthought.AfterThoughtService
+        # A question Nova asked on its own ("want to plan tomorrow?"): (request on yes, callback).
+        self._pending_offer: tuple[str, Callable[[bool], None] | None] | None = None
         self.recipes = recipes
+        self.ladders = ladders  # assistant.ladders.LadderService
+        self.voice_id = voice_id  # assistant.audio.voiceid.VoiceID
         self.orchestrator = orchestrator
+        self.watcher = watcher
         self.capture = capture
         self.publisher = publisher
         self.capture_settings = capture_settings
@@ -114,6 +136,13 @@ class Controller(CaptureCommands):
         self.show_canvas = show_canvas
         self.local = local
         self.plan_mode = False
+        # Just talking, or brainstorming (assistant/conversation.py). While set, speech
+        # goes to a conversation with its own copy of the free model, not to the scripts.
+        self.talk: conversation.TalkMode | None = None
+        self._talk_agent: Any = None
+        self._talk_turns = 0
+        self._recaps: dict[str, tuple[str, bool]] = {}  # task id -> (topic, end the mode after)
+        self._talk_tasks: set[str] = set()              # task ids that are conversation turns
         self.waiting: list[str] = []  # said while every task slot was busy
         self.task_labels: dict[str, str] = {}
         self.task_commands: dict[str, str] = {}  # task id -> what you said, recorded once it succeeds
@@ -166,8 +195,24 @@ class Controller(CaptureCommands):
             return
         self.speaker.say(heard)
         policy = getattr(self.settings.assistant, "follow_up", "questions")
-        if policy == "always" or (policy == "questions" and heard.rstrip().endswith("?")):
+        # In a conversation every reply is a turn, so the microphone stays open after
+        # all of them, the way you'd answer a person without saying their name first.
+        if self.talk is not None or policy == "always" or (policy == "questions" and heard.rstrip().endswith("?")):
             self._expect_reply()
+
+    def announce(self, text: str) -> None:
+        """Something Nova says on its own (a reminder): always out loud on this PC, whoever
+        asked last and from wherever, and never opening the microphone after it."""
+        self._recent.append(("Nova", fish_tts.strip_tags(text)[:300]))
+        self.bus.publish("transcript", role="assistant", text=fish_tts.strip_tags(text), origin="desktop")
+        self.speaker.say(text)
+
+    def offer(self, question: str, request: str, on_answer: Callable[[bool], Any] | None = None) -> None:
+        """Ask something unprompted; a yes runs `request` (if any), and `on_answer` hears
+        both. A string it returns is said, so "useful?" can be answered with "noted"."""
+        self._pending_offer = (request, on_answer)
+        self.reply_to = "desktop"
+        self.say(question)   # ends in "?", so the answer needs no wake word
 
     def try_urgent(self, text: str, source: str = "keyboard", origin: str = "desktop") -> bool:
         """Called straight from the input thread so 'stop' works even mid-task."""
@@ -180,7 +225,7 @@ class Controller(CaptureCommands):
             return True
         return False
 
-    def handle(self, text: str, source: str, origin: str = "desktop") -> None:
+    def handle(self, text: str, source: str, origin: str = "desktop", brain: str = "") -> None:
         self.reply_to = origin  # everything this request says goes back to where it came from
         addressed, text = self._addressed(text, source)  # typed "hey Nova, ..." works too
         if source == "voice":
@@ -204,6 +249,21 @@ class Controller(CaptureCommands):
                 return
             self._pending_promotion = None  # you moved on; the question lapses quietly
 
+        # ...or to a question Nova raised by itself, such as the evening "plan tomorrow?".
+        if self._pending_offer:
+            answer = yes_or_no(text)
+            request, on_answer = self._pending_offer
+            self._pending_offer = None
+            if answer is not None:
+                reply = on_answer(answer) if on_answer is not None else None
+                if answer and request:
+                    self.dispatch(request, label=short(request, 60), brain=brain)
+                elif isinstance(reply, str) and reply:
+                    self.say(reply)
+                elif not answer:
+                    self.say(random.choice(["Alright.", "No problem.", "Okay, later then."]))
+                return
+
         # ...or an answer to "did you mean ...?" from the loose matcher.
         if self._pending_guess:
             answer = yes_or_no(text)
@@ -226,6 +286,21 @@ class Controller(CaptureCommands):
                 return
             # Never send something destructive because the next sentence was ambiguous.
             self._pending_phone = None
+
+        # In a conversation, what you say is talk. Only the mode's own phrases and the
+        # urgent ones act as commands; the script matchers are skipped, because a name or
+        # a half-thought must never become an action ("gulzar ali" became a phone call).
+        if self.talk is not None:
+            if self.talk.idle():
+                self._end_talk(quiet=True)
+            else:
+                intent = match_intent(text)
+                if intent and intent.name in TALK_COMMANDS:
+                    self.bus.publish("route", utterance=text, route="intent", name=intent.name)
+                    self._handle_intent(intent, text)
+                else:
+                    self._converse(text)
+                return
 
         # Scripted automations first: user-defined phrases, instant, no Claude usage.
         found = self.automations.match(text) if self.automations else None
@@ -252,15 +327,17 @@ class Controller(CaptureCommands):
             if self.local and self.local.handle(intent.name, intent.args):
                 self._remember_command(text)
             else:
-                self.dispatch(text, command=text)
+                self.dispatch(text, command=text, brain=brain)
         elif intent:
             self.bus.publish("route", utterance=text, route="intent", name=intent.name)
             self._handle_intent(intent, text)
             if intent.name not in URGENT_INTENTS:
                 self._remember_command(text)
         else:
-            self.bus.publish("route", utterance=text, route="agent", name="")
-            self.dispatch(text, command=text)
+            # No route event here: dispatch publishes the real one, naming the backend
+            # that took the turn. Publishing an anonymous "agent" first counted every
+            # model turn twice, which is why the measured free share read low.
+            self.dispatch(text, command=text, brain=brain)
 
     # -- the loose matcher (assistant/matching.py) ----------------------------------------
     def _script_corpus(self) -> list[tuple[str, str, str]]:
@@ -296,7 +373,11 @@ class Controller(CaptureCommands):
         groq = getattr(getattr(self.settings, "agents", None), "groq", None)
         if groq is None:
             return ""          # a Nova built without the chat-model backends at all
-        return os.environ.get(getattr(groq, "api_key_env", "") or "", "").strip()
+        # The background lane of the shared pool: a classifier call never spends the key
+        # the conversation is leaning on, and it skips a key that is already cooling.
+        from .agents import keypool
+
+        return keypool.pool(getattr(groq, "api_key_env", "") or "").pick("background")
 
     def _ask_about(self, guess, text: str) -> bool:
         """Close, but not close enough to act on unasked."""
@@ -325,8 +406,7 @@ class Controller(CaptureCommands):
                 # The model declined, but the rules had something worth asking about.
                 self._ask_about(fallback, text)
                 return
-            self.bus.publish("route", utterance=text, route="agent", name="")
-            self.dispatch(text, command=text)
+            self.dispatch(text, command=text)   # dispatch publishes the route
 
         threading.Thread(target=work, name="classify", daemon=True).start()
 
@@ -377,7 +457,9 @@ class Controller(CaptureCommands):
             return False
         # Count from when Nova stopped talking, not from when the reply was queued.
         finished = max(self.awaiting_since, getattr(self.speaker, "last_active_at", 0.0))
-        return time.time() - finished < getattr(self.settings.assistant, "follow_up_seconds", 8)
+        window = conversation.LISTEN_SECONDS if self.talk is not None else \
+            getattr(self.settings.assistant, "follow_up_seconds", 8)
+        return time.time() - finished < window
 
     def on_agent_finished(self, backend: AgentBackend, result: AgentResult, task_id: str = "") -> None:
         """Runs on the main loop once an agent turn ends."""
@@ -408,8 +490,28 @@ class Controller(CaptureCommands):
         # The agent's own progress markers were for narration while it worked; they
         # are not words to read out at the end (assistant/progress.py).
         result.summary = progress.strip_milestones(result.summary).strip()
+        # A standing goal that looked and found nothing says so with [[QUIET]]: an hourly
+        # "nothing new in your mail" spoken aloud is exactly the interruption goals avoid.
+        if result.ok and QUIET.fullmatch(result.summary):
+            self.bus.log(f"{label or 'standing goal'}: nothing worth saying")
+            self._start_waiting()
+            return
+        # *laughs*, (smiles), "haha" and emoji become the tags the voice performs
+        # (persona/delivery.py), instead of being read out or skipped.
+        result.summary = delivery.normalise(result.summary)
         # The agent hands an action back when a phrasing missed the instant command
         # (agents/rules.py). The marker is an instruction to Nova, not words to read out.
+        # A brainstorm recap is kept: saved as Markdown, then shown like any long answer.
+        recap = self._recaps.pop(task_id, None) if task_id else None
+        if recap and result.ok and result.summary.strip():
+            topic, end_after = recap
+            try:
+                path = conversation.save_recap(fish_tts.strip_tags(result.summary), topic)
+                result.summary = f"{result.summary.strip()}\n\nSaved to {path}."
+            except OSError as exc:
+                self.bus.log(f"couldn't save the brainstorm recap: {exc}", "warn")
+            if end_after and self.talk is not None:
+                self._end_talk(quiet=True)
         asked_for = phone_bridge.parse_markers(result.summary)
         if asked_for:
             result.summary = phone_bridge.strip_markers(result.summary)
@@ -439,15 +541,21 @@ class Controller(CaptureCommands):
                 # taught, one sentence later, is the question nobody wants.
                 decision = promotion.DECISION_NONE
         # With several tasks in flight, say which one this was: they finish out of order.
+        # Named by what the job was (titles.py), never by quoting the transcript back.
         others_running = bool(self.runner.active)
-        prefix = f"{label}: " if others_running and label else ""
+        # A conversation turn is never introduced by a job title: it is the conversation.
+        talking = task_id in self._talk_tasks
+        self._talk_tasks.discard(task_id)
+        cited = titles.cite(command or label, task_type) if others_running and not talking else ""
+        prefix = f"{cited} \u2014 " if cited else ""
         # Last line of defence: a backend that introduced itself, or explained a failure
         # by naming plumbing the user cannot act on (persona/guard.py).
         result.summary, tripped = persona_guard.scrub(
             result.summary, persona.identity_line(self._persona_name(), self._maker(), self._register()))
         if tripped:
             self.bus.log(f"persona guard: {tripped} from {backend.label}", "warn")
-        spoken = spoken_reply(result.summary, self.profile.reply_sentences if self.profile else MAX_SPOKEN_SENTENCES)
+        spoken = spoken_reply(result.summary, self.profile.reply_sentences if self.profile else MAX_SPOKEN_SENTENCES,
+                              whole_chars=getattr(self.profile, "spoken_chars", SPOKEN_WHOLE_CHARS))
         shown = full_reply(result.summary)
         # A document goes to the reader whole, and the voice says a summary of it rather
         # than its first three sentences. Speech was already discarding the rest; the
@@ -485,7 +593,14 @@ class Controller(CaptureCommands):
         macro_name = ctx["macro_name"]
         self.bus.log(f"'{macro_name}' failed; letting {self.registry.current.label} finish it, "
                      "then I'll ask it to patch the automation.", "warn")
-        task_id = self.dispatch(ctx["utterance"], command=ctx["utterance"])
+        # Say what already happened. Given only the request, the model ran the same
+        # automation again, then checked in a way that couldn't see the result, then
+        # handed over to Claude -- and the song was started three times.
+        handover = (f"{ctx['utterance']}\n\n(My saved automation '{macro_name}' ran first and stopped at step "
+                    f"{data.get('step')}: {data.get('error') or data.get('text', '')}. The steps before that already "
+                    "happened. Check the current state first -- a music player's window title is the song "
+                    "playing -- and finish from there; run the automation again only if nothing happened.)")
+        task_id = self.dispatch(handover, label=ctx["utterance"], command=ctx["utterance"])
         if task_id:
             self._macro_fixes[task_id] = {**ctx, "step": data.get("step"), "error": data.get("error") or data.get("text", "")}
 
@@ -568,8 +683,11 @@ class Controller(CaptureCommands):
 
     # -- talking to the agent -------------------------------------------------------
     def dispatch(self, text: str, label: str | None = None, executing_plan: bool = False,
-                 command: str | None = None) -> str | None:
-        """Returns the new task's id, or None when it was queued or blocked instead of starting."""
+                 command: str | None = None, brain: str = "") -> str | None:
+        """Returns the new task's id, or None when it was queued or blocked instead of starting.
+
+        `brain` pins the agent (a standing goal only Claude can do). It runs in its own
+        session and leaves the brain you are talking to selected."""
         # A running automation never blocks the agent: separate threads, separate work.
         # Errands run alongside anything; two big jobs at once never do.
         weight = triage.weight(text, executing_plan)
@@ -585,7 +703,8 @@ class Controller(CaptureCommands):
         if executing_plan and self.runner.plan_is_running():
             self.say("The plan is already running.")
             return None
-        backend = self.registry.current
+        pinned = self.registry.backends.get(brain) if brain and brain != self.registry.current_name else None
+        backend = pinned or self.registry.current
         if not backend.is_available():
             self.say(backend.unavailable_reason())
             return None
@@ -596,6 +715,13 @@ class Controller(CaptureCommands):
         if self.profile:
             # Details of any project or person you mention, within what this agent may see.
             prompt = self.profile.with_context(prompt, text, backend.name)
+        # The date, the weather, the markets and what's on: one line, so no turn ever
+        # has to look up what day it is (assistant/today).
+        if self.today is not None:
+            try:
+                prompt = f"{self.today.context()}\n{prompt}"
+            except Exception as error:
+                self.bus.log(f"today's context unavailable: {error}", "warn")
         # How a job like this went last time. Silent unless a stored request really
         # resembles this one -- a hint about the wrong task is worse than no hint, since
         # a model given a confident irrelevant instruction follows it anyway.
@@ -604,11 +730,18 @@ class Controller(CaptureCommands):
             if hint:
                 prompt = f"{hint}\n\n{prompt}"
                 self.bus.log("recipe: reusing what worked on a request like this")
-        route = "execute_plan" if executing_plan else ("plan" if self.plan_mode else "task")
+        # The order to try things in for this kind of request, so a failed approach leads
+        # to the next one instead of a retry of the same command (ladders.toml).
+        ladder_kinds: list[str] = []
+        if self.ladders:
+            ladder, ladder_kinds = self.ladders.hint(text, backend.name)
+            if ladder:
+                prompt = f"{ladder}\n\n{prompt}"
+        route ="execute_plan" if executing_plan else ("plan" if self.plan_mode else "task")
         # A task running alongside another gets its own agent session, so the two
         # conversations never mix.
         parallel = bool(self.runner.active)
-        session = self.registry.spawn_current() if parallel else backend
+        session = backend.spawn() if parallel or pinned else backend
         if parallel:
             # A spawned session has no conversation of its own, and while a long job
             # runs every request is a spawned session -- which is how "fill in the form
@@ -619,6 +752,8 @@ class Controller(CaptureCommands):
 
         task_label = label or short(text, 60)
         task_id = self.runner.start(session, prompt, task_label, executing_plan, weight)
+        if self.ladders:
+            self.ladders.track(task_id, ladder_kinds)
         self.task_labels[task_id or ""] = task_label
         self.task_origins[task_id or ""] = self.reply_to  # answered where it was asked, minutes later
         if command and task_id:
@@ -675,6 +810,133 @@ class Controller(CaptureCommands):
         if name and name != self.registry.current_name:
             self.bus.publish("backend", name=self.registry.select(name).label)
         self.dispatch(task)
+
+    # -- whose voice (assistant/audio/voiceid.py) --------------------------------------
+    VOICE_SENTENCES = (
+        "The quick brown fox jumps over the lazy dog by the river.",
+        "Remind me to call the electrician tomorrow afternoon.",
+        "I think the new design looks a lot better than the old one.",
+        "Play something relaxing while I finish this chapter.",
+    )
+
+    def _intent_voice_enrol(self, _text: str) -> None:
+        if self.voice_id is None:
+            self.say("Voice recognition is turned off. Set enabled under voice_id in the config.")
+            return
+        self.voice_id.start_enrolment()
+        lines = "\n".join(f"{n}. {s}" for n, s in enumerate(self.VOICE_SENTENCES, 1))
+        self.say(f"Let's learn your voice. Say these four sentences, one at a time, in your normal voice:\n{lines}",
+                 spoken="Okay, let's learn your voice. Read me the four sentences on screen, one at a time, "
+                        "in your normal voice. No need to say my name.")
+
+    def _intent_voice_forget(self, _text: str) -> None:
+        if self.voice_id is None or not (self.voice_id.enrolled or self.voice_id.enrolling):
+            self.say("I don't have your voice stored.")
+            return
+        self.voice_id.forget()
+        self.say("Done. I've deleted your voiceprint, so I'll listen to any voice again.")
+
+    def _intent_voice_report(self, _text: str) -> None:
+        if self.voice_id is None:
+            self.say("Voice recognition is turned off.")
+            return
+        lines = self.voice_id.report().split("\n")
+        # The whole report on screen; aloud, the counts (or the only line there is).
+        self.say("\n".join(lines), spoken=lines[1] if len(lines) > 1 else lines[0])
+
+    def voice_progress(self, done: int, total: int) -> None:
+        self.say(f"Got it. {total - done} to go." if total - done > 1 else "Got it. One more.")
+
+    # -- talk modes (assistant/conversation.py) ---------------------------------------
+    def _intent_talk_mode_on(self, _text: str, topic: str = "") -> None:
+        self._start_talk("chat", topic)
+
+    def _intent_brainstorm_on(self, _text: str, topic: str = "") -> None:
+        self._start_talk("brainstorm", topic)
+
+    def _intent_talk_mode_off(self, _text: str) -> None:
+        if self.talk is None:
+            self.say("We weren't chatting, but I'm here. What do you need?")
+        elif self.talk.kind == "brainstorm" and self._talk_turns >= 2:
+            self._recap(end_after=True)   # leaving a brainstorm keeps what it made
+        else:
+            self._end_talk()
+
+    def _intent_brainstorm_recap(self, text: str) -> None:
+        if self.talk is None or self.talk.kind != "brainstorm":
+            # "What have we got" outside a brainstorm is an ordinary question.
+            self.dispatch(text, command=text)
+            return
+        self._recap(end_after=normalize(text).startswith(("wrap", "sum it up", "sum this up")))
+
+    def _talk_backend(self):
+        """A copy of the free model for the conversation: it keeps what was said so far,
+        but changing its instructions can never touch a task running on the original."""
+        backends = getattr(self.registry, "backends", {}) or {}
+        for name in ("groq", "openrouter"):
+            found = backends.get(name)
+            if found is not None and found.is_available():
+                return found.spawn()
+        return self.registry.current
+
+    def _start_talk(self, kind: str, topic: str = "") -> None:
+        if self.talk is not None and self._talk_agent is not None:
+            self._talk_agent.talk = ""
+        self.talk = conversation.start(kind, topic)
+        self._talk_turns = 0
+        self._talk_agent = self._talk_backend()
+        owner = self.profile.preferred_name if self.profile else ""
+        if hasattr(self._talk_agent, "talk"):
+            self._talk_agent.talk = self.talk.instructions(owner)
+        self.plan_mode = False
+        self.bus.publish("talk_mode", **self.talk.to_dict())
+        if self.talk.lead:
+            # "talk to me about anything": asking "what's on your mind?" hands it straight back.
+            self._converse("you pick", prompt=conversation.LEAD_PROMPT, label="Picking a topic")
+        else:
+            self.say(conversation.opening(self.talk))
+
+    def _end_talk(self, quiet: bool = False) -> None:
+        if self._talk_agent is not None and hasattr(self._talk_agent, "talk"):
+            self._talk_agent.talk = ""
+        self.talk, self._talk_agent, self._talk_turns = None, None, 0
+        self.bus.publish("talk_mode", kind="", subject="", label="", since=0)
+        if quiet:
+            self.bus.log("talk mode ended after a quiet spell")
+        else:
+            self.say("Okay, back to work.")
+
+    def _converse(self, text: str, prompt: str | None = None, label: str = "") -> str | None:
+        """One turn of the conversation, on the talk agent, as a light task."""
+        assert self.talk is not None
+        self.talk.touch()
+        agent = self._talk_agent or self.registry.current
+        if not hasattr(agent, "talk"):
+            # A CLI brain has no talk switch, so it is told the mode in words each turn.
+            owner = self.profile.preferred_name if self.profile else ""
+            prompt = f"{self.talk.instructions(owner)}\n\n{prompt or text}"
+        if self.runner.active and any(t.backend is agent for t in self.runner.active):
+            agent = agent.spawn()   # still answering the last turn: never share one history
+            if hasattr(agent, "talk") and self._talk_agent is not None:
+                agent.talk = self._talk_agent.talk
+        task_label = label or short(text, 60)
+        task_id = self.runner.start(agent, prompt or text, task_label, False, triage.LIGHT)
+        if task_id is None:
+            self.say("Give me a second, I'm still thinking about the last thing.")
+            return None
+        self._talk_turns += 1
+        self._talk_tasks.add(task_id)
+        self.task_labels[task_id] = task_label
+        self.task_origins[task_id] = self.reply_to
+        self.bus.publish("route", utterance=text, route="agent", name=self.talk.kind,
+                         backend=agent.label, task=task_id)
+        return task_id
+
+    def _recap(self, end_after: bool) -> None:
+        assert self.talk is not None
+        task_id = self._converse("recap the brainstorm", prompt=conversation.RECAP, label="Brainstorm recap")
+        if task_id:
+            self._recaps[task_id] = (self.talk.topic or "brainstorm", end_after)
 
     def _intent_new_plan(self, _text: str, topic: str = "") -> None:
         self.plan.clear()
@@ -741,12 +1003,22 @@ class Controller(CaptureCommands):
     def _intent_status(self, _text: str) -> None:
         if self.runner.running:
             queued = f" {len(self.waiting)} more message{'s' if len(self.waiting) != 1 else ''} queued." if self.waiting else ""
-            self.say(self.runner.status_sentence() + queued)
+            # The watcher names the command being run, which status_sentence could not:
+            # it only had the category, so "running things" was the whole answer.
+            live = self.watcher.spoken() if self.watcher is not None else self.runner.status_sentence()
+            self.say(live + queued)
         else:
             steps = len(self.plan.steps)
             mode = " We're in planning mode." if self.plan_mode else ""
-            self.say(f"Nothing's running, and I'm using {self.registry.current.label}. "
-                     f"The plan has {steps} step{'s' if steps != 1 else ''}.{mode}")
+            plan = f" The plan has {steps} step{'s' if steps != 1 else ''}." if steps else ""
+            # "Nothing's running" on its own is not much of an answer to "what are you
+            # doing"; what just finished usually is.
+            last = ""
+            if self.watcher is not None:
+                said = self.watcher.last_sentence()
+                last = f" {said}" if said else ""
+            self.say(f"Nothing's running, and I'm using {self.registry.current.label}."
+                     f"{last}{plan}{mode}")
 
     def _intent_open_dashboard(self, _text: str) -> None:
         self.say("Opening the canvas." if self.show_canvas() else "The canvas is turned off in the config.")
@@ -1072,6 +1344,77 @@ class Controller(CaptureCommands):
         _ok, said = staging.reject(folder)
         self.say(said)
 
+    # -- AfterThought (assistant/afterthought) --------------------------------------------
+    def _memory(self) -> Any:
+        if self.afterthought is None:
+            self.say("AfterThought is turned off in the config.")
+        return self.afterthought
+
+    def _intent_memory_remember(self, _text: str, note: str = "", note2: str = "") -> None:
+        if self._memory():
+            self.say(self.afterthought.remember_now(note or note2))
+
+    def _intent_memory_recall(self, _text: str, query: str = "") -> None:
+        if self._memory():
+            self.say(self.afterthought.spoken_recall(query))
+
+    def _intent_memory_accept(self, _text: str) -> None:
+        if self._memory():
+            self._pending_offer = None
+            self.say(self.afterthought.answer(True))
+
+    def _intent_memory_dismiss(self, _text: str) -> None:
+        if self._memory():
+            self._pending_offer = None
+            self.say(self.afterthought.answer(False))
+
+    def _intent_memory_forget(self, _text: str) -> None:
+        if self._memory():
+            self._pending_offer = None
+            self.say(self.afterthought.forget())
+
+    def _intent_memory_watch(self, _text: str, app: str = "") -> None:
+        if self._memory():
+            name = self.afterthought.set_consent(app, True)
+            self.say(f"Okay, I'll remember what you do in {name}. Private windows and passwords stay out.")
+
+    def _intent_memory_unwatch(self, _text: str, app: str = "", app2: str = "") -> None:
+        if self._memory():
+            name = self.afterthought.set_consent(app or app2, False)
+            self.say(f"Stopped. Nothing more from {name}.")
+
+    def _intent_memory_pause(self, _text: str, span: str = "") -> None:
+        if not self._memory():
+            return
+        span = (span or "an hour").lower()
+        seconds = 86400.0 if span in ("the day", "today") else 3600.0
+        match = re.search(r"(\d+)\s*(hour|min)", span)
+        if match:
+            seconds = int(match.group(1)) * (3600 if match.group(2) == "hour" else 60)
+        self.afterthought.pause(seconds)
+        self.say(f"Suggestions paused for {span}. I'm still remembering, just quietly.")
+
+    def _intent_memory_resume(self, _text: str) -> None:
+        if self._memory():
+            self.afterthought.resume()
+            self.say("Suggestions are back on.")
+
+    def _intent_memory_status(self, _text: str) -> None:
+        if self._memory():
+            self.say(self.afterthought.spoken_status())
+
+    def _intent_schedule_list(self, _text: str, day: str = "") -> None:
+        if self.schedule is None:
+            self.say("The schedule is turned off in the config.")
+            return
+        from .schedule import parse_day
+
+        try:
+            when = parse_day(day or "today")
+        except ValueError:
+            when = parse_day("today")
+        self.say(self.schedule.spoken(when))
+
     def _intent_goals_list(self, _text: str) -> None:
         if self.goals is None:
             self.say("Standing goals are turned off in the config.")
@@ -1155,10 +1498,10 @@ def spoken_label(label: str) -> str:
     or truncated label is referred to rather than read, since the canvas is already
     showing the whole thing.
     """
-    label = " ".join((label or "").split())
-    if not label or len(label) > 30 or label.endswith(("...", "\u2026")):
+    title = titles.short_title(label, max_words=4)
+    if not title or len(title) > 30 or title.endswith("\u2026"):
         return "the job already running"
-    return label
+    return title[:1].lower() + title[1:]
 
 
 def full_reply(text: str) -> str:
@@ -1168,31 +1511,41 @@ def full_reply(text: str) -> str:
 
 
 def spoken_reply(text: str, max_sentences: int = MAX_SPOKEN_SENTENCES,
-                 max_chars: int = 450) -> str:
-    """The reply, shortened for speech. `full_reply` is what the canvas shows.
+                 max_chars: int = 450, whole_chars: int = SPOKEN_WHOLE_CHARS) -> str:
+    """The reply as it should be spoken. `full_reply` is what the canvas shows.
 
-    It used to keep the first few sentences and drop the rest, which meant the *end*
-    was always what went missing -- and the end is where the conclusion and the offer
-    live. A four-sentence reply about a locked Word file was spoken as three, losing
-    "I can fix the writer so it doesn't leave Word running again if you want": the one
-    sentence that needed an answer, cut silently.
+    A reply that fits `whole_chars` (about 80 seconds) is spoken whole, summaries and
+    news included, whatever the profile's reply length. The
+    sentence cap used to apply to everything: a 527-character news summary lost its
+    middle sentence -- "Chronic pain, stress, smoking and a bad diet all make it worse"
+    -- and what was left ran "Pain is your body's alarm system. It also covers...",
+    with "also" pointing at the sentence that was gone. Cutting a reply that short
+    saved eight seconds and cost the sense.
 
-    So the opening and the closing sentence are both kept and the middle gives way.
-    Detail belongs in the middle of a reply; a decision to make does not.
+    Only a reply too long to listen to is shortened. Then the opening and the closing
+    sentence are kept (the end is where a conclusion, an offer or a question lives; see
+    tests/test_spoken_reply.py) and the gap is said out loud rather than spliced over.
     """
     text = re.sub(r"```.*?```", " ", strip_markup(text), flags=re.S)
     text = re.sub(r"[*`#]+", "", text)
     lines = [ln.strip(" -*#>") for ln in text.splitlines() if ln.strip()]
-    sentences = [s for s in (part.strip() for part in _SENTENCE_END.split(" ".join(lines))) if s]
+    whole = " ".join(lines).strip()
+    sentences = [s for s in (part.strip() for part in _SENTENCE_END.split(whole)) if s]
     if not sentences:
         return ""
+    if len(whole) <= whole_chars:
+        return whole
 
     kept = sentences if len(sentences) <= max_sentences else (
         sentences[:max(1, max_sentences - 1)] + [sentences[-1]])
     # Fit the character budget by dropping whole sentences from the middle rather than
     # cutting a word in half, and never the first or the last.
-    while len(" ".join(kept)) > max_chars and len(kept) > 2:
+    while len(" ".join(kept)) + len(SKIPPED_NOTE) + 1 > max_chars and len(kept) > 2:
         del kept[1]
+    if len(kept) < len(sentences) and len(kept) >= 2:
+        # Said where the gap is, so a closing question is still the last thing heard
+        # (that is what opens the microphone for the answer).
+        kept = kept[:-1] + [SKIPPED_NOTE, kept[-1]]
     spoken = " ".join(kept).strip()
     if len(spoken) <= max_chars:
         return spoken

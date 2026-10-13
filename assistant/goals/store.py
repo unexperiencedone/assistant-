@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS goals (
     last_run   REAL,
     runs       INTEGER NOT NULL DEFAULT 0,
     active     INTEGER NOT NULL DEFAULT 1,
-    source     TEXT    NOT NULL DEFAULT 'you' -- who set it: you | nova
+    source     TEXT    NOT NULL DEFAULT 'you', -- who set it: you | nova
+    brain      TEXT    NOT NULL DEFAULT ''     -- which agent runs it; '' = whichever is selected
 );
 CREATE INDEX IF NOT EXISTS goals_due ON goals(active, next_due);
 """
@@ -42,6 +43,10 @@ class GoalStore:
         self._db.row_factory = sqlite3.Row
         with self._lock:
             self._db.executescript(SCHEMA)
+            # Databases made before goals could name their brain.
+            columns = {row[1] for row in self._db.execute("PRAGMA table_info(goals)")}
+            if "brain" not in columns:
+                self._db.execute("ALTER TABLE goals ADD COLUMN brain TEXT NOT NULL DEFAULT ''")
             self._db.commit()
 
     def close(self) -> None:
@@ -50,13 +55,13 @@ class GoalStore:
 
     # -- writing ----------------------------------------------------------------------
     def add(self, text: str, cadence: str = "daily", next_due: float | None = None,
-            source: str = "you") -> int:
+            source: str = "you", brain: str = "") -> int:
         cadence = cadence if cadence in CADENCES else "daily"
         now = time.time()
         with self._lock:
             cursor = self._db.execute(
-                "INSERT INTO goals (created_at, text, cadence, next_due, source) VALUES (?, ?, ?, ?, ?)",
-                (now, text.strip(), cadence, now if next_due is None else next_due, source))
+                "INSERT INTO goals (created_at, text, cadence, next_due, source, brain) VALUES (?, ?, ?, ?, ?, ?)",
+                (now, text.strip(), cadence, now if next_due is None else next_due, source, brain))
             self._db.commit()
             return int(cursor.lastrowid)
 

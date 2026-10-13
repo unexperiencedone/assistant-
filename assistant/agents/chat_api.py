@@ -22,7 +22,6 @@ No new dependency: the API is plain HTTPS over urllib.
 from __future__ import annotations
 
 import json
-import os
 import re
 import threading
 import time
@@ -31,16 +30,24 @@ import urllib.request
 from typing import Any, Callable, Iterable
 
 from ..config import ChatAgentSettings
+from . import keypool
 from . import tools as tool_registry
 from .base import AgentBackend, AgentEvent, AgentResult, short
 
 USER_AGENT = "Nova-voice-assistant/1.0"
+# With every key in the pool rate limited, a wait this short is better than handing
+# the job to Claude; anything longer escalates as before.
+# Groq's free tier counts tokens per minute, so a refused key is free again within a
+# minute. Waiting up to this long is cheaper than escalating, and no slower: a Claude
+# handover took 12 to 76 seconds on the night this was measured.
+MAX_KEY_WAIT = 30.0
 SYSTEM_PROMPT = """{persona}
 
 You are {name}, a voice assistant on the user's Windows PC. The user speaks; your reply is read aloud.
 
 - Reply in one to three short spoken sentences. No markdown, lists, code or long file paths.
 - Write for the ear: commas where a person would pause, a full stop at the end of every sentence, and symbols as words ("50 percent", "and").
+- {delivery}
 - Act with your tools instead of explaining what could be done. Never claim you did something a tool didn't do.
 - Chat, questions and quick reasoning: just answer, no tools.
 - Opening apps or files, clicking inside apps, saved automations, Word documents: use the matching tool.
@@ -89,6 +96,29 @@ ESCALATION_NOTE = (
     "Do the job properly and answer the user directly."
 )
 
+# Roughly four characters to a token for English prose and paths. Only ever used to
+# decide what to shorten, never reported as a token count -- the provider's own `usage`
+# figures are the measurement (see ChatAgent._usage).
+CHARS_PER_TOKEN = 4
+
+
+def _fit(text: str, limit: int) -> str:
+    """Shorten a tool result to `limit` characters, keeping both ends.
+
+    The head of a result says what kind of thing came back and the tail usually carries
+    the answer (the last line of a listing, the total, the error). Cutting only the tail
+    loses the second one, so this keeps two thirds from the front and a third from the
+    back and says in between how much went missing -- a model that needs the rest can
+    call the tool again more narrowly, which is cheaper than resending all of it every
+    round for the remainder of the turn.
+    """
+    if limit <= 0 or len(text) <= limit:
+        return text
+    marker = f"\n... [{len(text) - limit} characters cut; ask for less at a time] ...\n"
+    room = max(0, limit - len(marker))
+    head = room * 2 // 3
+    return text[:head] + marker + (text[len(text) - (room - head):] if room - head else "")
+
 
 class ChatAgent(AgentBackend):
     """The shared loop. A provider subclass sets the three class attributes below."""
@@ -106,11 +136,27 @@ class ChatAgent(AgentBackend):
         self.history: list[dict[str, Any]] = []
         self.profile = ""  # the user's profile summary, visible to every agent
         self._offered: list[dict] = []   # schemas chosen for the current turn
+        # Set while a talk mode is on (assistant/conversation.py): the mode's instructions
+        # replace the task prompt, and no tools are sent -- a conversation needs none, and
+        # every schema costs tokens on every turn.
+        self.talk = ""
+        self._usage: dict[str, int] = {}  # the provider's own token counts for this turn
+        # Which key lane this conversation leans on (agents/keypool.py). The front-door
+        # session is "chat"; spawn() moves a twin to "parallel", and background callers
+        # (the narrator) set "background" themselves.
+        self.key_lane = "chat"
 
     # -- availability ------------------------------------------------------------------
     @property
+    def keys(self) -> keypool.KeyPool:
+        return keypool.pool(self.settings.api_key_env)
+
+    @property
     def api_key(self) -> str:
-        return os.environ.get(self.settings.api_key_env, "").strip()
+        """This lane's key right now (any key when all are cooling): for availability
+        checks and one-off calls. Turns go through `_chat`, which rotates on 429."""
+        keys = self.keys
+        return keys.pick(self.key_lane) or next(iter(keys.keys), "")
 
     def resolve_executable(self) -> str | None:
         return self.name if self.api_key else None
@@ -145,6 +191,7 @@ class ChatAgent(AgentBackend):
         twin.context = self.context
         twin.profile = self.profile
         twin.recorder = self.recorder
+        twin.key_lane = "parallel" if self.key_lane == "chat" else self.key_lane
         twin.history = [dict(message) for message in self.history
                         if message.get("role") in ("user", "assistant")
                         and not message.get("tool_calls")][-self.CARRIED_TURNS:]
@@ -165,9 +212,15 @@ class ChatAgent(AgentBackend):
         will try to call it, and Groq rejects the whole turn when it does."""
         # Only the tools worth sending for this request, so the schemas do not eat a
         # fifth of the free tier per-minute budget before the request is even in.
+        from .. import persona
+        from ..persona import delivery
+
+        if self.talk:
+            self._offered = []
+            prompt = f"{persona.seed(self.assistant_name)}\n\n{self.talk}"
+            return f"{prompt}\n\n{self.profile}" if self.profile else prompt
         self._offered = tool_registry.relevant(self.context, said)
         names = [schema["function"]["name"] for schema in self._offered]
-        from .. import persona
 
         from . import skills as skill_registry
 
@@ -175,6 +228,7 @@ class ChatAgent(AgentBackend):
         prompt = SYSTEM_PROMPT.format(
             persona=persona.seed(self.assistant_name),
             name=self.assistant_name,
+            delivery=delivery.TASK_GUIDE,
             tools=", ".join(names) or "none",
             delegate=DELEGATE_RULE if "delegate_to_claude" in names else "",
             skills=SKILLS_RULE.format(names=skill_registry.names(installed))
@@ -226,7 +280,8 @@ class ChatAgent(AgentBackend):
             return None
         turn.close(answer, True, time.time() - started)
         return AgentResult(True, answer, None, time.time() - started,
-                           data={"escalated": reason, "backend_finished": "claude"})
+                           data={"escalated": reason, "backend_finished": "claude",
+                                 "usage": dict(self._usage), "model": self.settings.model})
 
     # -- one turn -----------------------------------------------------------------------
     def run(self, prompt: str, on_event: Callable[[AgentEvent], None], cancel: threading.Event) -> AgentResult:
@@ -235,6 +290,7 @@ class ChatAgent(AgentBackend):
         started = time.time()
         turn = self.start_turn_log(prompt)
         system = self._system_prompt(prompt)
+        self._usage = {}
         self.history.append({"role": "user", "content": prompt})
         self._trim_history()
 
@@ -244,18 +300,26 @@ class ChatAgent(AgentBackend):
             if cancel.is_set():
                 turn.close("cancelled", False, time.time() - started)
                 return AgentResult(False, "Cancelled.", None, time.time() - started, cancelled=True)
+            # Both budgets are applied before the history is sent, not after it grew:
+            # the round about to run is the one paying for whatever the last one left.
+            self._digest_stale_tools()
+            self._trim_history()
             messages = [{"role": "system", "content": system}, *self.history]
             try:
-                message = self._chat(messages, cancel)
+                message = self._chat(messages, cancel, with_tools=not self.talk)
             except Cancelled:
                 turn.close("cancelled", False, time.time() - started)
                 return AgentResult(False, "Cancelled.", None, time.time() - started, cancelled=True)
             except ChatApiError as exc:
                 if not (exc.retry_without_tools and not retried):
                     # Groq being down or rate-limited is not a reason for the user to get
-                    # nothing: the job moves up a tier instead.
-                    moved = self._escalate(prompt, "the fast model couldn't be reached",
-                                           on_event, started, turn)
+                    # nothing: the job moves up a tier instead. Said as what it is, and the
+                    # provider's own words kept: "couldn't be reached" hid a per-minute token
+                    # limit on a single free key for a whole evening.
+                    turn.raw({"error": str(exc)[:400], "status": getattr(exc, "status", None)})
+                    reason = ("the free model's per-minute limit was used up" if getattr(exc, "status", None) == 429
+                              else "the fast model couldn't be reached")
+                    moved = self._escalate(prompt, reason, on_event, started, turn)
                     if moved is not None:
                         return moved
                     turn.close(str(exc), False, time.time() - started)
@@ -264,6 +328,14 @@ class ChatAgent(AgentBackend):
                 try:
                     message = self._chat(messages, cancel, with_tools=False)
                 except (Cancelled, ChatApiError) as second:
+                    if isinstance(second, ChatApiError):
+                        # Told to answer without tools, it called one anyway ("Tool choice is
+                        # none, but model called a tool"): the job moves up, not to an error.
+                        turn.raw({"error": str(second)[:400]})
+                        moved = self._escalate(prompt, "the free model garbled its tool calls twice",
+                                               on_event, started, turn)
+                        if moved is not None:
+                            return moved
                     detail = "Cancelled." if isinstance(second, Cancelled) else str(second)
                     turn.close(detail, False, time.time() - started)
                     return AgentResult(False, detail, None, time.time() - started, detail=detail,
@@ -284,8 +356,13 @@ class ChatAgent(AgentBackend):
                                            on_event, started, turn)
                     if moved is not None:
                         return moved
+                # What the turn actually cost, from the provider rather than an estimate.
+                # docs/overview.md's "gets cheaper the longer you use it" is only a claim
+                # until something records the number it is about (assistant/routes.py).
+                turn.raw({"usage": dict(self._usage)})
                 turn.close(text, True, time.time() - started)
-                return AgentResult(True, text or "", None, time.time() - started)
+                return AgentResult(True, text or "", None, time.time() - started,
+                                   data={"usage": dict(self._usage), "model": self.settings.model})
 
             for call in calls:
                 if cancel.is_set():
@@ -297,13 +374,17 @@ class ChatAgent(AgentBackend):
                 if name == "delegate_to_claude":
                     delegated = True
                 result = tool_registry.call(self.context, name, arguments)
+                # The log and the canvas get the whole result; only the copy that will be
+                # resent on every remaining round is capped.
                 turn.raw({"tool": name, "arguments": arguments, "result": result})
                 on_event(AgentEvent("text", text=result))
-                self.history.append({"role": "tool", "tool_call_id": call.get("id", name), "name": name, "content": result})
+                self.history.append({"role": "tool", "tool_call_id": call.get("id", name), "name": name,
+                                     "content": _fit(result, self.settings.tool_result_chars)})
 
         # Out of tool rounds. This is the commonest "too complex for the fast tier"
         # signal there is, so it is the one that most needs to move up rather than come
         # back as a request for the user to re-route the job themselves.
+        turn.raw({"usage": dict(self._usage)})
         moved = self._escalate(prompt, f"it used all {self.settings.max_tool_calls} of its steps "
                                "without finishing", on_event, started, turn)
         if moved is not None:
@@ -325,15 +406,8 @@ class ChatAgent(AgentBackend):
         }
         if with_tools:
             body["tools"] = getattr(self, "_offered", None) or tool_registry.schemas(self.context)
-        request = urllib.request.Request(self.api_url, data=json.dumps(body).encode("utf-8"), headers={
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            # Groq's edge blocks the default "Python-urllib/3.x" agent with a bare
-            # Cloudflare 403 (error code 1010), so every request names itself.
-            "User-Agent": USER_AGENT,
-            **self.headers,
-        })
-        payload = self._send(request, cancel)
+        payload = self._post_pooled(json.dumps(body).encode("utf-8"), cancel)
+        self._note_usage(payload)
 
         if "error" in payload and not payload.get("choices"):
             raise ChatApiError(f"{self.label} error: {payload['error'].get('message', payload['error'])}")
@@ -341,6 +415,43 @@ class ChatAgent(AgentBackend):
         if not choices:
             raise ChatApiError(f"{self.label} returned no answer.")
         return choices[0].get("message") or {}
+
+    def _post_pooled(self, data: bytes, cancel: threading.Event | None) -> dict[str, Any]:
+        """Send once per key until one isn't rate limited.
+
+        A 429 cools that key for everyone sharing the pool (for as long as the provider
+        asked), and the same request goes straight out on the next free key -- the user
+        never hears "rate limiting me" while another key has room. Only when every key
+        is cooling does this wait (briefly) or give up with the provider's own message.
+        """
+        pool, tried, waited = self.keys, set(), False
+        last: ChatApiError | None = None
+        while True:
+            key = pool.pick(self.key_lane, exclude=tried)
+            if not key:
+                wait = pool.wait_seconds()
+                if last is None or waited or wait > MAX_KEY_WAIT:
+                    raise last or ChatApiError(f"No {self.label} key: set {self.settings.api_key_env} in your .env file.")
+                if (cancel or threading.Event()).wait(wait + 0.2):
+                    raise Cancelled()
+                tried, waited = set(), True   # one wait per request, then the real error
+                continue
+            tried.add(key)
+            request = urllib.request.Request(self.api_url, data=data, headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+                # Groq's edge blocks the default "Python-urllib/3.x" agent with a bare
+                # Cloudflare 403 (error code 1010), so every request names itself.
+                "User-Agent": USER_AGENT,
+                **self.headers,
+            })
+            try:
+                return self._send(request, cancel)
+            except ChatApiError as error:
+                if error.status != 429:
+                    raise
+                pool.cool(key, error.retry_after)
+                last = error
 
     def _send(self, request: urllib.request.Request, cancel: threading.Event | None) -> dict[str, Any]:
         """Run the request on a worker thread so "cancel the task" doesn't have to wait
@@ -381,6 +492,9 @@ class ChatAgent(AgentBackend):
         except Exception:
             pass
         error = ChatApiError(self._http_message(exc.code, detail))
+        error.status = exc.code
+        if exc.code == 429:
+            error.retry_after = keypool.retry_seconds(detail, exc.headers.get("Retry-After") if exc.headers else None)
         # Some models now and then emit a tool call the provider won't accept (bad JSON,
         # or a tool that isn't in the list). That's the model's slip, not the user's, so
         # the turn is retried once without tools rather than lost.
@@ -401,12 +515,58 @@ class ChatAgent(AgentBackend):
         return f"{self.label} error {code}. {detail}".strip()
 
     def _trim_history(self) -> None:
-        """Keep the last N turns; never start on a tool result, which some models reject."""
+        """Keep the history under both budgets: a message count and a character count.
+
+        The count alone was never enough. This loop resends the whole history on every
+        round, so a turn's cost is quadratic in the size of what tool calls put there:
+        ten rounds of full-size results is ten times the last round's history, and on an
+        8,000-tokens-per-minute free tier that is the rate limit, not the model.
+
+        Dropping from the front is safe; dropping a tool message on its own is not, so a
+        head that begins mid-exchange is dropped as far as the next real user turn.
+        """
         limit = max(4, self.settings.history_messages)
         if len(self.history) > limit:
             self.history = self.history[-limit:]
-            while self.history and self.history[0].get("role") in ("tool", "assistant"):
-                self.history.pop(0)
+        budget = max(1000, self.settings.history_chars)
+        while len(self.history) > 2 and self._size() > budget:
+            self.history.pop(0)
+        # A tool result with no assistant message asking for it, or an assistant message
+        # whose tool results were just dropped, is rejected by the API outright.
+        while self.history and (self.history[0].get("role") in ("tool", "assistant")):
+            self.history.pop(0)
+
+    def _size(self) -> int:
+        return sum(len(str(m.get("content") or "")) + len(json.dumps(m.get("tool_calls") or []))
+                   for m in self.history)
+
+    def _digest_stale_tools(self) -> None:
+        """Shorten every tool result except the round just run.
+
+        A result matters in full while the model is reacting to it. One round later it has
+        already been used, and resending it whole for the rest of the turn buys nothing --
+        but deleting it breaks the tool_call_id pairing the API requires, so the message
+        stays and only its content shrinks. This is what stops the history growing by a
+        full result per round.
+        """
+        fresh = 0
+        for i in range(len(self.history) - 1, -1, -1):
+            if self.history[i].get("tool_calls"):
+                fresh = i
+                break
+        limit = max(40, self.settings.stale_tool_chars)
+        for message in self.history[:fresh]:
+            if message.get("role") == "tool":
+                message["content"] = _fit(str(message.get("content") or ""), limit)
+
+    def _note_usage(self, payload: dict[str, Any]) -> None:
+        """Accumulate the provider's own token counts across a turn's rounds."""
+        usage = payload.get("usage") or {}
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            value = usage.get(key)
+            if isinstance(value, int):
+                self._usage[key] = self._usage.get(key, 0) + value
+        self._usage["rounds"] = self._usage.get("rounds", 0) + 1
 
 
 class GroqAgent(ChatAgent):
@@ -448,6 +608,8 @@ def list_models(agent: ChatAgent) -> str:
 
 class ChatApiError(RuntimeError):
     retry_without_tools = False
+    status = 0                  # the HTTP status, when there was one
+    retry_after = 0.0           # seconds the provider asked us to wait (429 only)
 
 
 class Cancelled(RuntimeError):

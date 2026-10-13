@@ -61,6 +61,10 @@ class ProfileService:
     def reply_sentences(self) -> int:
         return render.REPLY_SENTENCES[self.get()["work_style"]["spoken_replies"]]
 
+    @property
+    def spoken_chars(self) -> int:
+        return render.SPOKEN_CHARS[self.get()["work_style"]["spoken_replies"]]
+
     def standing(self, audience: str) -> str:
         return render.standing_context(self.get(), audience)
 

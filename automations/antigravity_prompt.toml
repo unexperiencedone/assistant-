@@ -1,0 +1,81 @@
+name = "Prompt Antigravity in a folder"
+description = "Opens the folder you name in the Antigravity IDE, in its own window, and gives its agent your prompt straight away."
+phrases = [
+  "open {folder} in antigravity and prompt it to {query}",
+  "open {folder} in antigravity and ask it to {query}",
+  "open {folder} in antigravity and tell it to {query}",
+  "open {folder} in antigravity ide and prompt it to {query}",
+  "open {folder} in antigravity ide and ask it to {query}",
+  "open {folder} in antigravity ide and tell it to {query}",
+  "in antigravity open {folder} and prompt it to {query}",
+]
+
+# The folder by the name you called it, from Nova's index (Desktop, Documents, OneDrive...).
+[[steps]]
+do = "find"
+label = "Find the folder {folder}"
+query = "{folder}"
+kind = "folder"
+save_as = "path"
+
+# The IDE's own launcher, like VS Code's: -n gives the folder a window of its own, whose
+# title starts with the folder's name. (Its `chat` subcommand was tried first: it opened an
+# empty window and never reached the Antigravity agent.)
+[[steps]]
+do = "open"
+label = "Open {path_name} in Antigravity"
+program = "%LOCALAPPDATA%\\Programs\\Antigravity IDE\\bin\\antigravity-ide.cmd"
+args = ["-n", "{path}"]
+
+[[steps]]
+do = "wait_window"
+title = "{path_name} - Antigravity IDE"
+timeout = 30
+
+# The agent box only exposes its placeholder; clicking it puts the cursor in the box.
+[[steps]]
+do = "click"
+label = "Focus the agent box"
+window = "{path_name} - Antigravity IDE"
+name = "Ask anything, @ to mention, / for actions"
+timeout = 20
+
+[[steps]]
+do = "type"
+label = "Write the prompt"
+window = "{path_name} - Antigravity IDE"
+text = "{query}"
+
+[[steps]]
+do = "keys"
+label = "Send it"
+window = "{path_name} - Antigravity IDE"
+keys = "{ENTER}"
+
+# Done means the prompt shows in the agent's conversation, not that keys were pressed.
+[[steps]]
+do = "wait_value"
+label = "Check the agent has the prompt"
+window = "{path_name} - Antigravity IDE"
+name = "{query}"
+contains = ""
+timeout = 10
+
+[[steps]]
+do = "say"
+text = "I've given Antigravity your prompt in {path_name}. I'll tell you when it's done."
+
+# The work happens in the background; Nova is free meanwhile, and says when it finishes,
+# needs you, or runs long. Markers seen live: "Working..." and "Cancel (Ctrl+D)" while it
+# works, a new "Worked for 21s" when it ends, "Accept all" when its edits await review.
+# Waiting for you = an approval button showing while the work has stalled.
+[[steps]]
+do = "watch"
+job = "Antigravity in {path_name}"
+window = "{path_name} - Antigravity IDE"
+working = ["^Working", "^Cancel \\(Ctrl\\+D\\)"]
+done = ["^Worked for "]
+needs_you = ["^Accept\\b", "^Allow\\b", "^Approve\\b", "^Run\\b", "^Confirm\\b"]
+review = ["^Accept all$", "files? (?:changed|with changes)"]
+folder = "{path}"
+max_minutes = 45

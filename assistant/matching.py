@@ -133,6 +133,9 @@ class Guess:
 # Words that mean the value swallowed the request rather than naming its subject. A slot
 # is a noun phrase -- "finance", "artificial intelligence" -- and never starts like an
 # instruction.
+# Words that address the assistant rather than ask it for anything (check 5 below).
+_ADDRESS = {"nova", "hi", "hello", "yo", "listen", "thanks", "thank", "yes", "no", "yeah"}
+
 _NOT_A_SUBJECT = {
     # Imperative verbs: a value starting with one of these is the request itself,
     # wearing the slot's clothes.
@@ -161,10 +164,16 @@ def slots_are_sane(said: str, template: str, args: dict[str, str]) -> bool:
        request wearing the slot's clothes.
     4. **Not the template's own words.** If the script is "{topic} news", a topic
        containing "news" means the split went in the wrong place.
+    5. **Something was asked.** Take the values out of the request and something has to
+       be left that says what to do. "gulzar ali" -- a singer's name, said on its own --
+       came back as "call {name}" with name="gulzar ali": every word was in the request,
+       so checks 1 to 4 passed, and Nova went to phone someone. A bare name, title or
+       place is not a request for any script, least of all one that calls or texts.
     """
     said_words = set(tokens(said or "", strip_filler=False))
     literals = {word for word in re.findall(r"[A-Za-z']+", re.sub(r"\{[^}]*\}", " ", template or ""))}
     literals = {word.lower() for word in literals}
+    used: set[str] = set()
     for value in args.values():
         words = [word.lower() for word in re.findall(r"[A-Za-z0-9']+", value)]
         if not words or len(words) > MAX_SLOT_WORDS:
@@ -175,6 +184,9 @@ def slots_are_sane(said: str, template: str, args: dict[str, str]) -> bool:
             return False
         if set(words) & literals:
             return False
+        used.update(canonical(word) for word in words)
+    if literals and args and not (set(tokens(said or "")) - used - _ADDRESS):
+        return False
     return True
 
 

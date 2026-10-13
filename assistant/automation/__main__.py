@@ -98,6 +98,115 @@ def word_main(argv: list[str]) -> int:
     return 0
 
 
+def web_main(argv: list[str]) -> int:
+    """Your own Chrome, through the Nova extension and the running Nova (extension.py).
+
+    Output is the extension's numbered element map, then only what changed after each
+    action -- a fraction of what a full page snapshot costs a model to read.
+    """
+    import json
+    import os
+    import urllib.error
+    import urllib.request
+    from pathlib import Path
+
+    from ..config import load_settings
+    from ..ui import auth
+
+    parser = argparse.ArgumentParser(prog="web", description=web_main.__doc__)
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("status")
+    sub.add_parser("tabs")
+    p = sub.add_parser("tab"); p.add_argument("id", type=int)
+    p = sub.add_parser("open"); p.add_argument("url"); p.add_argument("--new-tab", action="store_true")
+    p = sub.add_parser("map"); p.add_argument("--all", action="store_true", help="every element, not just ~60")
+    p = sub.add_parser("find"); p.add_argument("query")
+    p = sub.add_parser("read"); p.add_argument("--ref", type=int); p.add_argument("--selector", default="")
+    p.add_argument("--limit", type=int, default=3000)
+    p = sub.add_parser("click"); p.add_argument("ref", nargs="?"); p.add_argument("--text", default="")
+    p.add_argument("--trusted", action="store_true", help="real mouse input via the debugger, for stubborn sites")
+    p = sub.add_parser("fill"); p.add_argument("ref"); p.add_argument("value"); p.add_argument("--enter", action="store_true")
+    p = sub.add_parser("form", help="web form 3=Ada 4=ada@x.com 9=India --submit 12")
+    p.add_argument("pairs", nargs="+", metavar="REF=VALUE"); p.add_argument("--submit", type=int)
+    p = sub.add_parser("press"); p.add_argument("key"); p.add_argument("--trusted", action="store_true")
+    p = sub.add_parser("scroll"); p.add_argument("direction", nargs="?", default="down", choices=["down", "up", "top", "bottom"])
+    p.add_argument("--ref", type=int)
+    sub.add_parser("back")
+    args = parser.parse_args(argv)
+
+    def target(ref=None, text=""):
+        if ref not in (None, ""):
+            return {"ref": int(str(ref).strip("[]"))}
+        return {"text": text} if text else {}
+
+    # The CLI is driven by the person or by Claude Code, who ask before risky clicks
+    # themselves (AGENTS.md section 6), so nothing here is guarded.
+    calls = {
+        "tabs": lambda: ("tabs", {}),
+        "tab": lambda: ("use_tab", {"tab": args.id}),
+        "open": lambda: ("open", {"url": args.url, "new_tab": args.new_tab}),
+        "map": lambda: ("snapshot", {"all": args.all}),
+        "find": lambda: ("find", {"query": args.query}),
+        "read": lambda: ("read", {"limit": args.limit, **target(args.ref), **({"selector": args.selector} if args.selector else {})}),
+        "click": lambda: ("click", {"target": {**target(args.ref, args.text), **({"trusted": True} if args.trusted else {})}}),
+        "fill": lambda: ("fill", {"target": target(args.ref), "value": args.value, "submit": args.enter}),
+        "form": lambda: ("form", {"fields": [{"ref": int(k.strip("[]")), "value": v}
+                                             for k, v in (pair.split("=", 1) for pair in args.pairs)],
+                                  "submit_ref": args.submit}),
+        "press": lambda: ("press", {"key": args.key, "trusted": args.trusted}),
+        "scroll": lambda: ("scroll", {"direction": args.direction, "target": target(args.ref) or None}),
+        "back": lambda: ("back", {}),
+    }
+
+    settings = load_settings()
+    token_path = Path(os.path.expandvars(settings.ui.token_file)).expanduser()
+    token = auth.read(token_path if token_path.is_absolute() else settings.base_dir / token_path)
+    url = f"http://127.0.0.1:{settings.ui.web_port}/api/ext"
+    headers = {auth.HEADER_NAME: token, "Content-Type": "application/json"}
+    try:
+        if args.cmd == "status":
+            request = urllib.request.Request(url, headers=headers)
+        else:
+            method, params = calls[args.cmd]()
+            request = urllib.request.Request(url, data=json.dumps({"method": method, "params": params}).encode(),
+                                             headers=headers, method="POST")
+        with urllib.request.urlopen(request, timeout=60) as response:
+            body = json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        body = json.loads(exc.read() or b"{}")
+    except (OSError, ValueError) as exc:
+        print(f"Nova isn't reachable on port {settings.ui.web_port} ({exc}). Is it running?")
+        return 1
+
+    if args.cmd == "status":
+        print("connected" if body.get("connected") else "not connected", body.get("version") or "", body.get("agent") or "")
+        print(f"{body.get('calls', 0)} calls since Nova started" + (f"; last: {body['last']}" if body.get("last") else ""))
+        return 0 if body.get("connected") else 1
+    if not body.get("ok"):
+        print(f"failed: {body.get('error', body)}")
+        return 1
+    result = body.get("result") or {}
+    if result.get("risky"):  # never set from here, but say so plainly if it ever is
+        print(f"refused as risky: {result.get('page')}")
+        return 1
+    if args.cmd == "click":
+        # The rungs Chrome can't do: an app link through Windows, then UI Automation.
+        from .extension import finish_click
+
+        def changes() -> dict:
+            request = urllib.request.Request(url, data=json.dumps({"method": "changes", "params": {}}).encode(),
+                                             headers=headers, method="POST")
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    return json.loads(response.read()).get("result") or {}
+            except (OSError, ValueError):
+                return {}
+
+        result = finish_click(result, changes)
+    print(result.get("page") or result.get("text") or result.get("line") or "done")
+    return 0
+
+
 def macro_main(argv: list[str]) -> int:
     from ..events import EventBus
     from .macros import MacroRunner, load_macros

@@ -111,6 +111,11 @@ def _step_problems(steps: list[Any], declared: set[str]) -> list[str]:
         for name in _slots_used(step):
             if name.lower() not in declared:
                 found.append(f'step {index} uses {{{name}}}, which no phrase provides')
+        # A value this step saves (`find` saves the path and its folder name) is known to
+        # every step after it.
+        if isinstance(step.get("save_as"), str) and step["save_as"]:
+            saved = step["save_as"].lower()
+            declared = declared | {saved, f"{saved}_name"}
         previous = step
     return found
 
@@ -127,12 +132,20 @@ def _same_work(first: dict[str, Any], second: dict[str, Any]) -> bool:
 def _slots_used(step: dict[str, Any]) -> set[str]:
     """Slot names a step refers to, including the `_url` form the runner provides."""
     names: set[str] = set()
-    for value in step.values():
-        if isinstance(value, str):
-            names |= {name[:-4] if name.lower().endswith("_url") else name
-                      for name in SLOT.findall(value)}
-    # A step may refer to a value an earlier step saved; those are not phrase slots.
+    for key, value in step.items():
+        texts = [value] if isinstance(value, str) else [v for v in value if isinstance(v, str)] \
+            if isinstance(value, list) else []
+        for text in texts:
+            found = SLOT.findall(text)
+            if key == "keys":
+                # {ENTER}, {TAB}, {F4}: key names in a key sequence, not slots.
+                found = [name for name in found if not (name.isupper() or name in KEY_NAMES)]
+            names |= {name[:-4] if name.lower().endswith("_url") else name for name in found}
     return {name for name in names if name not in ("top",)}
+
+
+KEY_NAMES = {"enter", "tab", "esc", "escape", "backspace", "delete", "space", "home", "end", "up", "down",
+             "left", "right", "pgup", "pgdn"}
 
 
 def verdict(text: str, matches_intent: Callable[[str], Any] | None = None) -> str:

@@ -19,7 +19,7 @@ import re
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Callable
+from typing import Any, Callable
 
 import speech_recognition as sr
 
@@ -71,12 +71,19 @@ class MicrophoneListener:
         speaker: Speaker,
         bus: EventBus,
         on_utterance: Callable[[str], None],
+        voice: Any = None,
     ) -> None:
         self.settings = settings
         self.transcriber = transcriber
         self.speaker = speaker
         self.bus = bus
         self.on_utterance = on_utterance
+        # Whose voice (audio/voiceid.py). Its voiceprint is computed alongside Whisper, on
+        # the same audio, so checking it costs no extra wait after you stop speaking.
+        self.voice = voice
+        self._voice_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="voiceid")
+        self._voice_job: Future | None = None
+        self._last_audio: sr.AudioData | None = None
         self.muted = threading.Event()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="microphone", daemon=True)
@@ -124,12 +131,48 @@ class MicrophoneListener:
                     continue
                 if self.speaker.last_active_at >= started:
                     continue  # the assistant spoke during this capture: likely an echo
+                verdict = self._voice_verdict(heard)
+                if verdict is not None and verdict.kind == "enrol":
+                    # A sample for the voiceprint, not a request.
+                    if verdict.reason:
+                        self.bus.publish("heard", text=heard.text, accepted=False, reason=verdict.reason)
+                    continue
                 reason = rejection(heard, self.settings.min_avg_logprob)
+                if not reason and verdict is not None and verdict.kind == "reject":
+                    reason = verdict.reason
                 if reason:
                     self.bus.publish("heard", text=heard.text, accepted=False, reason=reason)
                     self.bus.log(f"(ignored: {reason}) {heard.text[:80]}")
                     continue
                 self.on_utterance(heard.text)
+
+    # -- whose voice ------------------------------------------------------------------------
+    def _start_voice(self, audio: sr.AudioData) -> None:
+        """Begin the voiceprint for this audio; a newer piece of the same request replaces it."""
+        self._last_audio = audio
+        if self.voice is None or not self.voice.wanted:
+            return
+        if self._voice_job is not None:
+            self._voice_job.cancel()      # only if it hasn't started; otherwise it just finishes
+        pcm = audio.get_raw_data(convert_rate=16000, convert_width=2)
+        self._voice_job = self._voice_pool.submit(self.voice.embed, pcm)
+
+    def _voice_verdict(self, heard: Transcript):
+        if self.voice is None or self._last_audio is None or not self.voice.wanted:
+            return None
+        from .voiceid import speech_only
+
+        pcm = self._last_audio.get_raw_data(convert_rate=16000, convert_width=2)
+        # Mostly not speech (music, a long pause): judge the speech alone, from scratch.
+        cropped = speech_only(pcm, heard.spans)
+        if cropped is not None:
+            return self.voice.hear(cropped, text=heard.text)
+        vec = None
+        try:
+            vec = self._voice_job.result(timeout=5) if self._voice_job is not None else None
+        except Exception as exc:          # a cancelled or failed job: judge from scratch
+            self.bus.log(f"voice check: computing again ({exc.__class__.__name__})")
+        return self.voice.hear(pcm, text=heard.text, vec=vec)
 
     def capture_request(self, recognizer: sr.Recognizer, source: sr.AudioSource) -> Transcript | None:
         """Listen until the user has finished a whole request. None if nothing was said."""
@@ -139,12 +182,15 @@ class MicrophoneListener:
         pieces = [first]
         extensions = 0
         pending: Future[Transcript] = self._transcribe_pool.submit(self._safe_transcribe, first)
+        self._start_voice(first)
 
         while True:
             nxt = self._listen(recognizer, source, timeout=self.settings.continuation_seconds)
             if nxt is not None and self._room_for(pieces):
                 pieces.append(nxt)
-                pending = self._transcribe_pool.submit(self._safe_transcribe, join_audio(pieces))
+                joined = join_audio(pieces)
+                pending = self._transcribe_pool.submit(self._safe_transcribe, joined)
+                self._start_voice(joined)
                 continue
 
             self.bus.status("transcribing")
@@ -158,7 +204,9 @@ class MicrophoneListener:
                 if nxt is not None:
                     pieces.append(nxt)
                     extensions += 1
-                    pending = self._transcribe_pool.submit(self._safe_transcribe, join_audio(pieces))
+                    joined = join_audio(pieces)
+                    pending = self._transcribe_pool.submit(self._safe_transcribe, joined)
+                    self._start_voice(joined)
                     continue
             return heard if text else None
 

@@ -1,0 +1,256 @@
+# Fallback ladders: for each kind of request, the order to try things in.
+#
+# A model that guesses wastes a turn on every wrong guess, and then often retries the same
+# wrong command. These ladders give it the cheapest route first and the next one to try when
+# that fails. Nova adds the matching ladder (at most two) to a request, plus what it has learned works
+# for that site or app (data/ladders.json). It's a few dozen tokens, against whole turns lost
+# to trial and error.
+#
+# They are an order of preference, not a script: a rung that cannot apply is skipped.
+# Edit freely; the file is re-read when it changes. Format:
+#   [kind]          when = words that mark the request (regex, word boundaries added)
+#                   done = how to tell it worked     stop = what to do at the top
+#   [[kind.rungs]]  name, cli (for Claude Code / Antigravity), tool (for the chat models),
+#                   signs = regexes over "<tool> <command>" that show this rung was used
+# {main} and {cli} become this install's `main.py` and `sysindex.py` commands.
+
+[rules]
+text = """Fallback ladder, in order. It is a preference, not a script: skip a rung that can't apply. \
+If a rung fails, go to the next one. Never rerun a failed command unchanged, and don't try more than two \
+variations of one rung. Check 'done' before saying it worked. At the top of the ladder, stop: say in one \
+sentence what you tried and ask."""
+
+[click]
+when = ["click", "press", "tap", "hit", "button", "toggle", "select the", "choose the", "check the box"]
+done = "the reply shows a change, or a new tab, window or app opened"
+stop = "say which element you tried and ask which one they mean"
+[[click.rungs]]
+name = "web click"
+cli = "{main} web click <n>  (escalates by itself: real mouse, app link, Windows accessibility)"
+tool = "browse_click ref=<n>"
+signs = ["web click", "browse_click"]
+[[click.rungs]]
+name = "another element"
+cli = "{main} web find \"<words>\", then click the better match (the parent link, the icon next to it)"
+tool = "browse_find, then browse_click on the better match"
+signs = ["web find", "browse_find"]
+[[click.rungs]]
+name = "keyboard"
+cli = "{main} web press Enter --trusted  (after focusing it), or Space for toggles"
+tool = "browse_fill on it with press_enter"
+signs = ["web press", "press_enter"]
+[[click.rungs]]
+name = "accessibility by name"
+cli = "{main} ui controls \"<window>\" --filter <word>, then ui click \"<window>\" \"<name>\""
+tool = "click_control"
+signs = ["ui (controls|click)", "click_control"]
+
+[open]
+when = ["open", "launch", "pull up", "show me", "bring up", "go to", "switch to"]
+done = "the window or page is in front (ui windows --filter, or the web map's title)"
+stop = "say what you looked for and ask for the exact name or where it is"
+[[open.rungs]]
+name = "index"
+cli = "{cli} open \"<name>\" [--kind app|file|folder]"
+tool = "open_item"
+signs = ["sysindex(\\.py)? open", "open_item"]
+[[open.rungs]]
+name = "website"
+cli = "{main} web open <url>  (a site, or a web app like WhatsApp Web)"
+tool = "browse_open"
+signs = ["web open", "browse_open"]
+[[open.rungs]]
+name = "start menu"
+cli = "Get-StartApps | Where-Object Name -like '*<word>*' | Select -First 5, then explorer.exe \"shell:AppsFolder\\<AppID>\""
+tool = "find_items kind=app, then open_item"
+signs = ["Get-StartApps", "shell:AppsFolder", "find_items"]
+[[open.rungs]]
+name = "path"
+cli = "Start-Process \"<full path or URL or app link>\""
+tool = "delegate_to_claude"
+signs = ["Start-Process", "Invoke-Item", "os\\.startfile"]
+
+[close]
+when = ["close", "quit", "exit", "shut", "kill", "minimi[sz]e", "get rid of"]
+done = "the window is gone from ui windows --filter <word>"
+stop = "say which window is still open and ask before forcing it"
+[[close.rungs]]
+name = "the app's own close"
+cli = "{main} ui keys \"<window>\" \"%{{F4}}\"  (a Chrome tab: ui keys \"<tab title>\" \"^w\")"
+tool = "press_keys"
+signs = ["ui keys", "press_keys"]
+[[close.rungs]]
+name = "close button"
+cli = "{main} ui click \"<window>\" \"Close\""
+tool = "click_control name=Close"
+signs = ["ui click .*Close", "click_control"]
+[[close.rungs]]
+name = "stop the process"
+cli = "Stop-Process -Name <exe>  (ask first unless Nova started it: unsaved work is lost)"
+tool = "delegate_to_claude"
+signs = ["Stop-Process", "taskkill"]
+
+[find_file]
+when = ["find", "where is", "where's", "locate", "look for", "search my", "which folder", "file", "folder", "document", "pdf", "photo"]
+done = "a path that exists"
+stop = "after two misses, ask for a hint (a word in the name, roughly when, which folder)"
+[[find_file.rungs]]
+name = "index"
+cli = "{cli} find \"<words>\" [--ext pdf] [--kind file|folder] --limit 5"
+tool = "find_items"
+signs = ["sysindex(\\.py)? find", "find_items"]
+[[find_file.rungs]]
+name = "named folder"
+cli = "Get-ChildItem \"<folder>\" -Recurse -File -Filter '*<word>*' -EA SilentlyContinue | Select -First 20 -Expand FullName"
+tool = "delegate_to_claude"
+signs = ["Get-ChildItem", "dir /s", "find /c/"]
+[[find_file.rungs]]
+name = "widen one level"
+cli = "the same in Downloads, then OneDrive, then the other user folders; never the whole drive"
+tool = "delegate_to_claude"
+signs = ["OneDrive", "Downloads"]
+
+[fill_form]
+when = ["form", "fill", "sign up", "signup", "register", "apply", "application", "book", "checkout", "enter my", "log ?in", "sign in"]
+done = "the map shows each field with its value; required (*) ones are not empty"
+stop = "name the field that won't take a value and ask"
+[[fill_form.rungs]]
+name = "whole form at once"
+cli = "{main} web open <url>, then web form 3=\"Ada\" 4=a@b.c 9=India  (selects by option text, checkboxes yes/no)"
+tool = "browse_form"
+signs = ["web form", "browse_form"]
+[[fill_form.rungs]]
+name = "one field"
+cli = "{main} web fill <n> \"<value>\"  for the fields the form call reported as failed"
+tool = "browse_fill"
+signs = ["web fill", "browse_fill"]
+[[fill_form.rungs]]
+name = "accessibility typing"
+cli = "{main} ui type \"<window>\" \"<value>\" --into \"<field name>\""
+tool = "type_in_app"
+signs = ["ui type", "type_in_app"]
+[[fill_form.rungs]]
+name = "submit"
+cli = "only after the user said yes: web click <submit n>"
+tool = "browse_click confirmed=true, only after the user said yes"
+signs = ["--submit", "submit_ref", "confirmed"]
+
+[send_mail]
+when = ["e-?mail", "mail", "gmail", "outlook", "reply to", "write to", "send .* to"]
+done = "a draft the user has heard; it is sent only after they say yes"
+stop = "read the draft back and wait for a yes"
+[[send_mail.rungs]]
+name = "draft for approval"
+cli = "write the draft, read it back in one or two sentences, wait for a yes"
+tool = "draft_outreach"
+signs = ["draft_outreach"]
+[[send_mail.rungs]]
+name = "gmail compose link"
+cli = "{main} web open \"https://mail.google.com/mail/?view=cm&to=<to>&su=<subject url-encoded>&body=<body url-encoded>\""
+tool = "browse_open with that link"
+signs = ["mail\\.google\\.com.*view=cm"]
+[[send_mail.rungs]]
+name = "mail app"
+cli = "Start-Process \"mailto:<to>?subject=<...>&body=<...>\""
+tool = "delegate_to_claude"
+signs = ["mailto:"]
+
+[message]
+when = ["whatsapp", "text", "message", "msg", "dm", "telegram", "sms"]
+done = "the chat is open with the text in the box; it is sent only after a yes"
+stop = "say who you couldn't find and ask for the number"
+[[message.rungs]]
+name = "phone (SMS)"
+cli = "[[PHONE: sms_send name=\"<name>\" text=\"<text>\"]]  (Nova confirms before sending)"
+tool = "[[PHONE: sms_send ...]] marker"
+signs = ["sms_send"]
+[[message.rungs]]
+name = "whatsapp app link"
+cli = "Start-Process \"whatsapp://send?phone=<digits with country code>&text=<url-encoded>\""
+tool = "delegate_to_claude"
+signs = ["whatsapp://"]
+[[message.rungs]]
+name = "whatsapp web"
+cli = "{main} web open \"https://web.whatsapp.com/send?phone=<digits>&text=<url-encoded>\", then web click the send button after a yes"
+tool = "browse_open with that link"
+signs = ["web\\.whatsapp\\.com", "wa\\.me"]
+
+[research]
+when = ["research", "find out", "look up", "look into", "compare", "what is", "who is", "latest", "news", "summari[sz]e", "summary", "explain", "how does", "best .* for"]
+done = "an answer with its sources; say what is uncertain"
+stop = "after about three good sources, answer with what you have"
+[[research.rungs]]
+name = "search snippets"
+cli = "web search; the snippets often answer it"
+tool = "web_search"
+signs = ["web_search", "WebSearch", "search_web"]
+[[research.rungs]]
+name = "read 1 to 3 pages"
+cli = "fetch the best two or three results as text"
+tool = "read_page"
+signs = ["read_page", "WebFetch", "read_url"]
+[[research.rungs]]
+name = "real browser"
+cli = "{main} web open <url>, then web read --limit 3000  (pages that need JavaScript or a login)"
+tool = "browse_open, then browse_read"
+signs = ["web (open|read)", "browse_(open|read)"]
+[[research.rungs]]
+name = "hand to Antigravity"
+cli = "only for broad multi-source reading Claude shouldn't spend on"
+tool = "delegate_to_agy"
+signs = ["delegate_to_agy"]
+
+[plan]
+when = ["plan", "steps", "roadmap", "strategy", "how should i", "approach", "break .* down", "outline"]
+done = "a [[PLAN: title]] block with numbered steps; nothing changed yet"
+stop = "ask the one question the plan depends on"
+[[plan.rungs]]
+name = "from what is known"
+cli = "answer from the conversation and the profile; no tools"
+tool = "no tools"
+signs = []
+[[plan.rungs]]
+name = "read only what decides it"
+cli = "read the one or two files or pages the plan depends on, not the whole project"
+tool = "read_page or find_items"
+signs = ["Read", "view_file", "read_page", "find_items"]
+
+[write_doc]
+when = ["article", "blog", "report", "essay", "write ?up", "whitepaper", "document", "docx", "word doc", "post about", "draft a", "write a"]
+done = "the file exists (say where) or the post is staged for approval"
+stop = "ask for the audience or length if the request gives neither"
+[[write_doc.rungs]]
+name = "draft once"
+cli = "write the whole draft to a .md file in one go (docs/document_standards.md); edit sections in place, never rewrite or re-read all of it"
+tool = "write_word"
+signs = ["Write", "write_to_file", "write_word"]
+[[write_doc.rungs]]
+name = "into Word"
+cli = "{main} word write --file <file.md> --title \"<title>\""
+tool = "write_word"
+signs = ["word write", "write_word"]
+[[write_doc.rungs]]
+name = "social post"
+cli = "stage it for approval; never post directly"
+tool = "draft_post"
+signs = ["draft_post"]
+
+[app_control]
+when = ["spotify", "calculator", "notepad", "settings", "volume", "play", "pause", "skip", "shuffle", "repeat", "teams", "zoom", "explorer"]
+done = "the app shows the new state (ui read, or a fresh controls list)"
+stop = "list the controls you found and ask which one"
+[[app_control.rungs]]
+name = "saved automation"
+cli = "{main} macro list, then macro run \"<phrase>\""
+tool = "run_automation"
+signs = ["macro (run|list)", "run_automation", "list_automations"]
+[[app_control.rungs]]
+name = "control by name"
+cli = "{main} ui controls \"<window>\" --filter <word>, then ui click \"<window>\" \"<name>\""
+tool = "click_control"
+signs = ["ui (controls|click)", "click_control"]
+[[app_control.rungs]]
+name = "keyboard shortcut"
+cli = "{main} ui keys \"<window>\" \"<keys>\"  (^ Ctrl, % Alt, + Shift)"
+tool = "press_keys"
+signs = ["ui keys", "press_keys"]

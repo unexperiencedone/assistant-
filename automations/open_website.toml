@@ -1,0 +1,17 @@
+name = "Google Finance"
+description = "Opens Google Finance in Chrome."
+phrases = ["pull up google finance", "show me google finance", "bring up google finance", "pull up the finance tab"]
+
+[[steps]]
+do = "open"
+target = "https://www.google.com/finance/"
+label = "Opening Google Finance"
+
+[[steps]]
+do = "wait_window"
+title = "Google Finance"
+timeout = 15
+
+[[steps]]
+do = "say"
+text = "Google Finance is open."

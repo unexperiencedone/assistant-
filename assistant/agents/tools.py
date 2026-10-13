@@ -38,11 +38,14 @@ class ToolContext:
     capture: Any = None               # assistant.capture.ScreenRecorder
     publisher: Any = None             # assistant.publish.PublishService
     goals: Any = None                 # assistant.goals.GoalsService
+    schedule: Any = None              # assistant.schedule.ScheduleService
+    afterthought: Any = None          # assistant.afterthought.AfterThoughtService
     skills: dict = field(default_factory=dict)   # name -> agents.skills.Skill
     skill_limit: int = 6000
     capture_settings: Any = None      # assistant.config.CaptureSettings (fps, monitor, audio)
     orchestrator: Any = None          # assistant.orchestrate.Orchestrator
     plan: Any = None                  # assistant.planning.Plan -- this conversation's plan
+    watcher: Any = None               # assistant.watcher.Watcher -- the live activity view
     profile: Any = None               # assistant.profile.ProfileService -- for the owner's name
     assistant_name: str = "Nova"      # so an outbound draft can be checked for signing as Nova
     browser: bool = False             # drive the real browser (config [browser] enabled)
@@ -203,7 +206,11 @@ def nova_status(ctx: ToolContext) -> str:
     live object, so it cannot describe a task that isn't running.
     """
     lines: list[str] = []
-    if ctx.runner is not None:
+    if ctx.watcher is not None:
+        # The same object the voice and the canvas read, so a question about what Nova
+        # is doing has one answer wherever it is asked.
+        lines.append(ctx.watcher.spoken())
+    elif ctx.runner is not None:
         lines.append(ctx.runner.status_sentence() or "No background tasks are running.")
     if ctx.capture is not None and getattr(ctx.capture, "running", False):
         lines.append(f"A screen recording has been going for {ctx.capture.elapsed()}.")
@@ -240,9 +247,17 @@ def nova_status(ctx: ToolContext) -> str:
 
 
 def _browser(ctx: ToolContext):
-    from ..automation.browser import thread_browser
+    from ..automation.extension import active_browser
 
-    return thread_browser()
+    return active_browser()
+
+
+def _maps(browser) -> bool:
+    """True for the Nova extension: pages come back as numbered element maps and refs work."""
+    return getattr(browser, "maps_pages", False)
+
+
+_NO_REFS = "Refs need the Nova Chrome extension, which isn't connected; use text or selector instead."
 
 
 def browse_open(ctx: ToolContext, url: str, new_tab: bool = False) -> str:
@@ -250,49 +265,113 @@ def browse_open(ctx: ToolContext, url: str, new_tab: bool = False) -> str:
 
     Unlike read_page, this is a browser: JavaScript runs, logins apply, and pages that
     refuse a scripted fetch work here. It costs seconds and a visible window, so it is
-    the second choice -- read_page first, this when that was not enough.
+    the second choice -- read_page first, this when that was not enough. Through the
+    extension the answer is a numbered map of what can be acted on, not the page's text.
     """
     url = (url or "").strip()
     if not url.startswith(("http://", "https://")):
         return "Give a full http or https URL."
     try:
         browser = _browser(ctx)
+        if _maps(browser):
+            return browser.open_page(url, new_tab=bool(new_tab)) + "\nAct by [number]; browse_read for the text."
         title = browser.goto(url, new_tab=bool(new_tab))
         return f"{title}\n\n{browser.text(1800)}"
     except Exception as error:
         return f"I couldn't open that in the browser ({type(error).__name__}: {error})."
 
 
-def browse_read(ctx: ToolContext, limit: int = 3000, text: str = "", selector: str = "") -> str:
-    """Read the page already open: all of it, or one element named by text or selector."""
+def browse_read(ctx: ToolContext, limit: int = 3000, text: str = "", selector: str = "",
+                ref: Any = None, elements: bool = False) -> str:
+    """Read the page already open: its text, one element, or (elements=true) the element map again."""
     try:
         browser = _browser(ctx)
+        limit = max(200, min(int(limit or 3000), 8000))
+        if _maps(browser):
+            if elements:
+                return browser.snapshot()
+            return browser.read_text(limit, ref=ref, text=text, selector=selector) or "(that element is empty)"
+        if ref not in (None, ""):
+            return _NO_REFS
         if text or selector:
             return browser.read(text=text, selector=selector) or "(that element is empty)"
-        return browser.text(max(200, min(int(limit or 3000), 8000)))
+        return browser.text(limit)
     except Exception as error:
         return f"I couldn't read the page ({type(error).__name__}: {error})."
 
 
-def browse_click(ctx: ToolContext, text: str = "", selector: str = "", role: str = "",
-                 name: str = "") -> str:
-    """Click something on the open page, by its visible text, role or selector."""
+def browse_find(ctx: ToolContext, query: str) -> str:
+    """The cheap look: elements whose names have these words, or the text around them."""
     try:
-        _browser(ctx).click(text=text, selector=selector, role=role, name=name)
+        browser = _browser(ctx)
+        if not _maps(browser):
+            return browser.text(1500)
+        return browser.find(query)
+    except Exception as error:
+        return f"I couldn't search the page ({type(error).__name__}: {error})."
+
+
+def browse_click(ctx: ToolContext, ref: Any = None, text: str = "", selector: str = "", role: str = "",
+                 name: str = "", confirmed: bool = False) -> str:
+    """Click something on the open page: by [ref] from the map, or by text, role or selector.
+
+    Through the extension, a click on something that looks like paying, sending,
+    submitting or deleting is refused until the model comes back with confirmed=true,
+    which it may only do after the user said yes. Nova's own automations aren't gated.
+    """
+    from ..automation.extension import RiskyAction
+
+    try:
+        browser = _browser(ctx)
+        if _maps(browser):
+            return browser.act_click(ref, guard=not confirmed, text=text, selector=selector, role=role, name=name)
+        if ref not in (None, ""):
+            return _NO_REFS
+        browser.click(text=text, selector=selector, role=role, name=name)
         return f"Clicked {text or name or selector}. Read the page again to see what changed."
+    except RiskyAction as risky:
+        return str(risky)
     except Exception as error:
         return f"I couldn't click that ({type(error).__name__}: {error})."
 
 
-def browse_fill(ctx: ToolContext, value: str, text: str = "", selector: str = "",
+def browse_fill(ctx: ToolContext, value: str, ref: Any = None, text: str = "", selector: str = "",
                 label: str = "", placeholder: str = "", press_enter: bool = False) -> str:
     """Type into a field on the open page. Does not submit unless press_enter is true."""
     try:
-        _browser(ctx).fill(value, press_enter=bool(press_enter), text=text,
-                           selector=selector, label=label, placeholder=placeholder)
+        browser = _browser(ctx)
+        if _maps(browser):
+            return browser.act_fill(value, ref, submit=bool(press_enter), text=text, selector=selector,
+                                    label=label, placeholder=placeholder)
+        if ref not in (None, ""):
+            return _NO_REFS
+        browser.fill(value, press_enter=bool(press_enter), text=text,
+                     selector=selector, label=label, placeholder=placeholder)
         return f"Filled in {len(value)} characters" + (" and pressed Enter." if press_enter else ".")
     except Exception as error:
         return f"I couldn't fill that in ({type(error).__name__}: {error})."
+
+
+def browse_form(ctx: ToolContext, fields: list, submit_ref: Any = None, confirmed: bool = False) -> str:
+    """Fill several fields in one call -- [{ref, value}, ...] -- and optionally click submit_ref.
+
+    One round trip instead of one per field, which is most of what a form used to cost.
+    Selects take the option's text, checkboxes take yes/no. Submitting is gated like
+    browse_click.
+    """
+    from ..automation.extension import RiskyAction
+
+    try:
+        browser = _browser(ctx)
+        if not _maps(browser):
+            return _NO_REFS
+        if not isinstance(fields, list) or not fields:
+            return "Give fields as a list of {ref, value}."
+        return browser.act_form(fields, submit_ref=submit_ref, guard=not confirmed)
+    except RiskyAction as risky:
+        return str(risky)
+    except Exception as error:
+        return f"I couldn't fill the form ({type(error).__name__}: {error})."
 
 
 def draft_outreach(ctx: ToolContext, recipient: str, subject: str, body: str) -> str:
@@ -396,6 +475,17 @@ def draft_post(ctx: ToolContext, platform: str, text: str) -> str:
     return "I can draft for linkedin or instagram."
 
 
+def post_project(ctx: ToolContext, project: str = "") -> str:
+    """Draft a LinkedIn post about one of the user's projects, from the repo itself.
+
+    The Built / Partial / Future lists come from the folder, never from the model, and
+    the draft waits at the gate like any other (assistant/publish/showcase.py)."""
+    showcase = getattr(ctx.publisher, "showcase", None) if ctx.publisher is not None else None
+    if showcase is None:
+        return "The project showcase is turned off in the config."
+    return showcase.draft((project or "").strip())
+
+
 def add_goal(ctx: ToolContext, task: str, cadence: str = "daily") -> str:
     """Add a standing goal: something Nova starts on its own from then on."""
     if ctx.goals is None:
@@ -410,6 +500,73 @@ def list_goals(ctx: ToolContext) -> str:
     if ctx.goals is None:
         return "Standing goals are turned off in the config."
     return ctx.goals.spoken()
+
+
+def schedule_add(ctx: ToolContext, items: list) -> str:
+    """Put things on the schedule; each gets reminders at 60, 30 and 15 minutes."""
+    if ctx.schedule is None:
+        return "The schedule is turned off in the config."
+    from ..schedule import parse_when
+
+    added, problems = [], []
+    for item in items or []:
+        item = item if isinstance(item, dict) else {"title": str(item)}
+        try:
+            start = parse_when(str(item.get("start", "")))
+            end = parse_when(str(item["end"])) if item.get("end") else None
+            entry = ctx.schedule.add(str(item.get("title", "")), start, end, str(item.get("note", "")))
+            added.append(f"#{entry['id']} {entry['title']} at {start:%a %d %b %H:%M}")
+        except ValueError as error:
+            problems.append(f"{item.get('title', '?')}: {error}")
+    text = ("Added " + "; ".join(added) + ".") if added else "Nothing added."
+    return text + (" Couldn't add: " + "; ".join(problems) + ". Ask for the time." if problems else "")
+
+
+def schedule_list(ctx: ToolContext, day: str = "today") -> str:
+    if ctx.schedule is None:
+        return "The schedule is turned off in the config."
+    from datetime import datetime, timedelta
+
+    from ..schedule import parse_day
+
+    try:
+        start = datetime.combine(parse_day(day or "today"), datetime.min.time())
+    except ValueError as error:
+        return str(error)
+    entries = ctx.schedule.agenda(start, start + timedelta(days=1))
+    if not entries:
+        return f"Nothing on {start:%A %d %B}."
+    return "\n".join(f"{'#' + str(e['id']) if e['id'] else '(calendar)'} "
+                     f"{'all day' if e['all_day'] else e['start'].strftime('%H:%M')} {e['title']}" for e in entries)
+
+
+def schedule_remove(ctx: ToolContext, item_id: int) -> str:
+    if ctx.schedule is None:
+        return "The schedule is turned off in the config."
+    return "Removed." if ctx.schedule.remove(int(item_id)) else f"No item #{item_id}; list the day first."
+
+
+def recall_memory(ctx: ToolContext, query: str, limit: int = 4) -> str:
+    """What the user did, read or decided before, from AfterThought's on-device memory."""
+    if ctx.afterthought is None:
+        return "AfterThought is turned off."
+    hits = ctx.afterthought.recall(query, max(1, min(int(limit or 4), 8)))
+    if not hits:
+        return f"No memory about {query!r}."
+    lines = []
+    for h in hits:
+        m, src = h["memory"], (h["memory"].get("sources") or [{}])[0]
+        when = datetime.fromtimestamp(m["start"]).strftime("%d %b %H:%M")
+        lines.append(f"[{when} · {src.get('app') or m['app']} · {src.get('title') or m['title']}] "
+                     f"(similarity {h['similarity']:.2f}) {h['focus']}")
+    return "\n".join(lines) + "\nCite the source in brackets when you use one."
+
+
+def remember_note(ctx: ToolContext, text: str) -> str:
+    """Keep something the user asked to remember, in long-term memory."""
+    if ctx.afterthought is None:
+        return "AfterThought is turned off."
+    return ctx.afterthought.remember_now(text)
 
 
 def list_skills(ctx: ToolContext, query: str = "") -> str:
@@ -509,19 +666,36 @@ TOOLS: dict[str, tuple[Callable[..., str], dict]] = {
         "nova_status", "What you are doing now: tasks, recording, drafts, goals, plan.",
         {}, [])),
     "browse_open": (browse_open, _schema(
-        "browse_open", "Open a URL in the real browser and read it. For pages needing JavaScript or a "
-        "login. Slower than read_page; try that first.",
+        "browse_open", "Open a URL in the user's Chrome. Returns a numbered map of what can be clicked or "
+        "filled. For pages needing JavaScript or a login; try read_page first.",
         {"url": STRING, "new_tab": {"type": "boolean"}}, ["url"])),
     "browse_read": (browse_read, _schema(
-        "browse_read", "Read the open page, or one element by text or CSS selector.",
-        {"limit": {"type": "integer"}, "text": STRING, "selector": STRING}, [])),
+        "browse_read", "Read the open page's text, or one element (ref, text or CSS selector). "
+        "elements=true gives the numbered map again.",
+        {"limit": {"type": "integer"}, "ref": {"type": "integer"}, "text": STRING, "selector": STRING,
+         "elements": {"type": "boolean"}}, [])),
+    "browse_find": (browse_find, _schema(
+        "browse_find", "Find elements or text on the open page by words. Cheaper than reading it all.",
+        {"query": STRING}, ["query"])),
     "browse_click": (browse_click, _schema(
-        "browse_click", "Click on the open page by text, role or CSS selector.",
-        {"text": STRING, "selector": STRING, "role": STRING, "name": STRING}, [])),
+        "browse_click", "Click on the open page by ref number from the map (best), text, role or selector. "
+        "confirmed=true only after the user agreed to a pay/send/submit/delete.",
+        {"ref": {"type": "integer"}, "text": STRING, "selector": STRING, "role": STRING, "name": STRING,
+         "confirmed": {"type": "boolean"}}, [])),
     "browse_fill": (browse_fill, _schema(
-        "browse_fill", "Type into a field on the open page; press_enter submits.",
-        {"value": STRING, "text": STRING, "selector": STRING, "label": STRING,
+        "browse_fill", "Type into one field (ref number best); press_enter submits.",
+        {"value": STRING, "ref": {"type": "integer"}, "text": STRING, "selector": STRING, "label": STRING,
          "placeholder": STRING, "press_enter": {"type": "boolean"}}, ["value"])),
+    "browse_form": (browse_form, _schema(
+        "browse_form", "Fill several fields at once by ref, then optionally click submit_ref. Selects take "
+        "the option text, checkboxes yes/no. confirmed=true only after the user agreed to submit.",
+        {"fields": {"type": "array", "items": {"type": "object", "properties": {
+            "ref": {"type": "integer"}, "value": STRING}, "required": ["ref", "value"]}},
+         "submit_ref": {"type": "integer"}, "confirmed": {"type": "boolean"}}, ["fields"])),
+    "post_project": (post_project, _schema(
+        "post_project", "Draft a LinkedIn post about one of the user's coding projects, read from its repo "
+        "(README, git history, code). Leave project empty for the newest one not yet posted. Sends nothing.",
+        {"project": STRING}, [])),
     "draft_outreach": (draft_outreach, _schema(
         "draft_outreach", "Stage an outreach email for approval; sends nothing. Write as the USER in "
         "first person, never as yourself. No prices, discounts, free offers, deadlines or guarantees.",
@@ -547,6 +721,25 @@ TOOLS: dict[str, tuple[Callable[..., str], dict]] = {
         {"task": STRING, "cadence": {"type": "string", "enum": ["hourly", "daily", "weekly"]}}, ["task"])),
     "list_goals": (list_goals, _schema(
         "list_goals", "The standing goals Nova runs on its own.", {}, [])),
+    "schedule_add": (schedule_add, _schema(
+        "schedule_add", "Add items to the user's schedule. Nova reminds them 60, 30 and 15 minutes before each. "
+        "start/end are ISO local times like 2026-10-09T10:00 (today's date is in the context line).",
+        {"items": {"type": "array", "items": {"type": "object", "properties": {
+            "title": STRING, "start": STRING, "end": STRING, "note": STRING}, "required": ["title", "start"]}}},
+        ["items"])),
+    "schedule_list": (schedule_list, _schema(
+        "schedule_list", "The user's schedule and calendar for a day, with item ids.",
+        {"day": {"type": "string", "description": "today, tomorrow, a weekday, or YYYY-MM-DD"}}, [])),
+    "schedule_remove": (schedule_remove, _schema(
+        "schedule_remove", "Remove one schedule item by its id (from schedule_list).",
+        {"item_id": {"type": "integer"}}, ["item_id"])),
+    "recall_memory": (recall_memory, _schema(
+        "recall_memory", "Search the user's on-device memory of what they worked on, read, copied and asked "
+        "before (with sources). Use for 'what did I...', 'last time', 'where did I see...'.",
+        {"query": STRING, "limit": {"type": "integer"}}, ["query"])),
+    "remember_note": (remember_note, _schema(
+        "remember_note", "Keep a note the user asks you to remember, in long-term memory.",
+        {"text": STRING}, ["text"])),
     "list_skills": (list_skills, _schema(
         "list_skills", "What each skill is for, when the names are not enough.", {"query": STRING}, [])),
     "read_skill": (read_skill, _schema(
@@ -578,12 +771,22 @@ WHEN_MENTIONED: dict[str, tuple[str, ...]] = {
     "browse_read": ("browser", "chrome", "website", "site", "page", "scrape", "directory", "listing"),
     "browse_click": ("browser", "chrome", "click", "button", "link", "form", "submit"),
     "browse_fill": ("browser", "chrome", "type", "fill", "form", "search box", "field"),
+    "browse_find": ("browser", "chrome", "website", "site", "page", "find", "button", "form", "price"),
+    "browse_form": ("form", "fill", "sign up", "register", "apply", "checkout", "application", "fields"),
     "draft_post": ("post", "linkedin", "instagram", "publish", "social", "draft"),
+    "post_project": ("linkedin", "project", "showcase", "portfolio"),
     "draft_outreach": ("email", "mail", "outreach", "customer", "client", "prospect", "draft", "reach out"),
     "start_recording": ("record", "recording", "screen", "capture", "demo", "video"),
     "stop_recording": ("record", "recording", "stop", "screen", "capture"),
     "add_goal": ("goal", "every morning", "every day", "daily", "weekly", "remind", "standing"),
     "list_goals": ("goal", "standing", "unprompted", "by yourself"),
+    "schedule_add": ("schedule", "remind", "reminder", "calendar", "meeting", "appointment", "agenda",
+                     "plan my", "tomorrow", " at ", " am ", " pm ", "o'clock", "class", "lecture", "exam"),
+    "schedule_list": ("schedule", "calendar", "agenda", "plan my", "tomorrow", "today", "free", "busy"),
+    "schedule_remove": ("schedule", "remove", "cancel", "delete", "drop", "calendar"),
+    "recall_memory": ("remember", "recall", "last time", "earlier", "before", "what did i", "what did we",
+                      "where did i", "where was", "which one", "decided", "said about", "copied", "memory", "again"),
+    "remember_note": ("remember", "note", "keep in mind", "don't forget", "memory"),
     "read_plan": ("plan", "step", "steps"),
     "clear_plan": ("plan", "step", "steps", "clear", "drop", "scrap"),
     "run_steps": ("and then", "also", "at the same time", "both", "several", "steps", "parallel"),
@@ -635,7 +838,7 @@ def schemas(ctx: ToolContext) -> list[dict]:
             continue
         # Status is only honest if something can actually report state. With no runner
         # attached it would answer "I'm idle" to everything, which is worse than absent.
-        if name == "nova_status" and ctx.runner is None:
+        if name == "nova_status" and ctx.runner is None and ctx.watcher is None:
             continue
         if name in ("start_task", "run_steps") and ctx.orchestrator is None:
             continue
@@ -649,9 +852,15 @@ def schemas(ctx: ToolContext) -> list[dict]:
             continue
         if name == "draft_post" and ctx.publisher is None:
             continue
+        if name == "post_project" and getattr(ctx.publisher, "showcase", None) is None:
+            continue
         if name.endswith("_goal") or name == "list_goals":
             if ctx.goals is None:
                 continue
+        if name.startswith("schedule_") and ctx.schedule is None:
+            continue
+        if name in ("recall_memory", "remember_note") and ctx.afterthought is None:
+            continue
         if name.endswith("_skill") or name == "list_skills":
             if not ctx.skills:      # naming a tool with nothing behind it wastes a turn
                 continue
@@ -670,9 +879,9 @@ def schemas(ctx: ToolContext) -> list[dict]:
 # the user saying "open spotify"), it's worth a visible log line: the prompt asks agents to
 # be careful, but a prompt is a convention, not a boundary.
 CHANGES_THINGS = {"open_item", "click_control", "type_in_app", "press_keys", "run_automation", "write_word",
-                  "start_recording", "stop_recording", "draft_post", "add_goal",
+                  "start_recording", "stop_recording", "draft_post", "post_project", "add_goal", "schedule_add", "schedule_remove",
                   "start_task", "run_steps", "clear_plan",
-                  "browse_open", "browse_click", "browse_fill", "draft_outreach"}
+                  "browse_open", "browse_click", "browse_fill", "browse_form", "draft_outreach"}
 
 
 def call(ctx: ToolContext, name: str, arguments: dict[str, Any]) -> str:

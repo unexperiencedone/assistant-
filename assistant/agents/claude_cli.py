@@ -37,6 +37,20 @@ class ClaudeCliAgent(AgentBackend):
         self._proc: subprocess.Popen[str] | None = None
         self._events: queue.Queue[dict[str, Any]] = queue.Queue()
         self._lock = threading.Lock()
+        # total_cost_usd in a result line is the running total for the *process*, not
+        # the turn: a long-lived session reports 0.30, 3.12, 3.27, ... Summing those as
+        # per-turn costs counted the same money again on every turn.
+        self._process_cost = 0.0
+        # Held from sending a message until its result arrives. Two jobs handed to the same
+        # session at once ("now close the tab" and a background "learning" turn) both
+        # waited on one event stream: Claude answered both in one reply, one job took it,
+        # and the other waited for a result that never came -- Nova stuck "working" until
+        # it was shut down. app._delegate gives a second job its own session instead.
+        self._turn = threading.Lock()
+
+    @property
+    def busy(self) -> bool:
+        return self._turn.locked()
 
     # -- process ------------------------------------------------------------------------
     def build_command(self, exe: str, task: str = "") -> list[str]:
@@ -80,6 +94,7 @@ class ClaudeCliAgent(AgentBackend):
         if not exe:
             return None
         self._events = queue.Queue()
+        self._process_cost = 0.0  # a new process starts its running total at zero
         self._proc = subprocess.Popen(
             self.build_command(exe),
             cwd=self.workspace,
@@ -120,6 +135,16 @@ class ClaudeCliAgent(AgentBackend):
 
     # -- one turn -------------------------------------------------------------------------
     def run(self, prompt: str, on_event: Callable[[AgentEvent], None], cancel: threading.Event) -> AgentResult:
+        """One turn at a time per session; a second waits (still cancellable) for the first."""
+        while not self._turn.acquire(timeout=0.2):
+            if cancel.is_set():
+                return AgentResult(False, "Cancelled.", self.session_id, 0.0, cancelled=True)
+        try:
+            return self._run_turn(prompt, on_event, cancel)
+        finally:
+            self._turn.release()
+
+    def _run_turn(self, prompt: str, on_event: Callable[[AgentEvent], None], cancel: threading.Event) -> AgentResult:
         # A spawned session starts with no conversation, so anything it was told to
         # carry goes in front of its first request (base.carry).
         prompt = self._with_carried(prompt)
@@ -181,11 +206,17 @@ class ClaudeCliAgent(AgentBackend):
             denied = [d.get("tool_name", "tool") for d in obj.get("permission_denials") or []]
             for name in denied:
                 yield AgentEvent("tool", tool="denied", text=f"{name} needs approval, which nobody can give in this mode")
+            running = float(obj.get("total_cost_usd") or 0.0)
+            turn_cost = running - self._process_cost if running >= self._process_cost else running
+            self._process_cost = running
             yield AgentEvent(
                 "result",
                 text=obj.get("result") or "",
-                data={"is_error": bool(obj.get("is_error")), "cost_usd": obj.get("total_cost_usd"),
-                      "denied": denied, "turns": obj.get("num_turns"), "subtype": obj.get("subtype")},
+                data={"is_error": bool(obj.get("is_error")), "cost_usd": round(turn_cost, 6),
+                      "process_cost_usd": running,
+                      "denied": denied, "turns": obj.get("num_turns"), "subtype": obj.get("subtype"),
+                      # Token counts and models, for the usage ledger (assistant/usage).
+                      "usage": obj.get("usage") or {}, "models": list((obj.get("modelUsage") or {}).keys())},
             )
 
 

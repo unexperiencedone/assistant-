@@ -44,9 +44,17 @@ class AppState:
             "history": {"revision": 0, "current": None},   # the open work session; the list is fetched
             "ambient": {"revision": 0, "status": "idle"},  # the briefing cache changed; the panel fetches it
             "awareness": {"revision": 0, "watching": False, "enabled": False},
+            "usage": {"revision": 0},
+            "afterthought": {"revision": 0, "enabled": False, "ready": False, "watching": 0, "short": 0, "long": 0,
+                             "paused": False, "suggestion": None},
+            "talk": {"kind": "", "topic": "", "label": "", "since": 0},  # a talk mode, while one is on                      # the ledger changed; the Usage screen fetches
             # The long answer currently open in the reader window. Only the newest one
             # is kept: the reader is a place to read this, not a history of them.
             "document": {"revision": 0, "title": "", "markdown": "", "at": 0},
+            # What is running and what ran last, so every connected session -- the
+            # canvas here, the canvas on the phone -- sees the same activity live.
+            # Not "activity": that name is already the append-only log feed below.
+            "live": {"running": [], "macro": "", "recent": []},
         }.items():
             self._set(key, value)
         for key in LIST_LIMITS:
@@ -147,6 +155,10 @@ class AppState:
                 persist = True
             elif topic == "graph":
                 self._set("graph", d)
+            elif topic == "live":
+                self._set("live", {"running": d.get("running", []),
+                                   "macro": d.get("macro", ""),
+                                   "recent": d.get("recent", [])})
             elif topic == "document":
                 current = self._values.get("document") or {}
                 self._set("document", {"revision": int(current.get("revision", 0)) + 1,
@@ -165,6 +177,17 @@ class AppState:
                 self._set("history", {"revision": d.get("revision", 0), "current": d.get("current")})
             elif topic == "ambient":
                 self._set("ambient", {"revision": d.get("revision", 0), "status": d.get("status", "idle")})
+            elif topic == "talk_mode":
+                self._set("talk", {"kind": d.get("kind", ""), "topic": d.get("subject", ""),
+                                   "label": d.get("label", ""), "since": d.get("since", 0)})
+            elif topic == "afterthought":
+                self._set("afterthought", {**self._values.get("afterthought", {}), **{k: d.get(k) for k in (
+                    "revision", "enabled", "ready", "watching", "short", "long", "paused")}})
+            elif topic == "afterthought_suggestion":
+                self._set("afterthought", {**self._values.get("afterthought", {}),
+                                           "suggestion": {"id": d.get("id"), "text": d.get("text"), "at": event.ts}})
+            elif topic == "usage_ledger":
+                self._set("usage", {"revision": d.get("revision", 0)})
             elif topic == "awareness":
                 self._set("awareness", {"revision": d.get("revision", 0), "watching": bool(d.get("watching")),
                                         "enabled": bool(d.get("enabled"))})

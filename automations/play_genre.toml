@@ -26,6 +26,12 @@ seconds = 2.5
 # Genre searches have no "Top result" card, so the results are buttons called "Play <playlist>".
 # Matching on "Play {query}" is a prefix match, which picks the first playlist named after the genre.
 [[steps]]
+do = "title"
+window = "exe:spotify"
+save_as = "before"
+optional = true
+
+[[steps]]
 do = "click"
 label = "Play the first {query} playlist"
 window = "exe:spotify"
@@ -33,6 +39,16 @@ name = "Play {query}"
 control_type = "Button"
 timeout = 8
 
+# Done means the title changed to a track, not that a click went through.
+[[steps]]
+do = "wait_title"
+label = "Check it is playing"
+window = "exe:spotify"
+changed_from = "{before}"
+ignore = "^Spotify( Premium| Free)?$"
+save_as = "playing"
+timeout = 8
+
 [[steps]]
 do = "say"
-text = "Playing some {query}."
+text = "Playing some {query}: {playing}."

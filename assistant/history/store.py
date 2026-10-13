@@ -92,12 +92,20 @@ class HistoryStore:
             conn.execute("PRAGMA journal_mode = WAL")
             conn.execute("PRAGMA synchronous = NORMAL")
             conn.execute("PRAGMA foreign_keys = ON")
+            # SQLite's default folds the write-ahead log back in every 1000 pages, which
+            # is why -wal sat at 4 MB beside a 3 MB database. A quarter of that keeps the
+            # sidecar small; the writes here are small and frequent, so nothing notices.
+            conn.execute("PRAGMA wal_autocheckpoint = 256")
             self._local.conn = conn
         return conn
 
     def close(self) -> None:
         conn = getattr(self._local, "conn", None)
         if conn is not None:
+            try:                                            # leave no -wal behind
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except sqlite3.Error:
+                pass
             conn.close()
             self._local.conn = None
 

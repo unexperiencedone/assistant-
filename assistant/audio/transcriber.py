@@ -54,6 +54,8 @@ class WhisperTranscriber(Transcriber):
             avg_logprob=sum(s.avg_logprob * d for s, d in zip(kept, durations)) / sum(durations),
             compression_ratio=max(s.compression_ratio for s in kept),
             duration=sum(durations),
+            # Where the speech is, so the voice check can ignore the rest (voiceid.py).
+            spans=tuple((float(s.start), float(s.end)) for s in kept),
         )
 
 

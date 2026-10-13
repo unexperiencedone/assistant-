@@ -54,9 +54,17 @@ fish_model = "s2.1-pro-free"
 # EDITH, cloned on fish.audio. Sarah is 933563129e564b19a115bedd57b7406a if this
 # one feels slow -- measured at 0.82s to first byte against her 0.66s, so the
 # difference is small, but a cloned voice is the one place it could grow.
+# Always a fixed voice. Left empty, Fish picks a voice per request -- and replies go a
+# sentence at a time -- so Nova changed voice mid-reply, and with every expression.
+# Emotion comes from delivery tags ([chuckles], [sighs], [excited]) on this one voice.
 fish_voice = "be5f87d18c6e4319a672608cf1d92d08"
+# How much each line varies (0..1, Fish's default 0.7 for both). A little lower keeps the
+# voice's timbre steady through an emotional line; raise it for more lively delivery.
+fish_temperature = 0.6
+fish_top_p = 0.7
 fish_timeout = 20
 fish_cache = "data/tts-cache"  # synthesised lines, reused; delete the folder to reset
+fish_cache_mb = 200           # cap; least-recently-played clips are dropped past it. 0 = no limit
 
 [agents]
 # Everything you say (except instant local commands) goes to this agent.
@@ -88,6 +96,10 @@ model = ""                     # "" = your Claude Code default; e.g. "sonnet" fo
 # Llama chat models aren't on this key, and groq/compound (Llama-based) refuses tool calls.
 model = "openai/gpt-oss-120b"
 api_key_env = "GROQ_API_KEY"         # put the key in .env next to config.toml (never committed)
+# More free keys go in .env as GROQ_API_KEY_2, GROQ_API_KEY_3, GROQ_API_KEY_4 (or a
+# comma list in GROQ_API_KEYS). They form one shared pool (agents/keypool.py): the
+# conversation leans on key 1, parallel tasks on key 2, the classifier and narrator on
+# key 3, key 4 is spare -- and a rate-limited key is skipped by everyone at once.
 max_tool_calls = 10                  # model/tool rounds per request (orchestrating costs a few)
 # If it runs out of those steps, or Groq can't be reached at all, the whole job is passed
 # to Claude Code instead of coming back as "say use claude for the harder parts". You
@@ -97,6 +109,14 @@ max_tokens = 1200
 temperature = 0.3
 timeout = 120
 history_messages = 24
+# The free tier is 8,000 tokens a minute, and the loop resends the whole history every
+# round -- so what a tool result costs is its size times the rounds still to come, not
+# its size. These three bound that: a fresh result, an older one the model has already
+# reacted to, and the history as a whole. The full result still reaches the canvas and
+# the session log; only the copy that gets resent is shortened.
+tool_result_chars = 2000
+stale_tool_chars = 240
+history_chars = 12000
 
 [agents.openrouter]
 # A chat model as the brain, Nova's own tools as its hands: say "use openrouter".
@@ -110,6 +130,9 @@ max_tokens = 1200
 temperature = 0.3
 timeout = 120
 history_messages = 24
+tool_result_chars = 2000             # see [agents.groq]: the history is resent every round
+stale_tool_chars = 240
+history_chars = 12000
 
 [agents.antigravity]
 executable = "agy"
@@ -142,6 +165,34 @@ enabled = true
 db_path = "data/history.db"
 idle_minutes = 30
 keep_days = 365
+
+[voice_id]
+# Phase 1: only your voice can speak to Nova. Nothing happens until you say "learn my
+# voice" and read four sentences; then a voice that isn't yours is ignored like noise,
+# with its score on the canvas. Typed input (canvas, phone) is never checked.
+# Every score is logged so phase 2 is decided on evidence: "how's the voice check doing".
+enabled = true
+enforce = true      # false: score and log only, never drop anything
+threshold = 0.0     # 0 = the bar measured from your own samples at enrolment
+model = "data/models/wespeaker_en_voxceleb_resnet34.onnx"   # WeSpeaker ResNet34, downloaded once (26 MB)
+profile = "data/voiceprint.json"
+log = "data/voice_scores.jsonl"
+
+[ladders]
+# Fallback ladders: for each kind of request (click, open, find a file, fill a form,
+# mail, research, plan, write...), the order to try things in. The matching one goes in
+# front of the request, with what has worked on that site or app before, so a model
+# moves to the next approach instead of retrying a wrong one. Edit ladders.toml freely.
+enabled = true
+file = "ladders.toml"
+memory = "data/ladders.json"
+
+[usage]
+# Tokens spent and saved (python main.py usage, or the Usage screen on the canvas).
+# Spent is the providers' own token counts and Claude's own list-price cost; saved is an
+# estimate, valued at what Claude turns of the same kind cost on this machine.
+enabled = true
+db_path = "data/usage.db"
 
 [sessions]
 # Every agent turn's full stream is written to one JSON-lines file per turn, so the
@@ -234,6 +285,46 @@ quiet_from = 22       # no goal fires between these two hours
 quiet_to = 8
 one_at_a_time = true  # a backlog goes out one per tick, never all at once
 
+[afterthought]
+# The proactive memory layer (docs/afterthought.md). Nothing is watched until you opt an
+# app in ("remember what I do in Chrome", or the Memory screen). Capture, embedding and
+# retrieval run on this PC with no network calls; recent memory expires after 7 days.
+enabled = true
+threshold = 0.55          # similarity that gates a suggestion (calibrated for MiniLM; the deck's 0.75 never fires)
+voice_threshold = 0.65    # strong matches are also said out loud, when Nova is free
+cooldown_seconds = 180
+capture_clipboard = true
+capture_text = true       # the focused window's text, via accessibility (UI Automation)
+remember_conversations = true
+short_term_days = 7
+consolidate_hour = 3
+
+[today]
+# What today is, without an agent turn: weather (MSN, the same as the Windows Widgets
+# board), markets (Yahoo), Indian and finance headlines, Indian holidays, and your own
+# calendar if you put its private iCal address in .env as NOVA_CALENDAR_ICS. Every agent
+# turn gets it as one line; Nova says it as a fresh greeting when it opens. docs/today.md
+enabled = true
+place = "Kanpur"
+lat = 26.45
+lon = 80.33
+markets = { "Nifty" = "^NSEI", "Sensex" = "^BSESN", "Nifty Bank" = "^NSEBANK", "Nifty Midcap 100" = "NIFTY_MIDCAP_100.NS" }
+india_headlines = 3
+finance_headlines = 3
+refresh_minutes = 15
+greet = true
+greet_again_hours = 3       # opening the window from the tray after this long greets again
+mail_on_first_open = true   # the day's first greeting also goes through Gmail (on Claude)
+
+[schedule]
+# Reminders Nova gives unasked, wherever it is in a task: spoken, in the tray, on the phone.
+enabled = true
+db_path = "data/schedule.db"
+remind_minutes = [60, 30, 15]
+calendar_reminders = true   # timed events from your iCal calendar too
+plan_nudge_hour = 21        # an empty tomorrow gets one offer to plan it, from this hour (-1: never)
+phone = true
+
 [capture]
 # Screen recordings and phone photos. They land in the inbox folder below and are never
 # deleted automatically. Editing (cut, caption, reframe) is local ffmpeg on the CPU —
@@ -252,12 +343,61 @@ audio = false   # system audio needs a loopback capture device set up first
 enabled = true
 db_path = "data/publish.db"
 
+[showcase]
+# Your projects that aren't on LinkedIn yet, drafted one at a time (docs/publishing.md).
+# Only folders under `roots` are read; anything matching `ignore` (a folder name or a
+# full path) is never read at all -- client work and other people's repos belong there.
+# A repo whose commits are all by someone else is skipped on its own (git user.email).
+# Drafts wait at the publishing gate like any other: "post it" sends, "drop it" doesn't.
+enabled = true
+roots = [
+    'C:\ProjectCode',
+    'C:\BuildwithBharat2.0',
+    'C:\attendance_system',
+    'C:\AI_ML',
+    'C:\Assisstant',
+    'C:\Users\kumar\OneDrive\Desktop',
+]
+ignore = [
+    'C:\commercial folder',
+    'C:\Contribution',
+    'desktop-tutorial',
+    'github_profile',
+]
+depth = 2
+ledger_path = "data/linkedin_posted.json"
+auto_draft = true     # check every check_hours and draft the next project when it's time
+check_hours = 12
+min_gap_days = 4      # never auto-draft sooner than this after the last post went out
+max_images = 4
+hashtags = true
+# No screenshots in the repo: take them from the live site, or run the project here
+# (npm run dev / streamlit) and take them from that. Pages behind a login need
+# SHOWCASE_LOGIN_<NAME>=email:password in .env (e.g. SHOWCASE_LOGIN_VED_CODE).
+capture = true
+run_locally = true
+install_deps = true
+
+[showcase.demos]
+# Live URLs the scanner can't find on its own (README, package.json, GitHub homepage).
+"Ved Code" = "https://vedcode-ai4bharat.vercel.app"
+
+[showcase.logins]
+# Public demo accounts only (anyone may log in with these; that's what they're for).
+# A private login goes in .env as SHOWCASE_LOGIN_<NAME>=email:password instead.
+# Ved Code's is created by `npm run demo:create` in that repo (src/scripts/create-demo.ts).
+"Ved Code" = "demo@vedcode.dev:VedCodeDemo#2026"
+
 [browser]
 # Letting a model drive the real browser for pages the keyless read_page can't manage:
 # ones that need JavaScript, a login, or that refuse a scripted fetch. It runs Chrome
 # with a dedicated Nova profile -- never your signed-in one, because Chrome refuses the
 # DevTools port on the default profile and that restriction is a good one.
+# The Nova Chrome extension (extension/, docs/extension.md) is the better driver when it
+# is installed: your own profile and logins, and pages reach the model as short numbered
+# element maps instead of page text. "auto" uses it whenever it is connected.
 enabled = true
+driver = "auto"   # auto | extension | playwright
 
 [orchestrate]
 # Several pieces of work for one request, answered once. A step may say what it waits

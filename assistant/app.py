@@ -92,6 +92,12 @@ class VoiceAssistant:
         for backend in self.registry.backends.values():
             backend.recorder = self.recorder
         self.speaker = make_speaker(settings.voice, self.bus)
+        # Watches the bus and keeps the live answer to "what is running" and "what ran
+        # last". Not a store: every command is already written to data/sessions by
+        # TurnLog. This is the part that was missing, which is the live view.
+        from .watcher import Watcher
+
+        self.watcher = Watcher(self.bus)
         self.runner = AgentRunner(
             self.bus, self.plan, self.speaker,
             on_finished=lambda backend, result, task: self.inbox.put(("agent_done", (backend, result, task), "")),
@@ -140,8 +146,47 @@ class VoiceAssistant:
             db = Path(os.path.expandvars(settings.goals.db_path)).expanduser()
             self.goals = GoalsService(db if db.is_absolute() else settings.base_dir / db,
                                       self.bus, settings.goals,
-                                      submit=lambda text, source: self.submit(text, source),
+                                      submit=lambda text, source, brain="": self.submit(text, source, brain=brain),
                                       busy=lambda: self.runner.running or not self.inbox.empty())
+
+        # What today is (weather, markets, news, holidays, calendars) and what's on it.
+        # Both bring things up unasked: the greeting, the reminders, the evening check-in.
+        def data_path(value: str) -> Path:
+            path = Path(os.path.expandvars(value)).expanduser()
+            return path if path.is_absolute() else settings.base_dir / path
+
+        self.today = None
+        if settings.today.enabled:
+            from .today import TodayService
+
+            self.today = TodayService(settings.today, data_path(settings.today.cache_path),
+                                      data_path(settings.today.state_path), self.bus,
+                                      briefing_path=data_path(settings.ambient.cache_path))
+        self.schedule = None
+        if settings.schedule.enabled:
+            from .schedule import ScheduleService
+
+            self.schedule = ScheduleService(
+                data_path(settings.schedule.db_path), self.bus, settings.schedule,
+                announce=self._remind,
+                offer=lambda question, request, answered: self.controller.offer(question, request, answered),
+                calendar=self.today.personal_events if self.today else None,
+                busy=lambda: self.runner.running or not self.inbox.empty() or self.controller.talk is not None)
+            if self.today:
+                self.today.agenda = self.schedule.lines
+
+        # AfterThought: remembers what you work on (in the apps you opt in) and brings a past
+        # memory up when what's in front of you connects to it. On-device; docs/afterthought.md.
+        self.afterthought = None
+        if settings.afterthought.enabled:
+            from .afterthought import AfterThoughtService
+
+            self.afterthought = AfterThoughtService(
+                data_path(settings.afterthought.db_path), self.bus, settings.afterthought,
+                notify=self._tray_note,
+                offer=lambda question, answered: self.controller.offer(question, "", answered),
+                can_speak=self._free_to_speak,
+                known=lambda: [w for w in self.profile.hotwords().split(", ") if w])
 
         # Capture and publishing: the hands. The recorder writes into the inbox folder;
         # the publish service stages drafts and sends none of them without your word.
@@ -158,6 +203,14 @@ class VoiceAssistant:
             db = Path(os.path.expandvars(settings.publish.db_path)).expanduser()
             self.publisher = PublishService(db if db.is_absolute() else settings.base_dir / db,
                                             self.bus, workspace=settings.workspace)
+            # Unposted projects -> LinkedIn drafts. Hung off the publisher so the voice
+            # handlers and tools reach it the same way they reach the gate.
+            if settings.showcase.enabled:
+                from .publish.showcase import Showcase, free_writer
+
+                self.publisher.showcase = Showcase(settings.showcase, self.publisher, settings.base_dir,
+                                                   self.bus, ask=free_writer(self.registry),
+                                                   notify=self._tray_note)
 
         self.server = None
         if settings.ui.web_dashboard or self.mode != "browser":
@@ -178,6 +231,12 @@ class VoiceAssistant:
                                           graph_tracker=self.graph, profile=self.profile, history=self.history,
                                           ambient=self.ambient, awareness=self.awareness,
                                           host=settings.ui.host, token=token)
+
+        # The Chrome extension connects to the server above; this says whether it may drive.
+        from .automation.extension import BRIDGE
+
+        BRIDGE.driver = settings.browser.driver
+        BRIDGE.on_call = lambda line, ok: self.bus.log(f"Chrome extension: {line}", "info" if ok else "warn")
 
         # The phone, when it is set up: a client for the Termux bridge over Tailscale.
         from .phone import PhoneBridge
@@ -200,11 +259,17 @@ class VoiceAssistant:
             from .automation.service import AutomationService
 
             folder = Path(os.path.expandvars(settings.automations.folder)).expanduser()
+            # Jobs handed to other apps (the Antigravity IDE, the Claude app), watched in the
+            # background so they never hold anything up (assistant/automation/watch.py).
+            from .automation.watch import WatchService
+
+            self.watches = WatchService(say=lambda text: self.controller.say(text), live=self.watcher)
             self.automations = automations = AutomationService(
                 folder if folder.is_absolute() else settings.base_dir / folder, self.bus,
                 open_app=lambda name: bool(self.local_system and self.local_system.open(name, kind="app").ok),
                 phone=self.phone,
                 say=lambda text: self.controller.say(text),
+                watches=self.watches,
             )
 
         # Counts which route answered each request, so the claim that Nova gets cheaper
@@ -212,6 +277,34 @@ class VoiceAssistant:
         from .routes import RouteCounter
 
         self.routes = RouteCounter(settings.base_dir / "data" / "routes.json", self.bus)
+
+        # The order to try things in, per kind of request, and what has worked (ladders.toml).
+        self.ladders = None
+        if settings.ladders.enabled:
+            from .ladders import LadderService
+            from .paths import cli_command, main_command
+
+            def from_base(value: str) -> Path:
+                path = Path(os.path.expandvars(value)).expanduser()
+                return path if path.is_absolute() else settings.base_dir / path
+
+            self.ladders = LadderService(from_base(settings.ladders.file), from_base(settings.ladders.memory),
+                                         self.bus, main=main_command(), cli=cli_command())
+
+        # What every brain spent and what the cheaper routes saved (assistant/usage).
+        self.usage = None
+        if settings.usage.enabled:
+            from .usage import UsageService
+
+            def under_base(value: str) -> Path:
+                path = Path(os.path.expandvars(value)).expanduser()
+                return path if path.is_absolute() else settings.base_dir / path
+
+            self.usage = UsageService(under_base(settings.usage.db_path), self.bus,
+                                      under_base(settings.sessions.folder),
+                                      settings.base_dir / "data" / "routes.json", automations)
+            if self.server:
+                self.server.usage = self.usage
 
         self.promotion = None
         if settings.promotion.enabled:
@@ -276,11 +369,27 @@ class VoiceAssistant:
             delegate=self._delegate_to_claude, delegate_agy=self._delegate_to_agy,
             workspace=settings.workspace,
             runner=self.runner, capture=self.capture, publisher=self.publisher, goals=self.goals,
+            schedule=self.schedule, afterthought=self.afterthought,
+            watcher=self.watcher,
             skills=installed_skills, skill_limit=settings.skills.read_limit,
             capture_settings=settings.capture, orchestrator=self.orchestrator, plan=self.plan,
             profile=self.profile, assistant_name=settings.assistant.name,
             browser=settings.browser.enabled,
         ))
+
+        # Whose voice: only yours, once it has learned it (assistant/audio/voiceid.py).
+        # Building this loads nothing; the model is only opened for a voiceprint.
+        self.voice_id = None
+        if settings.voice_id.enabled:
+            from .audio.voiceid import VoiceID
+
+            def from_data(value: str) -> Path:
+                path = Path(os.path.expandvars(value)).expanduser()
+                return path if path.is_absolute() else settings.base_dir / path
+
+            self.voice_id = VoiceID(from_data(settings.voice_id.model), from_data(settings.voice_id.profile),
+                                    from_data(settings.voice_id.log), threshold=settings.voice_id.threshold,
+                                    enforce=settings.voice_id.enforce)
 
         self.controller = Controller(
             settings, self.bus, self.speaker, self.registry, self.plan, self.runner,
@@ -290,14 +399,25 @@ class VoiceAssistant:
             phone=self.phone,
             goals=self.goals,
             recipes=self.recipes,
+            ladders=self.ladders,
+            voice_id=self.voice_id,
             orchestrator=self.orchestrator,
+            watcher=self.watcher,
             capture=self.capture,
             publisher=self.publisher,
             capture_settings=settings.capture,
         )
+        if self.voice_id is not None:
+            self.voice_id.on_enrol_progress = self.controller.voice_progress
+            self.voice_id.on_enrolled = self.controller.say
         self.profile.on_change(self._apply_profile)
         self.profile.announce()  # agents, speech words and the canvas get the saved profile
         self.controller.restore_queue(self._saved_queue)
+        self.controller.today, self.controller.schedule = self.today, self.schedule
+        self.controller.afterthought = self.afterthought
+        if self.server is not None:
+            self.server.afterthought = self.afterthought
+        self._greeting = threading.Lock()
         if self.local_system:
             self.controller.publish_quick_actions()  # the chips are there before the first request
 
@@ -329,11 +449,25 @@ class VoiceAssistant:
         if backend is None or not backend.is_available():
             return missing
 
+        # A session already in a turn gets no second message: the two would share one
+        # reply stream, and one job would wait forever for an answer the other took.
+        spawned = getattr(backend, "busy", False)
+        if spawned:
+            backend = backend.spawn()
+
         def on_event(event) -> None:
             self.bus.publish("agent", kind=event.kind, backend=backend.label,
                              tool=event.tool, text=event.text[:400])
 
-        result = backend.run(task, on_event, self.runner.cancel_event)
+        try:
+            result = backend.run(task, on_event, self.runner.cancel_event)
+        finally:
+            if spawned:
+                backend.close()   # a one-job session: don't leave its process running
+        # Not through the runner, so no result event: say what it cost, or the usage
+        # ledger never sees a Claude turn a free model handed over (assistant/usage).
+        self.bus.publish("usage", backend=backend.label, data=result.data, request=task,
+                         ok=result.ok, text=result.summary or "", seconds=result.seconds)
         if result.cancelled:
             return "Cancelled."
         return result.summary or (f"{backend.label} finished." if result.ok
@@ -346,15 +480,16 @@ class VoiceAssistant:
         return self._delegate("antigravity", task, "Antigravity isn't installed on this machine.")
 
     # -- input ------------------------------------------------------------------
-    def submit(self, text: str, source: str, origin: str = "desktop") -> None:
+    def submit(self, text: str, source: str, origin: str = "desktop", brain: str = "") -> None:
         """`source` is how it arrived (voice, keyboard, canvas); `origin` is which
-        machine it came from, so the answer knows where to go back to."""
+        machine it came from, so the answer knows where to go back to. `brain` pins
+        the agent that takes it, for a standing goal only one of them can do."""
         text = text.strip()
         if not text:
             return
         if self.controller.try_urgent(text, source, origin):
             return
-        self.inbox.put((source, text, origin))
+        self.inbox.put((source, text, origin, brain))
 
     def _keyboard_loop(self) -> None:
         while not self._quit.is_set():
@@ -368,14 +503,14 @@ class VoiceAssistant:
     def _work_loop(self) -> None:
         while not self._quit.is_set():
             try:
-                source, payload, origin = self.inbox.get(timeout=0.25)
+                source, payload, origin, *pinned = self.inbox.get(timeout=0.25)
             except queue.Empty:
                 continue
             try:
                 if source == "agent_done":
                     self.controller.on_agent_finished(*payload)
                 else:
-                    self.controller.handle(payload, source, origin)
+                    self.controller.handle(payload, source, origin, brain=pinned[0] if pinned else "")
             except Exception as exc:  # one bad request must not stop the assistant
                 self.bus.log(f"Error handling '{payload}': {exc}", "error")
             if self.text_mode:
@@ -461,9 +596,17 @@ class VoiceAssistant:
                 self.journal.stop()
             if self.goals:
                 self.goals.stop()
+            if self.schedule:
+                self.schedule.stop()
+            if self.afterthought:
+                self.afterthought.stop()
+            if self.today:
+                self.today.stop()
             if self.capture and self.capture.running:
                 self.capture.stop()  # a half-written recording is worse than a short one
             if self.publisher:
+                if self.publisher.showcase is not None:
+                    self.publisher.showcase.stop()
                 self.publisher.close()
             if self.recipes:
                 self.recipes.close()
@@ -480,7 +623,9 @@ class VoiceAssistant:
             backend = self.registry.backends.get(name)
             if backend is None or not backend.is_available():
                 continue
-            result = backend.spawn().run(prompt, lambda event: None, threading.Event())
+            twin = backend.spawn()
+            twin.key_lane = "background"   # narration never spends the conversation's key
+            result = twin.run(prompt, lambda event: None, threading.Event())
             if result.ok and result.summary.strip():
                 return result.summary.strip()
         return ""
@@ -490,16 +635,131 @@ class VoiceAssistant:
         if self.transcriber is not None and hasattr(self.transcriber, "hotwords"):
             self.transcriber.hotwords = profile.hotwords(self.settings.assistant.wake_word) or None
 
-    def _greet(self) -> None:
-        name = self.settings.assistant.name
-        wake = self.settings.assistant.wake_word
-        hint = f" Say {wake} to get my attention." if wake else ""
+    def _greet(self, reason: str = "start") -> None:
+        """Say hello the way a person would: today's weather, news, markets and plans,
+        written fresh by a free model every time (assistant/today/greeting.py).
+
+        Runs on its own thread: fetching and wording take a second or two, and the
+        window and microphone must not wait for them."""
         self.bus.log(f"Ready in {time.perf_counter() - STARTED_AT:.1f}s after launch.")
-        waiting = len(self.controller.waiting)
-        queued = (f" {waiting} request{'s were' if waiting != 1 else ' was'} still waiting from last time: "
-                  "say resume to start, or clear the queue.") if waiting else ""
-        user = f" {self.profile.preferred_name}" if self.profile.preferred_name else ""
-        self.controller.say(f"Hi{user}, I'm {name}. Tell me what to do.{hint}{queued}")
+        threading.Thread(target=self._say_greeting, args=(reason,), name="greeting", daemon=True).start()
+
+    def on_window_shown(self) -> None:
+        """The window came up from the tray: greet again if it has been a while."""
+        if self.today and self.settings.today.greet:
+            last = float(self.today.state().get("greeted_at") or 0)
+            if time.time() - last >= self.settings.today.greet_again_hours * 3600:
+                self._greet("shown")
+
+    def _say_greeting(self, reason: str) -> None:
+        if not self._greeting.acquire(blocking=False):
+            return   # one greeting at a time: startup and a window restore can race
+        try:
+            text, mail = self._compose_greeting()
+            waiting = len(self.controller.waiting)
+            if waiting:
+                text += (f" {waiting} request{'s were' if waiting != 1 else ' was'} still waiting from last time: "
+                         "say resume to start, or clear the queue.")
+            self.controller.say(text)
+            if mail:
+                self._mail_digest()
+        except Exception as error:   # a greeting must never stop Nova starting
+            self.bus.log(f"greeting failed: {error}", "warn")
+            name = f" {self.profile.preferred_name}" if self.profile.preferred_name else ""
+            self.controller.say(f"Hi{name}. What do you need?")
+        finally:
+            self._greeting.release()
+
+    def _compose_greeting(self) -> tuple[str, bool]:
+        """(words to say, whether the day's mail check follows)."""
+        user = self.profile.preferred_name or ""
+        if not (self.today and self.settings.today.greet):
+            wake = self.settings.assistant.wake_word
+            return (f"Hi{' ' + user if user else ''}, I'm {self.settings.assistant.name}. Tell me what to do."
+                    + (f" Say {wake} to get my attention." if wake else "")), False
+        from datetime import datetime, timedelta
+
+        from .today import greeting
+
+        self.today.refresh_if_stale(10 * 60)
+        state = self.today.state()
+        now = datetime.now()
+        today = now.date().isoformat()
+        claude = self.registry.backends.get("claude")
+        mail = bool(self.settings.today.mail_on_first_open and state.get("mail_day") != today
+                    and claude is not None and claude.is_available())
+        schedule = self.schedule.lines(now, datetime(now.year, now.month, now.day) + timedelta(days=1), 5) \
+            if self.schedule else []
+        facts = self.today.facts()
+        recent = list(state.get("recent", []))
+        text = self._compose(greeting.instructions(user, recent, mail), greeting.facts_prompt(facts, schedule))
+        if not text:
+            text = greeting.fallback(facts, user, schedule, mail)
+        self.today.remember(greeted_at=time.time(), recent=(recent + [text])[-6:],
+                            **({"mail_day": today} if mail else {}))
+        return text, mail
+
+    def _compose(self, instructions: str, prompt: str) -> str:
+        """One tool-free turn on a free model, on the background key. "" if none answers."""
+        for name in ("groq", "openrouter"):
+            backend = self.registry.backends.get(name)
+            if backend is None or not backend.is_available() or not hasattr(backend, "talk"):
+                continue
+            twin = backend.spawn()
+            twin.key_lane = "background"
+            twin.talk = instructions
+            result = twin.run(prompt, lambda event: None, threading.Event())
+            if result.ok and result.summary.strip():
+                return result.summary.strip()
+        return ""
+
+    def _mail_digest(self) -> None:
+        """The day's first look at the mail, on Claude (it holds the Gmail connector).
+        The hourly mail goal then carries on from here instead of re-reading the same mail."""
+        state = self.today.state()
+        since = int(state.get("mail_digest_at") or time.time() - 86400)
+        self.today.remember(mail_digest_at=time.time())
+        if self.goals:
+            self.goals.defer_matching("Gmail")
+        self.submit(
+            f"Go through my Gmail for everything that arrived since {since} (search: after:{since}). "
+            "Tell me the important ones in two to four spoken sentences: who it's from and what it needs, "
+            "most urgent first. Skip newsletters, promotions and automated noise. If nothing important came "
+            "in, say so in one relaxed sentence. Only read: don't reply, send, archive, label or delete anything.",
+            "goal", brain="claude")
+
+    def _tray_note(self, text: str) -> None:
+        tray = getattr(getattr(self, "shell", None), "tray", None)
+        if tray is not None:
+            try:
+                tray.notify(text, self.settings.assistant.name)
+            except Exception:
+                pass
+
+    def _free_to_speak(self) -> bool:
+        """An unprompted memory may only be spoken into silence: not over a reply, a task,
+        a conversation, or a question Nova is still waiting on."""
+        c = self.controller
+        return not (self.speaker.is_busy or self.runner.running or c.talk is not None
+                    or c._pending_offer is not None or not self.inbox.empty())
+
+    def _remind(self, text: str) -> None:
+        """A reminder goes everywhere at once: out loud, the tray, the phone."""
+        self.controller.announce(text)
+        tray = getattr(getattr(self, "shell", None), "tray", None)
+        if tray is not None:
+            try:
+                tray.notify(text, self.settings.assistant.name)
+            except Exception:
+                pass
+        if self.settings.schedule.phone and self.phone is not None and self.phone.configured:
+            threading.Thread(target=self._remind_phone, args=(text,), daemon=True).start()
+
+    def _remind_phone(self, text: str) -> None:
+        try:
+            self.phone.call("notify", {"title": self.settings.assistant.name, "text": text})
+        except Exception as error:
+            self.bus.log(f"reminder didn't reach the phone: {error}", "warn")
 
     def _start_outputs(self):
         dashboard = None
@@ -521,6 +781,16 @@ class VoiceAssistant:
             self.journal.start()
         if self.goals:
             self.goals.start()
+        if self.today:
+            self.today.start()
+        if self.publisher is not None and self.publisher.showcase is not None:
+            self.publisher.showcase.start()
+        if self.schedule:
+            self.schedule.start()
+        if self.afterthought:
+            self.afterthought.start()
+        if self.usage:
+            self.usage.start()
         if self.server:
             try:
                 self.server.start()
@@ -540,7 +810,7 @@ class VoiceAssistant:
                                        hotwords=self.profile.hotwords(self.settings.assistant.wake_word) or None)
         self.transcriber = transcriber
         self.mic = MicrophoneListener(self.settings.speech, transcriber, self.speaker, self.bus,
-                                      on_utterance=lambda t: self.submit(t, "voice"))
+                                      on_utterance=lambda t: self.submit(t, "voice"), voice=self.voice_id)
         self.mic.start()
         self._greet()
 

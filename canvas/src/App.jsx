@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Awareness from "./Awareness.jsx";
+import Memory from "./Memory.jsx";
 import Briefing from "./Briefing.jsx";
 import FlowCanvas from "./FlowCanvas.jsx";
 import History from "./History.jsx";
+import Usage from "./Usage.jsx";
 import Inspector from "./Inspector.jsx";
 import NovaEntity from "./NovaEntity.jsx";
 import Profile from "./Profile.jsx";
@@ -20,6 +22,23 @@ function MicMeter({ mic, status }) {
       {bars.map((threshold) => (
         <i key={threshold} className={level >= threshold ? "on" : ""} />
       ))}
+    </span>
+  );
+}
+
+// "thinking" is the mechanism; this is the work. Reads the live slice the watcher
+// broadcasts, so this line, the voice answer and the phone all say the same thing.
+function LiveLine({ live }) {
+  const job = live?.running?.[0];
+  const what = job ? job.phase || job.command?.tool?.replace(/_/g, " ") : live?.macro;
+  if (!what) return null;
+  const target = job && !job.phase ? job.command?.target : "";
+  const more = (live?.running?.length ?? 0) - 1;
+  return (
+    <span className="live-line" title={target ? `${what} on ${target}` : what}>
+      {what}
+      {target ? <em>{target}</em> : null}
+      {more > 0 ? <b>+{more}</b> : null}
     </span>
   );
 }
@@ -89,7 +108,7 @@ function useInkLevel() {
   return [level, () => setLevel((current) => (current === "dim" ? "bright" : "dim"))];
 }
 
-const VIEWS = { "#profile": "profile", "#history": "history", "#awareness": "awareness", "#reader": "reader" };
+const VIEWS = { "#profile": "profile", "#history": "history", "#awareness": "awareness", "#memory": "memory", "#usage": "usage", "#reader": "reader" };
 
 export default function App() {
   const { snapshot, connected, say, dismissDenials } = useAssistant();
@@ -252,13 +271,41 @@ export default function App() {
             {snapshot?.awareness?.watching ? <i className="live-dot" /> : null}
             Activity
           </button>
+          <button
+            type="button"
+            className={view === "memory" ? "on" : ""}
+            onClick={() => toggleView("memory")}
+            aria-pressed={view === "memory"}
+            title={snapshot?.afterthought?.suggestion?.text ?? "What Nova remembers, and what it brought up"}
+          >
+            {snapshot?.afterthought?.watching ? <i className="live-dot" /> : null}
+            Memory
+          </button>
+          <button
+            type="button"
+            className={view === "usage" ? "on" : ""}
+            onClick={() => toggleView("usage")}
+            aria-pressed={view === "usage"}
+            title="Tokens spent and saved"
+          >
+            Usage
+          </button>
         </nav>
+
+        {snapshot?.talk?.kind ? (
+          <div className={`talk-chip talk-${snapshot.talk.kind}`} title='Say "back to work" to stop. No wake word needed meanwhile.'>
+            <i className="live-dot" />
+            {snapshot.talk.label}
+          </div>
+        ) : null}
 
         <div className={`status status-${status}`}>
           <span className="orb" />
           {status}
           <MicMeter mic={snapshot?.mic} status={status} />
         </div>
+
+        <LiveLine live={snapshot?.live} />
 
         <span className="spacer" />
 
@@ -335,6 +382,10 @@ export default function App() {
         <History onClose={showCanvas} live={snapshot?.history} />
       ) : view === "awareness" ? (
         <Awareness onClose={showCanvas} revision={snapshot?.awareness?.revision} />
+      ) : view === "memory" ? (
+        <Memory onClose={showCanvas} revision={snapshot?.afterthought?.revision} />
+      ) : view === "usage" ? (
+        <Usage onClose={showCanvas} revision={snapshot?.usage?.revision} />
       ) : (
         <>
           {/* One rail, not two: what is running now, then what already ran. Lane chips
@@ -358,7 +409,7 @@ export default function App() {
                       }}
                     >
                       <i className="lane-dot" />
-                      {laneGraph.label?.slice(0, 26) || laneGraph.title}
+                      {laneGraph.short || laneGraph.title}
                     </button>
                   ))
                 : null}
@@ -374,7 +425,7 @@ export default function App() {
                     setSelected(null);
                   }}
                 >
-                  {item.label || `request ${item.run}`}
+                  {item.short || item.label || (item.run ? `request ${item.run}` : "earlier task")}
                 </button>
               ))}
             </div>

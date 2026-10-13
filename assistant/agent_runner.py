@@ -206,6 +206,7 @@ class AgentRunner:
                 # inferred from tool names, and it is why the narration can say "finished
                 # scaffolding, now writing the copy" rather than "running a command".
                 if task.progress is not None and task.progress.declared(event.text):
+                    self.bus.publish("phase", task=task.id, phase=task.progress.latest)
                     if (self.focus == task.id and not self.speaker.is_busy
                             and time.time() - last_spoken > MILESTONE_EVERY_SECONDS):
                         self.speaker.say(task.progress.line())

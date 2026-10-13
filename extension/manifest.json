@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Nova",
+  "version": "0.1.0",
+  "description": "Lets Nova, the voice assistant on this PC, read web pages and fill forms in this browser.",
+  "minimum_chrome_version": "116",
+  "permissions": ["tabs", "scripting", "storage", "alarms", "cookies", "debugger"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Nova", "default_popup": "popup.html" }
+}

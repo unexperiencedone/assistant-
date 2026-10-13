@@ -15,7 +15,7 @@ Goal: get the answer with the fewest, cheapest commands. Every command and every
   - `python C:\Assisstant\sysindex.py dupes "<folder>" [--min-size 1MB]` (duplicate report, never deletes)
   - `python C:\Assisstant\sysindex.py reveal "<path>"` 路 `used "<path>"` 路 `top --kind app` 路 `stats` 路 `index`
   - Output is one `kind<TAB>path` per line. Exit code 1 means not found; fall back to the recipes in AGENTS.md.
-- Clicking inside apps: desktop apps via `python C:\Assisstant\main.py ui ...` (UI Automation), websites via the Playwright MCP tools, repeatable tasks via `python C:\Assisstant\main.py macro run "<phrase>"`. Never click by pixel coordinates.
+- Clicking inside apps: desktop apps via `python C:\Assisstant\main.py ui ...` (UI Automation), websites via `python C:\Assisstant\main.py web ...` (the Nova Chrome extension, your real logged-in Chrome; Playwright MCP only when `web status` says not connected), repeatable tasks via `python C:\Assisstant\main.py macro run "<phrase>"`. Never click by pixel coordinates.
 - Never delete, move or overwrite user files without explicit confirmation. Use the Recycle Bin, not permanent delete.
 - Creating written documents (articles, reports, blogs, Word docs): follow the formatting and diagram placement rules in section 11 and `docs/document_standards.md`. Always introduce visuals in text, format captions with takeaways, and pace diagrams every 300-500 words.
 <!-- quickref:end -->
@@ -95,14 +95,15 @@ Add-Type -AssemblyName Microsoft.VisualBasic
 ## 6. Clicking buttons in apps and web pages
 
 1. **Existing automation?** `python C:\Assisstant\main.py macro list`, then `macro run "<phrase>"`. Steps live in `automations/*.toml` (format: `automations/README.md`).
-2. **Websites:** Playwright MCP tools (navigate, snapshot, click by ref). Don't write Selenium or Playwright scripts for one-off tasks.
+2. **Websites:** `main.py web` first (docs/extension.md): `web open <url>` prints a numbered element map, then `web click 7`, `web fill 3 "text"`, `web form 1=Ada 2=a@b.c 4=India --submit 9`, `web find "price"`. Each action prints only what changed, so never re-read the whole page to check. `web read` only when you need the text. It is the user's own Chrome with real logins, so ask before anything that pays, sends or submits. If `web status` says not connected, use the Playwright MCP tools. Don't write Selenium or Playwright scripts for one-off tasks.
 3. **Desktop apps** (Calculator, Spotify, Notepad, Settings): UI Automation by control name.
    - `main.py ui controls "<window title>" --filter <word>` prints `Type<TAB>Name<TAB>AutomationId`
    - `main.py ui click "<window>" "<Name>"` (or `--auto-id <id>`) 路 `ui type "<window>" "<text>" [--into "<field>"]` 路 `ui keys "<window>" "^l"` 路 `ui read "<window>" --auto-id <id>`
    - List once with `--filter`, then act by exact name. No pixel clicks or blind keystrokes.
 4. **Word documents:** write the content as Markdown to a .md file, then `main.py word write --file x.md --title "..."` (Word's COM API: opens the doc in Word, saves to Documents). Never type an article through Word's UI.
-5. **Repeated task:** save it as `automations/<name>.toml` so it runs next time without a model. This is now mostly automatic -- see section 12: once a kind of request repeats enough, or the user says "remember that", you'll be asked to do this yourself.
-6. Ask before anything that buys, sends messages or submits forms for the user.
+5. **When an approach fails, take the next one, never the same command again.** `ladders.toml` (docs/ladders.md) gives the order per kind of request (click, open, close, find a file, fill a form, mail, message, research, plan, write, app control); a matching request arrives with its ladder, and with what worked last time on that site or app. `web click` already escalates by itself (real mouse click, app link through Windows, Windows accessibility), so a click it reports as unchanged needs a different element, not a retry.
+6. **Repeated task:** save it as `automations/<name>.toml` so it runs next time without a model. This is now mostly automatic -- see section 12: once a kind of request repeats enough, or the user says "remember that", you'll be asked to do this yourself.
+7. Ask before anything that buys, sends messages or submits forms for the user.
 
 ## 7. Token-saving rules
 
@@ -141,12 +142,16 @@ Python 3.11 voice assistant. Entry point `main.py`, settings in `config.toml` 鈫
 | Agents: live `claude -p`, `agy -p`, Groq + OpenRouter (`chat_api.py` + `tools.py`) | `agents/` |
 | Task pool (parallel tasks, errand/big-job triage), plan DAG, live graph (per-task lanes) | `agent_runner.py`, `triage.py`, `planning/` |
 | Raw per-turn agent logs, restart persistence | `sessions.py`, `store.py` |
+| Live activity: what is running and what ran last, one answer for the voice, the `nova_status` tool, the canvas and the phone | `watcher.py`; the `live` state slice (not `activity`, which is the append-only log feed) |
 | Work history: timed sessions (idle close, never mid-task), search, recap (docs/history.md) | `history/`; screen `canvas/src/History.jsx` |
 | User profile: schema, visibility per agent, prompt context, speech hints (docs/personalization.md) | `profile/`; editor `canvas/src/Profile.jsx` |
 | Briefing panel: the on-ask weather/markets/headlines cache (`data/ambient.json`) | `ambient/service.py`; headlines alone are instant and agent-free via `ambient/news.py` ("news briefing") |
+| Today: date, MSN weather, markets, Indian/finance news, holidays and iCal calendars, fetched without an agent turn; one context line on every agent turn; the generated greeting on open (docs/today.md) | `today/` (`sources.py`, `ical.py`, `service.py`, `greeting.py`) |
+| AfterThought, the proactive memory: opted-in apps' titles, accessible text and clipboard, chunked, secret-stripped, embedded locally (MiniLM), 7-day short-term + nightly consolidation into a long-term KB; suggests a past memory with its source when the current window connects (tray, Memory screen, voice "useful?"). From a shell: `python main.py memory search "..."` 路 `memory remember "..."` 路 `memory status` (docs/afterthought.md) | `afterthought/` (`capture.py`, `privacy.py`, `chunker.py`, `embed.py`, `store.py`, `rank.py`, `consolidate.py`, `service.py`); screen `canvas/src/Memory.jsx`; tools `recall_memory` / `remember_note` |
+| Schedule and proactive reminders (60/30/15 min, spoken + tray + phone, never held back), evening offer to plan an empty tomorrow. From a shell: `python main.py schedule add "Standup" --at "tomorrow 10am"` 路 `schedule list tomorrow` 路 `schedule remove <id>` | `schedule/` (`service.py`, `store.py`, `when.py`); tools `schedule_add` / `schedule_list` / `schedule_remove` |
 | Standing goals: the queue Nova acts on unprompted, quiet hours, one-at-a-time firing (docs/standing_agent.md) | `goals/` (`store.py`, `service.py`) |
 | Capture and edit: screen recording (ffmpeg gdigrab), phone camera, local cut/caption/reframe | `capture/` (`screen.py`, `phone.py`, `edit.py`, `inbox.py`) |
-| Publishing: GitHub (gh CLI), LinkedIn, Instagram, and the approval gate in front of all three (docs/publishing.md) | `publish/` (`gate.py` stages and sends, `service.py` wires the arms) |
+| Publishing: GitHub (gh CLI), LinkedIn, Instagram, and the approval gate in front of all three (docs/publishing.md) | `publish/` (`gate.py` stages and sends, `service.py` wires the arms); unposted projects -> LinkedIn drafts: `showcase.py` + `projects.py` + `ledger.py`, sign-in `linkedin_auth.py`, CLI `python main.py linkedin scan\|draft\|auth` |
 | Voice drift check: fixed probes scored against the character, `python main.py voice-check` | `persona/drift.py`, `persona/__main__.py` |
 | Journal: one entry per finished day, written from history + awareness, fed back as continuity (docs/journal.md) | `journal/` (`writer.py` builds the facts, `service.py` writes and serves `context()`) |
 | Activity awareness: window-title probe, folding into sessions, retention, questions | `awareness/` (`collector.py`, `collapse.py`, `store.py`); screen `canvas/src/Awareness.jsx` |
@@ -156,6 +161,12 @@ Python 3.11 voice assistant. Entry point `main.py`, settings in `config.toml` 鈫
 | Recipes: how a job went when it went well, fed back on the next similar request (docs/recipes.md) | `recipes/` (`store.py`, `service.py`); recorded in `controller.on_agent_finished`, injected in `controller.dispatch` |
 | Local index (SQLite, per-kind frecency, corrections, command chips) | `system/` (`ranking.py`, `commands.py`) |
 | UI automation + TOML automations | `automation/` (`desktop.py`, `browser.py`, `macros.py`); files in `automations/` |
+| Background watching of jobs handed to other apps (Antigravity IDE, Claude app): WinEvent hooks + folder changes, a look only when events settle, spoken when done / waiting for you / overdue; shown in the live view | `automation/watch.py`; the `watch` automation step; `Watcher.start_external` |
+| Voice recognition, phase 1: only the owner's voice is heard once enrolled ("learn my voice"); WeSpeaker ONNX voiceprint computed beside Whisper; scores logged for phase 2 (docs/voice_id.md) | `audio/voiceid.py`; hooks in `audio/microphone.py`; `[voice_id]` settings |
+| Talk modes: "let's chat" / "let's brainstorm about X"; no wake word between turns, speech never becomes an action, free model with no tools, delivery tags for the voice, brainstorm recaps saved (docs/conversation.md) | `conversation.py`; `controller._converse` / `_start_talk`; `ChatAgent.talk`; state slice `talk` |
+| Fallback ladders: the order to try things in per kind of request, injected at dispatch, learned per site/app (docs/ladders.md) | `ladders.py`, `ladders.toml` at the repo root, memory `data/ladders.json`; the click fallback is `finish_click` in `automation/extension.py` |
+| Usage analytics: tokens spent per brain (providers' own counts, Claude list price), savings estimated from this machine's Claude turns, where to save next (docs/usage.md) | `usage/` (`ledger.py`, `backfill.py`, `report.py`); `python main.py usage`; screen `canvas/src/Usage.jsx`. Claude's `total_cost_usd` is a per-process running total: use the per-turn `cost_usd` claude_cli reports |
+| Chrome extension: drives the user's own Chrome, numbered element maps + diffs, `main.py web` (docs/extension.md) | `extension/` (MV3: `content.js`, `background.js`); `automation/extension.py` (`BRIDGE`, `ExtensionBrowser`, `active_browser`); `/ext` in `ui/server.py` |
 | Canvas server / frontend | `ui/server.py`; React source in `canvas/` (`npm run build`) |
 | Reaching Nova from a phone: shared-secret token on every request, bind address, Tailscale (docs/phone.md) | `ui/auth.py`; `[ui] host` / `require_token` / `token_file` |
 | Window, tray, hotkey | `ui/shell.py`, `ui/win32.py` |

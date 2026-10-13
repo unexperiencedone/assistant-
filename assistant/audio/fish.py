@@ -35,6 +35,7 @@ import json
 import os
 import re
 import struct
+import time
 import urllib.request
 from pathlib import Path
 
@@ -122,6 +123,7 @@ class FishSpeaker(Speaker):
         if cached is not None and cached.exists():
             try:
                 if self._play(iter([cached.read_bytes()])):
+                    self._touch(cached)   # played, so not a candidate for the next sweep
                     self._spoke("fish", "cached")
                     return
             except OSError:
@@ -145,7 +147,11 @@ class FishSpeaker(Speaker):
 
     def _stream(self, text: str, cache_to: Path | None) -> bool:
         """Fetch and play at the same time. True if anything was heard."""
-        payload = {"text": text, "format": "pcm"}
+        payload = {"text": text, "format": "pcm",
+                   "temperature": float(getattr(self.settings, "fish_temperature", 0.6) or 0.6),
+                   "top_p": float(getattr(self.settings, "fish_top_p", 0.7) or 0.7)}
+        # Without a fixed voice, Fish chooses one per request, and replies are fetched a
+        # sentence at a time: the voice changed mid-reply. Always send one.
         if getattr(self.settings, "fish_voice", ""):
             payload["reference_id"] = self.settings.fish_voice
         request = urllib.request.Request(
@@ -185,6 +191,8 @@ class FishSpeaker(Speaker):
                 cache_to.write_bytes(bytes(collected))
             except OSError:
                 pass
+            else:
+                self._sweep()   # the only moment the cache can have outgrown its cap
         return played
 
     def _output(self):
@@ -256,6 +264,52 @@ class FishSpeaker(Speaker):
             return None
         key = f"{getattr(self.settings, 'fish_voice', '')}|{text}".encode("utf-8")
         return self._cache_dir / f"{hashlib.blake2b(key, digest_size=12).hexdigest()}.pcm"
+
+    def _touch(self, path: Path) -> None:
+        """Mark a clip as played, so the sweep can tell warm from cold.
+
+        Modification time is the wrong signal on a read-only hit -- every clip would look
+        as old as the day it was synthesised, and the sweep would evict the lines Nova says
+        most. This writes access time only; the bytes are untouched.
+        """
+        try:
+            now = time.time()
+            os.utime(path, (now, path.stat().st_mtime))
+        except OSError:
+            pass
+
+    def _sweep(self) -> None:
+        """Hold the cache under its cap, coldest clip first.
+
+        Called after a clip is written rather than on a timer: the cache only ever grows
+        at that moment, so that is the only moment it can need shrinking, and a timer
+        would be another thread to own for no gain.
+        """
+        cap = int(getattr(self.settings, "fish_cache_mb", 200) or 0) * 1024 * 1024
+        if self._cache_dir is None or cap <= 0:
+            return
+        try:
+            clips = [(p.stat().st_atime, p.stat().st_size, p)
+                     for p in self._cache_dir.glob("*.pcm")]
+        except OSError:
+            return
+        total = sum(size for _, size, _ in clips)
+        if total <= cap:
+            return
+        # Down to 80% rather than exactly to the cap, so a cache sitting on the line
+        # doesn't sweep on every single line spoken.
+        target = cap * 8 // 10
+        freed = 0
+        for _, size, path in sorted(clips):
+            if total - freed <= target:
+                break
+            try:
+                path.unlink()
+                freed += size
+            except OSError:
+                pass
+        if freed:
+            self.bus.log(f"voice cache: freed {freed // (1024 * 1024)} MB of clips not played lately")
 
     def _warn(self, reason: object) -> None:
         """Once per run. A voice that complains every sentence is worse than one that

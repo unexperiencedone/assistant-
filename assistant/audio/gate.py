@@ -29,6 +29,7 @@ class Transcript:
     avg_logprob: float | None = None        # duration-weighted over kept segments; None = engine has no score
     compression_ratio: float | None = None  # worst segment
     duration: float = 0.0                   # seconds of speech Whisper kept
+    spans: tuple = ()                       # (start, end) seconds of each kept segment
 
 
 # Whisper was trained on subtitles, so in noise it "hears" the lines videos end with.

@@ -18,11 +18,25 @@ So "success" alone means nothing; denials and tool errors are checked too.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Iterable
 
 from ..config import AntigravityAgentSettings
 from .base import AgentBackend, AgentEvent, short
+
+log = logging.getLogger("nova.agents.antigravity")
+
+# Antigravity's built-in browser: its own Chrome profile, no logins, driven by screenshots.
+OWN_BROWSER_TOOLS = {"browser_subagent", "open_browser_url", "read_browser_page", "click_browser_pixel",
+                     "capture_browser_screenshot", "capture_browser_console_logs"}
+
+
+def _extension_ready() -> bool:
+    from ..automation.extension import BRIDGE
+
+    return BRIDGE.usable()
+
 
 _PARAM_KEYS = ("CommandLine", "AbsolutePath", "TargetFile", "FilePath", "Url", "Query", "SearchPath", "Pattern", "DirectoryPath")
 _TEXT_KEYS = ("text", "message", "content")
@@ -68,6 +82,10 @@ class AntigravityCliAgent(AgentBackend):
         elif self._profile_update:
             task = f"(The user's profile was updated.)\n{self._profile_update}\n\n---\n\n{task}"
             self._profile_update = ""
+        elif _extension_ready():
+            from .rules import web_rule
+
+            task = f"({web_rule()})\n\n{task}"
         cmd = [exe, "-p", task, "--output-format", "stream-json"]
         if self.settings.mode:
             cmd += ["--mode", self.settings.mode]
@@ -118,6 +136,8 @@ class AntigravityCliAgent(AgentBackend):
             if index not in self._announced_steps:
                 self._announced_steps.add(index)
                 yield AgentEvent("tool", tool=tool, text=_describe(info.get("parameters") or {}))
+                if (tool in OWN_BROWSER_TOOLS or tool.startswith("browser_")) and _extension_ready():
+                    log.warning("Antigravity used its own browser (%s) instead of the Nova extension", tool)
             if state == "ERROR":
                 message = " ".join(str((info.get("error") or {}).get("message", "failed")).split())
                 self._errors.append(f"{tool}: {message}")
@@ -152,7 +172,8 @@ class AntigravityCliAgent(AgentBackend):
             failed = True
             response = f"Antigravity stopped after an error: {self._errors[-1]}"
         return AgentEvent("result", text=response,
-                          data={"is_error": failed, "status": status, "denied": denied, "errors": list(self._errors)})
+                          data={"is_error": failed, "status": status, "denied": denied, "errors": list(self._errors),
+                                "usage": result.get("usage") or {}})
 
     def _flush_text(self) -> Iterable[AgentEvent]:
         if self._text_buffer.strip():

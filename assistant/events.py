@@ -7,6 +7,8 @@ Topics used across the app:
     agent       {"kind": "start|text|tool|step|result|error", "backend": str, ...}
     backend     {"name": str}
     log         {"level": "info|warn|error", "text": str}
+    phase       {"task": str, "phase": str}   a milestone the agent declared
+    live        Watcher.state()  what is running and what ran last
 """
 
 from __future__ import annotations

@@ -68,7 +68,7 @@ class Dispatch(unittest.TestCase):
     def test_a_long_reply_is_spoken_short_but_shown_whole(self):
         shown = []
         self.bus.subscribe("transcript", lambda e: shown.append(e.data) if e.data["role"] == "assistant" else None)
-        reply = ("The Reserve Bank transfers the money to the banks. " * 12).strip()
+        reply = ("The Reserve Bank transfers the money to the banks. " * 30).strip()  # past what is spoken whole
         self.controller.on_agent_finished(FakeBackend(0), AgentResult(True, reply), "t9")
         self.assertEqual(reply, shown[-1]["text"], "the canvas must keep the whole reply")
         self.assertLess(len(self.said[-1]), len(reply), "speech should be the short version")

@@ -11,10 +11,11 @@ from .macros import Macro, MacroRunner, load_macros
 
 
 class AutomationService:
-    def __init__(self, folder: Path, bus: EventBus, open_app: Callable[[str], bool], say: Callable[[str], None], phone: Any = None) -> None:
+    def __init__(self, folder: Path, bus: EventBus, open_app: Callable[[str], bool], say: Callable[[str], None],
+                 phone: Any = None, watches: Any = None) -> None:
         self.folder = folder
         self.bus = bus
-        self.runner = MacroRunner(bus, open_app, say, phone=phone)
+        self.runner = MacroRunner(bus, open_app, say, phone=phone, watches=watches)
         self._macros: list[Macro] = []
         self._stamp: tuple = ()
         self.reload_if_changed()

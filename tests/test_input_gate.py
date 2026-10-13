@@ -48,6 +48,14 @@ class WakeWord(unittest.TestCase):
         self.assertFalse(strip_wake_word("Supernova open", "nova")[0])
         self.assertFalse(strip_wake_word("November rain", "nova")[0])
 
+    def test_conversational_openers_before_the_name(self):
+        """ "Yeah, Nova, ..." was ignored as having no wake word."""
+        self.assertEqual((True, "be with me"), strip_wake_word("Yeah, Nova, be with me", "nova"))
+        self.assertEqual((True, "stop"), strip_wake_word("Right, Nova, stop", "nova"))
+        self.assertEqual((True, "what now"), strip_wake_word("Well Nova, what now", "nova"))
+        self.assertEqual((True, "what have you been up to?"),
+                         strip_wake_word("So, Nova, what have you been up to?", "nova"))
+
     def test_common_mishearings_count(self):
         self.assertEqual((True, "open chrome"), strip_wake_word("OK, hey Noah open chrome", "nova"))
         self.assertEqual((True, "what time is it"), strip_wake_word("Novah what time is it", "nova"))

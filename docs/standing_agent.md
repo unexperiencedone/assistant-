@@ -54,6 +54,17 @@ guards a text, a call or a post still guards a goal. Three restraints:
 By voice: *"every morning, tell me what changed in my repos"* sets one; *"what are your
 standing goals"* reads them back. "Every morning" first fires tomorrow at 8, not instantly.
 
+A goal can also watch something instead of repeating itself:
+
+- **`{since}`** in its text becomes the Unix time of its last run (a day back on the first),
+  so `after:{since}` in a Gmail search reads only what is new.
+- **`brain`** pins the agent that runs it (`claude`), for work only one agent can do. It runs
+  in its own session and leaves the brain you are talking to selected.
+- **`[[QUIET]]`** as the whole reply means "looked, nothing to report". It is logged and
+  never spoken.
+
+The mail sweep is goal 1: hourly, on Claude (which holds the Gmail connector), read-only.
+
 ### 3. The GitHub arm (`assistant/publish/github.py`)
 
 Written against the `gh` CLI so there is no token of ours to store or refresh — `gh` carries

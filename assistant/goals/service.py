@@ -14,6 +14,12 @@ Three rules hold the whole thing together, and they are why this is safe to leav
 
 A goal that comes due while the laptop was off runs once when it comes back, not once
 per missed interval: catching up on eleven identical requests helps nobody.
+
+Two small additions make a goal able to watch something rather than repeat itself:
+`{since}` in its text becomes the Unix time of its last run (a day back on the first),
+so "mail after:{since}" reads only what is new; and a goal may name its `brain`, for
+work only one agent can do (Claude holds the Gmail connector, the free models don't),
+without switching the brain you are talking to.
 """
 
 from __future__ import annotations
@@ -29,7 +35,7 @@ from .store import CADENCES, GoalStore
 
 class GoalsService:
     def __init__(self, path: Path, bus: EventBus, settings: Any,
-                 submit: Callable[[str, str], None] | None = None,
+                 submit: Callable[..., None] | None = None,
                  busy: Callable[[], bool] | None = None,
                  clock: Callable[[], float] = time.time) -> None:
         self.bus = bus
@@ -87,8 +93,14 @@ class GoalsService:
         self.store.ran(goal["id"], now, now + step if step else None)
         self.bus.publish("goal", id=goal["id"], text=goal["text"], cadence=goal["cadence"])
         self.bus.log(f"Standing goal: {goal['text']}")
-        if self.submit is not None:
-            self.submit(goal["text"], "goal")
+        since = goal.get("last_run") or (now - 86400.0)
+        text = goal["text"].replace("{since}", str(int(since)))
+        if self.submit is None:
+            return
+        if goal.get("brain"):
+            self.submit(text, "goal", goal["brain"])
+        else:
+            self.submit(text, "goal")
 
     def waking(self, now: float | None = None) -> bool:
         """Quiet hours. `quiet_from = quiet_to` means never quiet."""
@@ -101,16 +113,28 @@ class GoalsService:
 
     # -- managing ---------------------------------------------------------------------
     def add(self, text: str, cadence: str = "daily", next_due: float | None = None,
-            source: str = "you") -> dict[str, Any] | None:
+            source: str = "you", brain: str = "") -> dict[str, Any] | None:
         text = " ".join((text or "").split())
         if not text:
             return None
         # The store must not read the wall clock here: a goal's first due time comes
         # from this service's clock, the same one `tick` compares against.
-        goal_id = self.store.add(text, cadence, self.clock() if next_due is None else next_due, source)
+        goal_id = self.store.add(text, cadence, self.clock() if next_due is None else next_due,
+                                 source, brain)
         self.bus.log(f"I'll do this {cadence}: {text}")
         self.bus.publish("goal", id=goal_id, text=text, cadence=cadence, added=True)
         return self.store.get(goal_id)
+
+    def defer_matching(self, words: str) -> int:
+        """Count active goals mentioning `words` as just run: something else (the day's
+        first mail digest) has done their job, so they carry on from here."""
+        now, deferred = self.clock(), 0
+        for goal in self.store.all(include_retired=False):
+            step = CADENCES.get(goal["cadence"], 0.0)
+            if step and words.lower() in goal["text"].lower():
+                self.store.ran(goal["id"], now, now + step)
+                deferred += 1
+        return deferred
 
     def pause(self, goal_id: int) -> bool:
         return self.store.set_active(goal_id, False)

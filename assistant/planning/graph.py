@@ -24,6 +24,7 @@ from collections import deque
 from dataclasses import asdict, dataclass, field
 
 from ..events import Event, EventBus
+from ..titles import short_title
 from .plan import Plan, strip_markup
 
 MAX_ACTIONS_SHOWN = 4      # how many are drawn inside a node
@@ -184,13 +185,16 @@ class GraphTracker:
             lanes = {name: self._display(self._full_dict(lane)) for name, lane in self.lanes.items()}
             active = self.active
             history = [
-                {"run": g["run"], "label": g["label"], "started": g["started"],
+                # "short" is what the rail shows; the whole request stays as "label" for
+                # the tooltip. Quoting a transcript back as a button name is not a title.
+                {"run": g["run"], "label": g["label"], "short": short_title(g["label"]), "started": g["started"],
                  "status": next((n["status"] for n in g["nodes"] if n["kind"] == "result"), "done")}
                 for g in list(self.history)[::-1]
             ]
         snapshot = dict(lanes.get(active) or next(iter(lanes.values())))
         snapshot["lane"] = active
-        snapshot["lanes"] = {name: {**graph, "title": _lane_title(name, graph)} for name, graph in lanes.items()
+        snapshot["lanes"] = {name: {**graph, "title": _lane_title(name, graph), "short": short_title(graph["label"])}
+                             for name, graph in lanes.items()
                              if graph["nodes"]}
         snapshot["history"] = history
         return snapshot

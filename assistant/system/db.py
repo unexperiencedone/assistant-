@@ -114,8 +114,22 @@ class Database:
             conn.execute("PRAGMA foreign_keys = ON")
             conn.execute("PRAGMA temp_store = MEMORY")
             conn.execute("PRAGMA cache_size = -20000")  # ~20 MB page cache
+            # A full index pass writes a lot at once, so the default 1000-page threshold
+            # left a 3.7 MB -wal beside a 1.7 MB database. See HistoryStore.connect.
+            conn.execute("PRAGMA wal_autocheckpoint = 256")
             self._local.conn = conn
         return conn
+
+    def close(self) -> None:
+        """Close this thread's connection, folding the write-ahead log back in first."""
+        conn = getattr(self._local, "conn", None)
+        if conn is not None:
+            try:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except sqlite3.Error:
+                pass
+            conn.close()
+            self._local.conn = None
 
     def get_meta(self, key: str) -> str | None:
         row = self.connect().execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()

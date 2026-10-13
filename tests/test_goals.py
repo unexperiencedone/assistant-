@@ -124,3 +124,39 @@ class Speaking(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Watching(Base):
+    def test_since_is_the_last_run_so_a_sweep_reads_only_what_is_new(self):
+        self.goals.add("mail after:{since}", "hourly", next_due=self.now)
+        self.goals.tick()
+        first = self.submitted[-1][0]
+        self.assertEqual(first, f"mail after:{int(self.now - 86400)}")  # first run: a day back
+        ran_at = self.now
+        self.now += HOUR + 60
+        self.goals.tick()
+        self.assertEqual(self.submitted[-1][0], f"mail after:{int(ran_at)}")
+
+    def test_a_goal_can_name_the_brain_that_runs_it(self):
+        pinned = []
+        self.goals.submit = lambda text, source, brain="": pinned.append((text, source, brain))
+        self.goals.add("check my mail", "hourly", brain="claude")
+        self.goals.add("tidy downloads", "hourly")
+        self.settings.one_at_a_time = False
+        self.goals.tick()
+        self.assertEqual(sorted(pinned), [("check my mail", "goal", "claude"), ("tidy downloads", "goal", "")])
+
+    def test_an_old_database_gains_the_brain_column(self):
+        import sqlite3
+        from assistant.goals.store import GoalStore
+        path = self.folder / "old.db"
+        db = sqlite3.connect(str(path))
+        db.execute("CREATE TABLE goals (id INTEGER PRIMARY KEY, created_at REAL NOT NULL, text TEXT NOT NULL, "
+                   "cadence TEXT NOT NULL, next_due REAL NOT NULL, last_run REAL, runs INTEGER NOT NULL DEFAULT 0, "
+                   "active INTEGER NOT NULL DEFAULT 1, source TEXT NOT NULL DEFAULT 'you')")
+        db.commit()
+        db.close()
+        store = GoalStore(path)
+        goal = store.get(store.add("x", "daily", brain="claude"))
+        store.close()
+        self.assertEqual(goal["brain"], "claude")

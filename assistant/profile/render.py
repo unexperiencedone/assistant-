@@ -16,6 +16,11 @@ from typing import Any
 
 STANDING_BUDGET = 2400  # characters; the summary is sent with every session
 REPLY_SENTENCES = {"brief": 2, "normal": 3, "detailed": 5}
+# Spoken whole up to this many characters (controller.spoken_reply). "Brief" asks the
+# agent to write briefly (REPLY_SENTENCES, in its instructions); it never cuts a summary
+# Nova was given, because a summary with a sentence missing stops making sense.
+# Past this a reply is shortened and says so; past the reader's 1800 it goes on screen.
+SPOKEN_CHARS = {"brief": 1200, "normal": 1200, "detailed": 1800}
 
 
 def visible(profile: dict[str, Any], section: str, audience: str) -> bool:

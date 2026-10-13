@@ -5,7 +5,8 @@
     phrases = ["calculator demo", "search wikipedia for {query}"]   # {name} captures words
 
     [[steps]]
-    do = "open"            # open | wait_window | focus | click | type | keys | read | wait | say
+    do = "open"            # open | wait_window | focus | click | click_best | type | keys | read
+                           # title | wait_title | wait | say
     app = "Calculator"     # browser_goto | browser_click | browser_fill | browser_press
                            # browser_wait | browser_read | media
     optional = false       # true: skip this step instead of stopping if it fails
@@ -37,6 +38,12 @@ STEP_LABELS = {
     "wait_window": "Wait for the {title} window",
     "focus": "Focus {window}",
     "click": "Click '{name}{auto_id}' in {window}",
+    "find": "Find the {kind} '{query}'",
+    "watch": "Keep an eye on it in the background",
+    "click_best": "Click the best match for '{query}' in {window}",
+    "wait_value": "Wait for '{name}' to show '{contains}'",
+    "title": "Note what {window} is showing",
+    "wait_title": "Check {window} changed",
     "type": "Type '{text}'",
     "keys": "Press {keys}",
     "read": "Read {name}{auto_id} from {window}",
@@ -130,13 +137,15 @@ class MacroRunner:
     both need a consistent thread), publishing progress for the canvas."""
 
     def __init__(self, bus: EventBus, open_app: Callable[[str], bool], say: Callable[[str], None],
-                 phone: Any = None) -> None:
+                 phone: Any = None, watches: Any = None) -> None:
         self.bus = bus
         self.open_app = open_app
         self.say = say
         self.phone = phone  # assistant.phone.PhoneBridge, for do = "phone" steps
+        self.watches = watches  # assistant.automation.watch.WatchService, for do = "watch" steps
         self._busy = threading.Lock()
         self._browser = None  # kept between runs: connecting costs a driver process launch
+        self._local = None    # the local index, for `find` steps
         # Every run happens on this one thread. Playwright's sync API is bound to the thread
         # that started it, so a kept browser used from a fresh thread per run fails with
         # "cannot switch to a different thread (which happens to have exited)".
@@ -183,15 +192,15 @@ class MacroRunner:
         labels = [macro.describe(step, values) for step in macro.steps]
         self.bus.publish("route", utterance=utterance or macro.name, route="macro", name=macro.name, steps=labels)
         started = time.time()
+        browser = None  # chosen at the first browser step, then kept for the whole run
+        said = ""
         try:
             for index, step in enumerate(macro.steps):
                 self.bus.publish("macro_step", index=index, status="running", detail="")
                 try:
-                    if step["do"].startswith("browser_") and self._browser is None:
-                        from .browser import Browser
-
-                        self._browser = Browser()
-                    detail = self._execute(step, values, self._browser) or ""
+                    if step["do"].startswith("browser_") and browser is None:
+                        browser = self._pick_browser()
+                    detail = self._execute(step, values, browser) or ""
                 except Exception as exc:  # report which step failed and why, then stop
                     message = str(exc).splitlines()[0][:200] or exc.__class__.__name__
                     if step.get("optional"):  # e.g. a button that only exists at some window sizes
@@ -207,12 +216,45 @@ class MacroRunner:
                     self.say(f"{macro.name} failed at step {index + 1}. The canvas shows why.")
                     return False, summary
                 self.bus.publish("macro_step", index=index, status="done", detail=detail)
+                if step["do"] == "say":
+                    said = detail
             summary = f"{macro.name} finished in {time.time() - started:.1f}s."
+            # What it ended up saying is the proof of what happened ("Playing Pritam - Tera
+            # Deedar Hua"). Without it, a model that ran this as a tool went looking for a
+            # "Spotify" window, found none -- the title is the song -- and played it again.
+            if said:
+                summary += f' It said: "{said}". That is done; don\'t repeat it.'
             self.bus.publish("macro_done", ok=True, text=summary, name=macro.name)
             return True, summary
         finally:
             if self._browser is not None:
                 self._browser.release()  # keep the connection for the next automation
+
+    def _find(self, query: str, kind: str = "folder") -> str | None:
+        """The best indexed match for `query`, opened on first use (the index is local)."""
+        if self._local is None:
+            from ..config import load_settings
+            from ..system import LocalSystem
+
+            settings = load_settings()
+            self._local = LocalSystem(settings.local, settings.base_dir)
+        hits = self._local.find(query, kind=kind or None, limit=1)
+        return str(hits[0].path) if hits else None
+
+    def _pick_browser(self):
+        """Your own Chrome through the Nova extension when it's connected; otherwise the
+        Playwright browser, kept between runs because connecting costs a driver launch."""
+        from .extension import BRIDGE, ExtensionBrowser
+
+        if BRIDGE.usable():
+            return ExtensionBrowser()
+        if BRIDGE.driver == "extension":
+            raise RuntimeError("The Nova extension isn't connected, and [browser] driver says to use only it.")
+        if self._browser is None:
+            from .browser import Browser
+
+            self._browser = Browser()
+        return self._browser
 
     def close(self) -> None:
         def detach() -> None:
@@ -229,6 +271,44 @@ class MacroRunner:
         s = {k: _render(v, values) if isinstance(v, str) else v for k, v in step.items()}
         kind = s["do"]
         timeout = float(s.get("timeout", 10))
+        if kind == "watch":
+            # Hand the rest to the watch service and return: the app does the work in the
+            # background, and Nova says when it is done or needs you (automation/watch.py).
+            if self.watches is None:
+                return "not watched (no watch service in this run)"
+            from .watch import WatchSpec
+
+            def listed(key: str) -> list[str]:
+                return [_render(str(p), values) for p in s.get(key, [])]
+
+            job = self.watches.start(WatchSpec(
+                label=s.get("job") or s.get("window", "the app"),   # how it is named out loud
+                window=s["window"], working=listed("working"), done=listed("done"),
+                needs_you=listed("needs_you"), review=listed("review"), folder=s.get("folder", ""),
+                max_minutes=float(s.get("max_minutes", 45))))
+            return f"watching in the background ({job.id})"
+        if kind == "find":
+            # A folder or file by the name it was called, from the local index: what
+            # "open the school website in antigravity" needs before anything opens it.
+            path = self._find(s["query"], s.get("kind", "folder"))
+            if not path:
+                raise MacroError(f"couldn't find a {s.get('kind', 'folder')} called {s['query']}")
+            name = s.get("save_as", "found")
+            values[name] = path
+            values[f"{name}_name"] = Path(path).name
+            return path
+        if kind == "open" and s.get("program"):
+            # A program with arguments ("antigravity-ide -n <folder>"); never a shell, so a
+            # slot value can only ever be an argument, not a second command.
+            import os
+            import subprocess
+
+            program = os.path.expandvars(s["program"])
+            args = [_render(str(a), values) for a in s.get("args", [])]
+            flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            subprocess.Popen([program, *args], creationflags=flags, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return f"started {Path(program).stem} {' '.join(args)}"
         if kind == "open":
             if s.get("app"):
                 if not self.open_app(s["app"]):
@@ -264,6 +344,25 @@ class MacroRunner:
             label = desktop.click(s["window"], s.get("name", ""), s.get("auto_id", ""), s.get("control_type", ""),
                                   int(s.get("index", 0)), timeout, bool(s.get("exact", False)))
             return f"clicked {label}"
+        if kind == "click_best":
+            # The control that best matches what was asked for (a search result), never
+            # a bare prefix-only one like a player bar's "Play" (desktop.best_match).
+            label = desktop.click_best(s["window"], s["query"], s.get("prefix", ""), s.get("control_type", ""),
+                                       s.get("exclude", ""), timeout, bool(s.get("fallback_first", False)))
+            return f"clicked {label}"
+        if kind == "wait_value":
+            # Proof the screen shows what was asked for (a search box holding the query),
+            # re-sending `reopen` once halfway if it doesn't.
+            from ..system.service import launch
+
+            again = (lambda: launch(s["reopen"])) if s.get("reopen") else None
+            return desktop.wait_value(s["window"], s["name"], s["contains"], timeout, again)
+        if kind == "title":
+            return self._save(s, values, desktop.find_window(s["window"], timeout=timeout).window_text())
+        if kind == "wait_title":
+            # Success is what the window says afterwards, not that a click went through.
+            value = desktop.wait_title(s["window"], s.get("changed_from", ""), s.get("ignore", ""), timeout)
+            return self._save(s, values, value)
         if kind == "type":
             desktop.type_text(s.get("window", ""), s["text"], s.get("into", ""), s.get("auto_id", ""))
             return ""

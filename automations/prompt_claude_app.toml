@@ -1,0 +1,80 @@
+name = "Prompt the Claude app"
+description = "Opens the Claude desktop app (never claude.ai in the browser), starts a new chat and sends it {query}."
+# "ask/tell/get claude to ..." stays with Nova's own Claude Code agent (the delegate
+# command); these all say the app or open it first, so the two never compete.
+phrases = [
+  "open claude and prompt it to {query}",
+  "open claude and ask it to {query}",
+  "open claude and tell it to {query}",
+  "open the claude app and ask it to {query}",
+  "prompt claude to {query}",
+  "ask the claude app to {query}",
+  "tell the claude app to {query}",
+]
+
+# The Start Menu entry, by its app ID: the index kept missing "Claude" for this.
+[[steps]]
+do = "open"
+label = "Open the Claude app"
+target = "shell:AppsFolder\\Claude_pzs8sxrjxfjjc!Claude"
+
+[[steps]]
+do = "wait_window"
+title = "exe:claude"
+timeout = 20
+
+[[steps]]
+do = "focus"
+window = "exe:claude"
+
+# "New" is the sidebar button; without it the prompt lands in whatever chat was open last.
+[[steps]]
+do = "click"
+label = "Start a new chat"
+window = "exe:claude"
+name = "New"
+control_type = "Button"
+exact = true
+
+[[steps]]
+do = "wait"
+seconds = 2
+
+[[steps]]
+do = "type"
+label = "Write the prompt"
+window = "exe:claude"
+text = "{query}"
+into = "Write your prompt to Claude"
+timeout = 10
+
+[[steps]]
+do = "keys"
+label = "Send it"
+window = "exe:claude"
+keys = "{ENTER}"
+
+# Done means the prompt shows in the chat ("You said: ..."), not that Enter was pressed.
+# (The window title stays "Claude"; it does not become the chat's name.)
+[[steps]]
+do = "wait_value"
+label = "Check Claude has the prompt"
+window = "exe:claude"
+name = "{query}"
+contains = ""
+timeout = 10
+
+[[steps]]
+do = "say"
+text = "I've sent that to Claude in a new chat. I'll tell you when it has answered."
+
+# Markers seen live: "Claude is responding" while it writes; a new "Good response" button
+# (with Copy and Read aloud) once the answer is complete.
+[[steps]]
+do = "watch"
+job = "Claude"
+window = "exe:claude"
+working = ["^Claude is responding"]
+done = ["^Good response$"]
+needs_you = ["^Allow\\b", "^Approve\\b", "^Always allow\\b"]
+max_minutes = 20

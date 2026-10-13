@@ -34,6 +34,12 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
     (name, re.compile(pattern, re.I))
     for name, pattern in [
         ("quit", r"^(?:goodbye|good ?bye|exit|quit|shut ?down)(?: assistant)?[.!]?$"),
+        # -- whose voice (assistant/audio/voiceid.py) -----------------------------------
+        ("voice_forget", r"^(?:forget|delete|reset|clear|remove)\s+my\s+voice(?:\s*print)?\b"),
+        ("voice_enrol", r"^(?:learn|remember|recogni[sz]e|enrol+|register|memori[sz]e|train on)\s+my\s+voice\b"
+                        r"|^(?:set ?up|start)\s+voice\s*(?:id|print|recognition)\b"),
+        ("voice_report", r"^(?:how(?:'s| is)|check)\s+(?:the\s+)?voice\s*(?:id|print|check|recognition)\b"
+                         r"|^do you (?:know|recogni[sz]e) my voice\b"),
         # -- the phone (assistant/phone, bridged through Termux over Tailscale) --------
         # "text 555 saying hi", "send a message to 555", "send the same message on 555":
         # the number is the only required part -- an empty body reuses the last one, and
@@ -80,6 +86,26 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
         ("stop_speaking", r"^(?:stop|quiet|shush|shut up|be quiet|enough|that's enough|never ?mind)[.!]?$"),
         ("switch_backend", r"^(?:use|switch to|change to|swap to|go with)\s+(?:the\s+)?(?P<backend>claude(?: code)?|cloud|clod|anti[- ]?gravity|gravity|agy|gemini|open ?router|router|free models?|groq|gro[ck]k?|rock|llama|lama|fast model)\b"),
         ("delegate", r"^(?:tell|ask|have|get)\s+(?P<backend>claude(?: code)?|cloud|anti[- ]?gravity|gravity|agy|groq|gro[ck]k?|llama)\s+(?:to\s+)?(?P<task>.+)$"),
+        # -- talk modes (assistant/conversation.py) -----------------------------------
+        ("talk_mode_off", r"^(?:ok(?:ay)?\s+)?(?:back to work|let'?s get back to work|stop (?:chatting|talking|brainstorming)"
+                          r"|(?:end|exit|leave|quit)(?: the)? (?:chat|conversation|brainstorm(?:ing)?|talk)(?: mode)?"
+                          r"|(?:normal|work) mode|that'?s all for now)\b"),
+        ("brainstorm_recap", r"^(?:what(?:'?ve| have) we got|what do we have)(?: so far)?\b"
+                             r"|^(?:recap|sum up|summari[sz]e)(?: it| that| this| the ideas| everything| what we have)?(?: so far)?[.!?]?$"
+                             r"|^(?:wrap|sum) (?:it|this|that) up\b|^give me (?:a|the) recap\b"),
+        ("brainstorm_on", r"^(?:let'?s|can we|could we|help me|i (?:want|wanna) to|wanna)\s+(?:do (?:a|some) )?brainstorm(?:ing)?\b"
+                          r"[\s,:]*(?:(?:about|on|for|some ideas for|ideas for)\s+)?(?P<topic>.*)$"),
+        ("brainstorm_on", r"^brainstorm(?:ing)?(?: mode)?\b[\s,:]*(?:(?:about|on|for)\s+)?(?P<topic>.*)$"),
+        # Talking *with you*, never "talk to the client": the only one it may be with is me/you.
+        ("talk_mode_on", r"^(?:let'?s|can we|could we|(?:i\s+)?(?:just\s+)?(?:want|wanna)(?:\s+to)?|wanna)\s+(?:just\s+)?"
+                         r"(?:chat|talk|have a (?:little\s+)?(?:chat|talk|conversation)|hang out)"
+                         r"(?:\s+(?:with|to)\s+(?:me|you))?(?:\s+(?:for a bit|for a while|a bit))?"
+                         r"(?:\s+about\s+(?P<topic>.+))?[.!?]?$"
+                         r"|^(?:chat|conversation|talk(?:ing)?) mode\b"),
+        # normalize() has already taken "let's" off the front: "let's chat" arrives as "chat".
+        ("talk_mode_on", r"^(?:just\s+)?(?:chat|talk|have a (?:little\s+)?(?:chat|talk|conversation)|hang out)"
+                         r"(?:\s+(?:with|to)\s+(?:me|you))?(?:\s+(?:for a bit|for a while|a bit))?"
+                         r"(?:\s+about\s+(?P<topic>.+))?[.!?]?$"),
         ("new_plan", r"^(?:let'?s|start|begin|new|make)(?: a)? (?:new )?plan(?:ning)?\b[\s,:]*(?:(?:for|to|about|out)\s+)?(?P<topic>.*)$"),
         # "drop that plan", "clear all the plans that were made". A plan is the thing
         # drafted in this conversation; a saved automation is not one, and the two must
@@ -141,6 +167,31 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
                         r"(?:\s+(?:on|up|on\s+screen|back))?"
                         r"|^(?:let me )?read\s+(?:that|it|the\s+(?:document|report))"
                         r"|^on\s+screen"),
+        # -- AfterThought, the proactive memory (assistant/afterthought) -------------------
+        # Before the publish rules: "forget that memory" is not "forget that draft". "Remember
+        # this" is memory; "remember that" / "remember how you did it" stays automation.
+        ("memory_remember", r"^(?:remember|memori[sz]e|keep|save|note)\s+this(?:\s+(?:page|window|one))?"
+                            r"(?:\s+(?:to|in)\s+(?:your\s+)?memory)?(?:\s*[,:-]?\s*(?:as|about|:)\s+(?P<note>.{2,200}))?\s*[.!]*$"
+                            r"|^make\s+a\s+note\s+of\s+this\b(?:\s*[,:-]?\s*(?P<note2>.{2,200}))?$"),
+        ("memory_recall", r"^(?:what\s+do\s+(?:you|we)\s+(?:remember|know)\s+about|do\s+you\s+remember"
+                          r"|what\s+did\s+(?:i|we)\s+(?:say|decide|note|read|write|find|agree)\s+(?:about|on)"
+                          r"|recall|remind\s+me\s+what\s+(?:i|we)\s+(?:said|decided|found|noted)\s+about"
+                          r"|search\s+(?:your\s+|my\s+)?memor(?:y|ies)\s+for)\s+(?P<query>.{2,160}?)\s*[?.!]*$"),
+        ("memory_accept", r"^(?:that'?s|that\s+was|very|really)\s+(?:useful|helpful|handy|relevant|good\s+to\s+know)\b"
+                          r"|^good\s+(?:catch|call|memory)\b|^thanks?,?\s+that\s+helps\b"),
+        ("memory_dismiss", r"^(?:that'?s\s+|that\s+was\s+)?not\s+(?:useful|helpful|relevant)\b"
+                           r"|^(?:wrong|irrelevant|useless)\s+(?:memory|suggestion)\b|^don'?t\s+need\s+that\b"),
+        ("memory_forget", r"^(?:forget|delete|drop)\s+(?:that|this|the\s+last)\s+memory\b"
+                          r"|^forget\s+what\s+you\s+(?:just\s+)?(?:suggested|brought\s+up|reminded\s+me\s+of)\b"),
+        ("memory_watch", r"^(?:start\s+)?(?:remember(?:ing)?|learn(?:ing)?\s+from|watch(?:ing)?)\s+what\s+i\s+do\s+in\s+(?P<app>.{2,60}?)\s*[.!]*$"),
+        ("memory_unwatch", r"^(?:stop|don'?t)\s+(?:remember(?:ing)?|learn(?:ing)?\s+from|watch(?:ing)?)\s+"
+                           r"what\s+i\s+do\s+in\s+(?P<app>.{2,60}?)\s*[.!]*$"
+                           r"|^(?:stop|don'?t)\s+(?:remember(?:ing)?|learn(?:ing)?\s+from)\s+(?P<app2>[a-z0-9 .+-]{2,40}?)\s*[.!]*$"),
+        ("memory_pause", r"^(?:pause|mute|hold|quiet)\s+(?:afterthought|(?:the\s+)?suggestions|(?:the\s+)?memories)"
+                         r"(?:\s+for\s+(?P<span>an?\s+hour|one\s+hour|the\s+day|today|\d+\s*(?:hours?|minutes?|mins?)))?\b"),
+        ("memory_resume", r"^(?:resume|unpause|unmute|turn\s+on)\s+(?:afterthought|(?:the\s+)?suggestions|(?:the\s+)?memories)\b"),
+        ("memory_status", r"^(?:what\s+(?:apps\s+)?are\s+you\s+(?:watching|remembering)|what\s+do\s+you\s+watch"
+                          r"|(?:afterthought|memory)\s+status)\b"),
         # -- capture and publishing (assistant/capture, assistant/publish) -----------
         ("stop_recording", r"^(?:stop|end|finish)\s+(?:the\s+)?(?:screen\s+)?record(?:ing)?\b"
                            r"|^(?:that'?s\s+it|cut)[,.!]?\s*(?:stop\s+recording)?$"),
@@ -150,6 +201,19 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
         ("phone_photo", r"^take\s+(?:a\s+)?(?:photo|picture|pic|snap|shot)\s*"
                         r"(?:(?:with|on|using|from)\s+(?:my\s+)?(?:phone|camera))?\s*"
                         r"(?:with\s+the\s+)?(?P<which>front|back|selfie)?\s*(?:camera)?[.!]?$"),
+        # Your projects -> LinkedIn (assistant/publish/showcase.py). Before publish_approve,
+        # which owns the bare "post it": these always name a project.
+        ("showcase_unposted", r"^(?:which|what)\s+(?:of\s+my\s+)?projects?\s+(?:have(?:n'?t|\s+not)\s+i"
+                              r"|are(?:n'?t|\s+not))\s+(?:been\s+|yet\s+)?(?:posted|shared|on\s+linkedin)\b"
+                              r"|^(?:list\s+|show\s+)?(?:my\s+)?unposted\s+projects\b"),
+        ("showcase_draft", r"^(?:post|share|draft)\s+(?:a\s+(?:linkedin\s+)?post\s+(?:about|for)\s+)?(?:about\s+)?"
+                           r"(?:my\s+)?(?:new|newest|latest|next|recent)\s+project"
+                           r"(?:\s+(?:on|to)\s+linkedin)?[.!]?$"
+                           r"|^(?:post|share)\s+(?:a\s+)?project\s+(?:on|to)\s+linkedin[.!]?$"),
+        ("showcase_project", r"^(?:post|share)\s+(?:about\s+)?(?:my\s+)?(?:project\s+)?(?P<project>[\w .'-]{2,40}?)"
+                             r"\s+(?:on|to)\s+linkedin[.!]?$"
+                             r"|^(?:draft\s+)?(?:a\s+)?linkedin\s+post\s+(?:about|for)\s+(?:my\s+)?(?:project\s+)?"
+                             r"(?P<name>[\w .'-]{2,40}?)[.!]?$"),
         ("publish_waiting", r"^(?:what'?s|what\s+is|anything)\s+(?:waiting|pending|queued)"
                             r"(?:\s+to\s+(?:go\s+out|post|publish|be\s+posted))?\b"
                             r"|^(?:show|list)\s+(?:my\s+|the\s+)?drafts?\b"),
@@ -161,6 +225,12 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
         ("publish_discard", r"^(?:drop|discard|bin|delete|scrap|forget)\s+"
                             r"(?:the\s+(?:draft|post)|(?:it|that|this)(?!\s+(?:plan|step|task|goal|automation)))\b"
                             r"|^don'?t\s+(?:post|publish|send)\s+(?:it|that)\b"),
+        # -- your schedule (assistant/schedule): read back instantly, no agent turn -----
+        ("schedule_list", r"^(?:what(?:'s|\s+is)\s+(?:on\s+)?my\s+(?:schedule|calendar|agenda|day)"
+                          r"|what\s+do\s+i\s+have(?:\s+on)?|(?:read|tell)\s+(?:me\s+)?my\s+(?:schedule|agenda)"
+                          r"|what(?:'s|\s+is)\s+(?:on\s+)?(?:the\s+)?(?:schedule|plan))"
+                          r"(?:\s+(?:for|on))?\s*(?P<day>today|tonight|tomorrow|day after tomorrow"
+                          r"|(?:mon|tues|wednes|thurs|fri|satur|sun)day)?\s*[?.!]*$"),
         # -- standing goals (assistant/goals): the things Nova starts by itself ------
         ("goals_list", r"^(?:what|which)\s+(?:are\s+)?(?:your|the|my)?\s*standing\s+goals?\b"
                        r"|^what\s+(?:are\s+you|do\s+you)\s+do(?:ing)?\s+(?:on\s+your\s+own|by\s+yourself|without\s+me)\b"
@@ -174,9 +244,14 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
                                 r"|^(?:show|list)\s+(?:me\s+)?(?:the\s+)?(?:pending|waiting|proposed)\s+automations?\b"),
         # Deliberately not claiming "anything waiting for me": publish_waiting answers
         # that about drafts, and two rules competing for one sentence is a coin toss.
-        ("approve_automation", r"^(?:keep|approve|accept|save|use)\s+(?:that|the|this)\s+automation\b"
+        # "automation" is often heard as "optimization", and a proposal may be called a fix.
+        ("approve_automation", r"^(?:keep|approve|accept|save|use)\s+(?:that|the|this)\s+"
+                               r"(?:automation|optimi[sz]ation|fix|change|patch)s?\b"
                                r"|^(?:keep|approve|accept)\s+(?:it|that)\s+automation\b"
-                               r"|^(?:put|move)\s+(?:that|it)\s+(?:automation\s+)?in(?:to\s+service)?\b"),
+                               r"|^(?:put|move)\s+(?:that|it)\s+(?:automation\s+)?in(?:to\s+service)?\b"
+                               # The answer to "it won't run until you tell me to keep it":
+                               # "keep it" went to a model, which grepped the code to approve it.
+                               r"|^(?:yes,?\s+)?(?:keep|save|approve)\s+(?:it|that|this(?:\s+one)?)[.!]?$"),
         ("reject_automation", r"^(?:drop|discard|bin|delete|reject|scrap|forget)\s+(?:that|the|this)\s+automation\b"
                               r"|^don'?t\s+(?:keep|save|use)\s+(?:that|it)\s+automation\b"),
         ("list_automations", r"^(?:list|show|what are)(?: me)?(?: my| the)? (?:automations|macros|routines|scripts)\b"),
@@ -191,7 +266,10 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
         ("reindex", r"^(?:re-?index|rebuild (?:the )?index|refresh (?:the )?index|update (?:the )?index|rescan (?:my )?files)\b"),
         ("most_used", r"^(?:what are |show )?(?:me )?my (?:most used|top|favou?rite) (?P<kind>apps|files|folders)\b"),
         ("find_item", r"^(?:find|search for|locate|where(?:'s| is| are))\s+(?:my\s+|the\s+|a\s+|an\s+)?(?:(?P<kind>file|folder|directory|app|application|program)\s+(?:called\s+|named\s+)?)?(?P<target>.+?)(?:\s+(?P<kind2>file|folder|directory|app))?$"),
-        ("open_item", r"^(?:open|launch)\s+(?:up\s+)?(?:my\s+|the\s+|a\s+)?(?:(?P<kind>file|folder|directory|app|application|program)\s+(?:called\s+|named\s+)?)?(?P<target>.+?)(?:\s+(?P<kind2>file|folder|directory|app))?$"),
+        # Not "open X and prompt it to ..." or "open X in antigravity": opening is only the
+        # first half of those, and the target came out as "claude and prompt it to write a poem".
+        ("open_item", r"^(?!.*\band\s+(?:prompt|ask|tell|get|have|make)\s+(?:it|him|her|them)\b)"
+                      r"(?!.*\bin\s+anti[- ]?gravity\b)(?:open|launch)\s+(?:up\s+)?(?:my\s+|the\s+|a\s+)?(?:(?P<kind>file|folder|directory|app|application|program)\s+(?:called\s+|named\s+)?)?(?P<target>.+?)(?:\s+(?P<kind2>file|folder|directory|app))?$"),
     ]
 ]
 
@@ -227,7 +305,10 @@ _WAKE_MISHEARINGS = {
     "nova": ["novah", "nover", "novo", "nava", "noba", "nuova", "noah", "noaa", "no va"],
 }
 # Only greetings and fillers may come before the wake word: "okay, hey Nova, ..."
-_WAKE_LEAD = r"(?:(?:hey|hi|hello|okay|ok|yo|oh|so|um+|uh+|alright|and)\b[\s,.!]*)*"
+# Openers people say before a name -- "Yeah, Nova, ..." was ignored as having no wake word.
+# Only interjections: a sentence that merely mentions Nova ("I told Nova") must still not count.
+_WAKE_LEAD = (r"(?:(?:hey|hi|hello|okay|ok|yo|oh|so|um+|uh+|alright|and|yeah|yes|yep|yup|well|right"
+              r"|hmm+|now|but|listen|look|wait|please)\b[\s,.!]*)*")
 _wake_patterns: dict[tuple[str, tuple[str, ...]], re.Pattern[str]] = {}
 
 

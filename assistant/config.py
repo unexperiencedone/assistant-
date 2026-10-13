@@ -64,11 +64,16 @@ class VoiceSettings:
     # Fish Audio S2.1 (assistant/audio/fish.py). The key lives in .env, never here.
     fish_key_env: str = "FISH_AUDIO_S2.1_PRO"
     fish_model: str = "s2.1-pro-free"
-    fish_voice: str = ""        # a reference_id from fish.audio; empty = the default voice
+    fish_voice: str = ""        # a reference_id from fish.audio; empty = Fish picks one per request
+    fish_temperature: float = 0.6   # 0..1: lower keeps one voice steadier across lines
+    fish_top_p: float = 0.7
     fish_timeout: float = 20
     # Repeated lines are synthesised once and read off disk afterwards: instant, and it
     # leaves the free allowance for sentences that are actually new.
     fish_cache: str = "data/tts-cache"
+    # Every distinct sentence Nova has ever spoken, kept forever, was 33 MB and climbing
+    # with nothing to stop it. Least-recently-played clips go first (see FishSpeaker._sweep).
+    fish_cache_mb: int = 200
 
 
 @dataclass
@@ -99,6 +104,12 @@ class ChatAgentSettings:
     temperature: float = 0.3
     timeout: float = 120
     history_messages: int = 24
+    # Three budgets, because a message count alone doesn't bound a turn: the loop resends
+    # the whole history every round, so ten 4 KB tool results cost ten times what ten
+    # short ones do while trimming identically. See ChatAgent._fit and _digest_stale_tools.
+    tool_result_chars: int = 2000    # a fresh tool result entering the history
+    stale_tool_chars: int = 240      # an older one, once a newer round has superseded it
+    history_chars: int = 12000       # the whole history, trimmed oldest-first
     # When this tier runs out of steps, or can't be reached at all, pass the whole job
     # to Claude Code instead of handing the user a dead end and asking them to re-route
     # it themselves. Off means a failure is reported as a failure.
@@ -166,6 +177,36 @@ class LocalSettings:
     # Apps are habits (slow to fade), files belong to this week's project, commands in between.
     half_life_by_kind: dict[str, float] = field(
         default_factory=lambda: {"app": 30, "file": 7, "folder": 14, "command": 10})
+
+
+@dataclass
+class VoiceIdSettings:
+    """Only your voice can speak to Nova (assistant/audio/voiceid.py). Inactive until you
+    say "learn my voice"; typed input is never checked."""
+    enabled: bool = True
+    enforce: bool = True        # false: score and log every utterance, drop nothing
+    threshold: float = 0.0      # 0 = the bar measured from your own samples when you enrolled
+    model: str = "data/models/wespeaker_en_voxceleb_resnet34.onnx"
+    profile: str = "data/voiceprint.json"
+    log: str = "data/voice_scores.jsonl"
+
+
+@dataclass
+class LadderSettings:
+    """Fallback ladders (ladders.toml): the order to try things in, per kind of request,
+    added to a matching request with what has worked before (data/ladders.json)."""
+    enabled: bool = True
+    file: str = "ladders.toml"
+    memory: str = "data/ladders.json"
+
+
+@dataclass
+class UsageSettings:
+    """Token and cost analytics (assistant/usage): what each brain spent, measured from
+    the providers' own counts, and what the cheaper routes saved, estimated from what
+    Claude turns cost here. Backfilled from the session logs on first start."""
+    enabled: bool = True
+    db_path: str = "data/usage.db"
 
 
 @dataclass
@@ -268,6 +309,100 @@ class PublishSettings:
 
 
 @dataclass
+class ShowcaseSettings:
+    """Unposted projects turned into LinkedIn drafts (assistant/publish/showcase.py).
+
+    Only folders under `roots` are ever read, and nothing under `ignore`. Drafts still go
+    through the publishing gate: this decides what to write about, never whether to send."""
+    enabled: bool = True
+    roots: list = field(default_factory=list)
+    ignore: list = field(default_factory=list)
+    depth: int = 2
+    ledger_path: str = "data/linkedin_posted.json"
+    auto_draft: bool = True
+    check_hours: float = 12.0
+    min_gap_days: float = 4.0
+    max_images: int = 4
+    hashtags: bool = True
+    capture: bool = True          # screenshot the running project when the repo has no images
+    demos: dict = field(default_factory=dict)   # project name -> live URL, when it can't be found
+    logins: dict = field(default_factory=dict)  # project name -> "email:password" of a PUBLIC demo account
+    run_locally: bool = True      # no live site: start it here (npm run dev / streamlit) and shoot that
+    install_deps: bool = True     # npm install first when node_modules is missing
+
+
+@dataclass
+class AfterThoughtSettings:
+    """The proactive memory layer: remembers what you work on in the apps you opt in,
+    and brings a past memory up when what's in front of you connects to it.
+    On-device: capture, embedding and retrieval make no network calls. docs/afterthought.md"""
+    enabled: bool = True
+    db_path: str = "data/afterthought.db"
+    model: str = "sentence-transformers/all-MiniLM-L6-v2"   # "hashing" = no model, much weaker
+    apps: list[str] = field(default_factory=list)  # opted in at first run; afterwards voice/canvas decide
+    poll_seconds: float = 2
+    idle_boundary_seconds: float = 30    # a chunk ends after this long without input...
+    min_dwell_seconds: float = 20        # ...or on a switch, once the context lasted this long
+    min_chars: int = 40                  # less readable text than this (and no long dwell) is noise
+    text_chars: int = 4000               # how much of a window's text is read
+    capture_clipboard: bool = True
+    capture_text: bool = True            # the window's text through UI Automation
+    remember_conversations: bool = True  # what you ask Nova, and its answers
+    deny_apps: list[str] = field(default_factory=list)    # on top of the built-in list (privacy.py)
+    deny_titles: list[str] = field(default_factory=list)  # regexes, on top of the built-in list
+    suggest: bool = True
+    threshold: float = 0.55              # cosine that gates every suggestion (calibrated for MiniLM, rank.py)
+    voice_threshold: float = 0.65        # a match this strong is also said out loud, if you're free
+    voice: bool = True
+    recall_threshold: float = 0.35       # when you ask, the bar is lower
+    cooldown_seconds: float = 180        # at most one suggestion per this many seconds
+    same_memory_hours: float = 6         # the same memory isn't brought up again within this
+    short_term_days: float = 7
+    promote_refs: int = 2                # referenced this often: promoted to long-term early
+    consolidate_hour: int = 3            # the nightly pass (or on the next start, if the PC was off)
+
+
+@dataclass
+class TodaySettings:
+    """What today is: date, weather, markets, news, holidays and your calendar.
+
+    Fetched over plain HTTP every few minutes (no agent turn, no key), handed to every
+    agent as one short line, and spoken as a fresh, model-written greeting when Nova
+    opens. Weather is MSN's, the same as the Windows Widgets board. See docs/today.md."""
+    enabled: bool = True
+    cache_path: str = "data/today.json"
+    state_path: str = "data/today_state.json"
+    place: str = "Kanpur"
+    lat: float = 26.45
+    lon: float = 80.33
+    markets: dict = field(default_factory=lambda: {
+        "Nifty": "^NSEI", "Sensex": "^BSESN", "Nifty Bank": "^NSEBANK",
+        "Nifty Midcap 100": "NIFTY_MIDCAP_100.NS"})
+    india_headlines: int = 3
+    finance_headlines: int = 3
+    topics: list[str] = field(default_factory=list)
+    holidays: bool = True                    # the public Indian holidays calendar
+    calendar_env: str = "NOVA_CALENDAR_ICS"  # .env: private iCal address(es), comma-separated
+    refresh_minutes: float = 15
+    greet: bool = True                       # a spoken greeting when Nova opens
+    greet_again_hours: float = 3             # showing the window after this long greets again
+    mail_on_first_open: bool = True          # the day's first greeting also goes through Gmail (Claude)
+    feed_briefing: bool = True               # keep the canvas briefing panel's weather/markets/news fresh
+
+
+@dataclass
+class ScheduleSettings:
+    """Your schedule and the reminders Nova gives unasked. See docs/today.md."""
+    enabled: bool = True
+    db_path: str = "data/schedule.db"
+    remind_minutes: list[int] = field(default_factory=lambda: [60, 30, 15])
+    check_seconds: float = 20
+    calendar_reminders: bool = True     # timed events from your iCal calendars get reminders too
+    plan_nudge_hour: int = 21           # in the evening, offer to plan an empty tomorrow (-1: never)
+    phone: bool = True                  # also send each reminder to the phone, when it is reachable
+
+
+@dataclass
 class GoalsSettings:
     """Standing goals: the things Nova starts on its own, without being asked each time.
 
@@ -306,8 +441,13 @@ class BrowserSettings:
 
     Separate from the keyless `read_page`, which is the first choice: this costs seconds
     and a visible window, and is for pages that need JavaScript, a login, or that refuse
-    a scripted fetch. It runs in a dedicated Nova profile, never your signed-in one."""
+    a scripted fetch.
+
+    Two drivers: the Nova Chrome extension (assistant/automation/extension.py), which
+    works in your own profile with your logins and hands the model numbered element maps
+    instead of page text; and Playwright in a dedicated Nova profile, the fallback."""
     enabled: bool = True
+    driver: str = "auto"   # auto: the extension when it's connected, else Playwright | extension | playwright
 
 
 @dataclass
@@ -408,14 +548,21 @@ class Settings:
     automations: AutomationSettings = field(default_factory=AutomationSettings)
     promotion: PromotionSettings = field(default_factory=PromotionSettings)
     sessions: SessionSettings = field(default_factory=SessionSettings)
+    usage: UsageSettings = field(default_factory=UsageSettings)
+    ladders: LadderSettings = field(default_factory=LadderSettings)
+    voice_id: VoiceIdSettings = field(default_factory=VoiceIdSettings)
     history: HistorySettings = field(default_factory=HistorySettings)
     ambient: AmbientSettings = field(default_factory=AmbientSettings)
     phone: PhoneSettings = field(default_factory=PhoneSettings)
     awareness: AwarenessSettings = field(default_factory=AwarenessSettings)
     journal: JournalSettings = field(default_factory=JournalSettings)
     goals: GoalsSettings = field(default_factory=GoalsSettings)
+    today: TodaySettings = field(default_factory=TodaySettings)
+    afterthought: AfterThoughtSettings = field(default_factory=AfterThoughtSettings)
+    schedule: ScheduleSettings = field(default_factory=ScheduleSettings)
     capture: CaptureSettings = field(default_factory=CaptureSettings)
     publish: PublishSettings = field(default_factory=PublishSettings)
+    showcase: ShowcaseSettings = field(default_factory=ShowcaseSettings)
     skills: SkillsSettings = field(default_factory=SkillsSettings)
     recipes: RecipeSettings = field(default_factory=RecipeSettings)
     orchestrate: OrchestrateSettings = field(default_factory=OrchestrateSettings)
