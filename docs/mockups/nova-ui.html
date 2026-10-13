@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nova UI mockups</title>
+<!-- Proposal mockups for docs/ui_rethink.md. Static: no server, no React. Tokens copied from
+     canvas/src/styles.css (Living Ink); fonts are the canvas's own self-hosted files. -->
+<style>
+@font-face { font-family: "Fraunces"; src: url("../../canvas/public/fonts/fraunces-latin.woff2") format("woff2"); font-weight: 300 700; }
+@font-face { font-family: "IBM Plex Mono"; src: url("../../canvas/public/fonts/plex-mono-400.woff2") format("woff2"); font-weight: 400; }
+@font-face { font-family: "IBM Plex Mono"; src: url("../../canvas/public/fonts/plex-mono-500.woff2") format("woff2"); font-weight: 500; }
+:root {
+  --bg: #0d0b12; --bg-lift: #17131f; --panel: #12101a; --panel-soft: rgba(255,255,255,.03); --panel-hover: rgba(255,255,255,.05);
+  --line: rgba(255,255,255,.08); --line-strong: rgba(255,255,255,.16);
+  --ink: #f2ece2; --body: #d8d1e6; --muted: #9a92aa; --faint: #6b6577;
+  --accent: #ff8a65; --accent-soft: #ffcbb3; --violet: #7c5cff;
+  --running: #c9a0ff; --running-bg: rgba(201,160,255,.08); --done: #a6f5cf; --done-bg: rgba(166,245,207,.07);
+  --failed: #ff8a8a; --you: rgba(255,138,101,.1); --bot: rgba(255,255,255,.04);
+  --serif: "Fraunces", Georgia, serif; --mono: "IBM Plex Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--body); font: 14px/1.5 var(--serif); -webkit-font-smoothing: antialiased; }
+.mono { font-family: var(--mono); }
+.app { height: 100vh; display: flex; flex-direction: column; background: radial-gradient(1000px 700px at 15% -10%, var(--bg-lift) 0%, var(--bg) 55%); }
+button { font: inherit; color: inherit; cursor: pointer; }
+
+/* ── top bar: four spaces, the inbox count, the composer shortcut, Nova's state ── */
+.top { display: flex; align-items: center; gap: 22px; padding: 14px 24px; border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 10px; font-size: 19px; color: var(--ink); font-weight: 600; letter-spacing: -.01em; }
+.brand i { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, var(--accent-soft), var(--violet)); box-shadow: 0 0 14px rgba(124,92,255,.6); }
+.spaces { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 999px; }
+.spaces button { border: 0; background: none; padding: 7px 16px; border-radius: 999px; color: var(--muted); font-family: var(--mono); font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
+.spaces button.on { background: var(--panel-hover); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.count { min-width: 19px; height: 19px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: #1a0f0a; font-size: 11px; font-weight: 500; display: inline-grid; place-items: center; }
+.spacer { flex: 1; }
+.kbd { font-family: var(--mono); font-size: 12px; color: var(--muted); border: 1px solid var(--line); padding: 6px 12px; border-radius: 999px; }
+.kbd b { color: var(--ink); font-weight: 500; }
+.state { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--accent-soft); }
+.state i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px rgba(255,138,101,.18); }
+
+.screen { flex: 1; min-height: 0; display: none; }
+.screen.on { display: grid; }
+.col { min-height: 0; overflow: auto; }
+h2 { font: 600 13px var(--mono); text-transform: lowercase; letter-spacing: .02em; color: var(--muted); margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+h2 .n { color: var(--accent); }
+.card { background: var(--panel-soft); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+.card + .card { margin-top: 10px; }
+.btns { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line-strong); background: none; border-radius: 999px; padding: 6px 13px; font-family: var(--mono); font-size: 12px; color: var(--body); }
+.btn.primary { background: var(--accent); color: #1a0f0a; border-color: var(--accent); font-weight: 500; }
+.tag { font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--muted); }
+.tag.run { color: var(--running); border-color: rgba(201,160,255,.35); background: var(--running-bg); }
+.tag.done { color: var(--done); border-color: rgba(166,245,207,.3); background: var(--done-bg); }
+.tag.warn { color: var(--accent-soft); border-color: rgba(255,138,101,.4); background: var(--you); }
+.title { color: var(--ink); font-size: 15.5px; font-weight: 500; line-height: 1.35; }
+.meta { font-family: var(--mono); font-size: 11.5px; color: var(--faint); margin-top: 4px; }
+.row { display: flex; align-items: center; gap: 10px; }
+.between { justify-content: space-between; }
+
+/* ── NOW ── */
+#now { grid-template-columns: 300px 1fr 380px; }
+.entity { padding: 34px 26px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 22px; }
+.blob { width: 190px; height: 190px; margin: 6px auto 0; border-radius: 46% 54% 50% 50% / 52% 46% 54% 48%;
+  background: radial-gradient(circle at 38% 34%, #ffd9c7 0%, var(--accent) 26%, var(--violet) 70%, #2a1f55 100%);
+  box-shadow: 0 0 60px rgba(124,92,255,.45), 0 0 120px rgba(255,138,101,.18); animation: breathe 5s ease-in-out infinite; }
+@keyframes breathe { 50% { transform: scale(1.04) rotate(3deg); border-radius: 52% 48% 46% 54% / 48% 54% 46% 52%; } }
+@media (prefers-reduced-motion: reduce) { .blob { animation: none; } }
+.said { font-size: 19px; line-height: 1.4; color: var(--ink); text-align: center; font-style: italic; font-weight: 300; }
+.live { font-family: var(--mono); font-size: 12px; color: var(--muted); text-align: center; }
+.mem { border-left: 2px solid var(--violet); padding: 10px 12px; background: rgba(124,92,255,.07); border-radius: 0 10px 10px 0; }
+.mem .meta { color: var(--muted); }
+
+.convo { display: flex; flex-direction: column; min-height: 0; }
+.thread { flex: 1; overflow: auto; padding: 28px 40px 10px; display: flex; flex-direction: column; gap: 16px; }
+.day { align-self: center; font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.msg { max-width: 640px; padding: 12px 16px; border-radius: 16px; line-height: 1.55; }
+.msg.me { align-self: flex-end; background: var(--you); color: var(--ink); border-bottom-right-radius: 4px; }
+.msg.nova { align-self: flex-start; background: var(--bot); color: var(--body); border-bottom-left-radius: 4px; font-size: 15px; }
+.msg .meta { margin-top: 6px; }
+.action { align-self: flex-start; width: min(640px, 100%); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.action .hd { padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; background: var(--panel-soft); }
+.steps { padding: 10px 14px 12px; display: grid; gap: 6px; font-family: var(--mono); font-size: 12px; }
+.steps div { display: flex; gap: 10px; align-items: center; color: var(--muted); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+.dot.done { background: var(--done); } .dot.run { background: var(--running); box-shadow: 0 0 0 4px var(--running-bg); }
+.composer { margin: 10px 40px 24px; display: flex; gap: 10px; align-items: center; border: 1px solid var(--line-strong); border-radius: 18px; padding: 10px 10px 10px 18px; background: var(--panel); }
+.composer span { flex: 1; color: var(--faint); font-size: 15px; }
+.mic { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--accent); display: grid; place-items: center; color: #1a0f0a; }
+.side { border-left: 1px solid var(--line); padding: 24px 22px; display: flex; flex-direction: column; gap: 26px; }
+.inbox .card { border-color: rgba(255,138,101,.28); background: linear-gradient(180deg, rgba(255,138,101,.06), rgba(255,138,101,.02)); }
+.thumbs { display: flex; gap: 6px; margin-top: 10px; }
+.thumbs i { width: 54px; height: 36px; border-radius: 6px; border: 1px solid var(--line-strong); background: linear-gradient(135deg, #1f2c27, #0e1714); }
+.thumbs i:nth-child(2) { background: repeating-linear-gradient(0deg, #f5f5f2 0 4px, #e8e8e3 4px 5px); }
+.thumbs i:nth-child(3) { background: linear-gradient(90deg, #f5f5f2 40%, #ff1f6f 40% 60%, #f5f5f2 60%); }
+.today .t { display: grid; grid-template-columns: 62px 1fr; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.today .t:first-of-type { border-top: 0; }
+.today .t .mono { color: var(--muted); font-size: 12px; }
+.wx { font-size: 26px; color: var(--ink); font-weight: 300; }
+
+/* ── WORK ── */
+#work { grid-template-columns: 300px 1fr 360px; }
+.list { border-right: 1px solid var(--line); padding: 22px 16px; }
+.li { padding: 10px 12px; border-radius: 10px; margin-bottom: 4px; }
+.li.on { background: var(--panel-hover); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.li .title { font-size: 14px; }
+.group { margin-top: 22px; }
+.graph { position: relative; padding: 28px; overflow: hidden; background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 22px 22px; }
+.node { position: absolute; width: 210px; max-width: 210px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--panel); }
+.node.done { border-color: rgba(166,245,207,.35); }
+.node.run { border-color: rgba(201,160,255,.55); box-shadow: 0 0 0 4px var(--running-bg); }
+.node .title { font-size: 14px; }
+.edge { position: absolute; border-top: 2px solid var(--line-strong); }
+.inspector { border-left: 1px solid var(--line); padding: 22px; }
+.kv { display: grid; grid-template-columns: 96px 1fr; gap: 8px 12px; font-size: 13px; margin-top: 10px; }
+.kv .mono { color: var(--faint); font-size: 12px; }
+pre { font: 12px/1.6 var(--mono); color: var(--muted); background: rgba(0,0,0,.25); border: 1px solid var(--line); border-radius: 10px; padding: 12px; white-space: pre-wrap; margin: 12px 0 0; }
+
+/* ── STUDIO ── */
+#studio { grid-template-columns: 1fr 420px; }
+.studio-main { padding: 26px 30px; overflow: auto; }
+.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 26px; }
+.dayc { border: 1px solid var(--line); border-radius: 12px; padding: 10px; min-height: 108px; background: var(--panel-soft); }
+.dayc .mono { font-size: 11.5px; color: var(--faint); }
+.dayc.today { border-color: var(--line-strong); }
+.slot { margin-top: 8px; padding: 7px 8px; border-radius: 8px; font-size: 12.5px; color: var(--ink); line-height: 1.3; }
+.slot.posted { background: var(--done-bg); border: 1px solid rgba(166,245,207,.25); }
+.slot.sched { background: var(--you); border: 1px solid rgba(255,138,101,.35); }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th { text-align: left; font: 500 11.5px var(--mono); color: var(--faint); padding: 8px 10px; border-bottom: 1px solid var(--line); }
+td { padding: 11px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td .meta { margin-top: 2px; }
+.draft { border-left: 1px solid var(--line); padding: 24px 22px; overflow: auto; }
+.preview { background: #fff; color: #191919; border-radius: 10px; padding: 14px; font: 13px/1.45 system-ui, sans-serif; }
+.preview .who { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.preview .av { width: 36px; height: 36px; border-radius: 50%; background: #c9b5a7; }
+.preview .imgs { display: grid; grid-template-columns: 2fr 1fr; gap: 3px; margin-top: 10px; }
+.preview .imgs i { background: linear-gradient(135deg, #1f2c27, #0e1714); height: 150px; border-radius: 3px; }
+.preview .imgs div { display: grid; gap: 3px; }
+.preview .imgs div i { height: 73.5px; background: repeating-linear-gradient(0deg, #f5f5f2 0 6px, #e5e5df 6px 7px); }
+.arms { display: grid; gap: 8px; margin-top: 10px; }
+
+/* ── YOU ── */
+#you { grid-template-columns: 1fr 1fr 1fr; gap: 0; }
+#you .col { padding: 24px 22px; border-right: 1px solid var(--line); }
+#you .col:last-child { border-right: 0; }
+.search { border: 1px solid var(--line-strong); border-radius: 12px; padding: 10px 14px; color: var(--faint); margin-bottom: 14px; }
+.stat { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.stat .card { padding: 12px 14px; }
+.big { font-size: 26px; color: var(--ink); font-weight: 400; }
+.bar { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; margin-top: 8px; }
+.bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--violet), var(--accent)); }
+.timeline .t { display: grid; grid-template-columns: 54px 1fr; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+.timeline .t .mono { color: var(--faint); font-size: 12px; }
+.mocknote { font-family: var(--mono); font-size: 11px; color: var(--faint); border: 1px dashed var(--line-strong); padding: 4px 10px; border-radius: 999px; cursor: help; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand"><i></i>Nova</div>
+    <nav class="spaces" aria-label="Spaces">
+      <button data-s="now" class="on">Now <span class="count" title="Needs you">3</span></button>
+      <button data-s="work">Work</button>
+      <button data-s="studio">Studio</button>
+      <button data-s="you">You</button>
+    </nav>
+    <span class="spacer"></span>
+    <span class="mocknote" title="mockup · docs/ui_rethink.md · Studio shows real data; Memory, Activity, Today, Usage and the Work run counts are illustrative">mockup</span>
+    <span class="kbd"><b>Ctrl K</b> type or talk, from anywhere</span>
+    <span class="state"><i></i>listening</span>
+  </header>
+
+  <!-- ───────────────────────────── NOW ───────────────────────────── -->
+  <section class="screen on" id="now">
+    <aside class="col entity">
+      <div class="blob" role="img" aria-label="Nova, listening"></div>
+      <p class="said">“Two posts are lined up for the week. Want to see them?”</p>
+      <p class="live">running · 1 task · groq · free</p>
+      <div class="mem">
+        <div class="title" style="font-size:14px">You looked at Bedrock pricing last Tuesday</div>
+        <div class="meta">memory · from Chrome · aws.amazon.com/bedrock</div>
+        <div class="btns"><button class="btn">Useful</button><button class="btn">Not now</button></div>
+      </div>
+    </aside>
+
+    <div class="col convo">
+      <div class="thread">
+        <span class="day">today · 13 oct</span>
+        <div class="msg me">schedule the posts for the week, and write up each project on my portfolio</div>
+        <div class="action">
+          <div class="hd"><span class="title" style="font-size:14px">Week of posts + portfolio articles</span><span class="tag done">done · 7 of 7</span></div>
+          <div class="steps">
+            <div><i class="dot done"></i>read NutriSafe, AirGated and Ved Code from their repos</div>
+            <div><i class="dot done"></i>wrote 6 articles · story + technical each</div>
+            <div><i class="dot done"></i>pushed portfolio · aakshantkumar.vercel.app/writing</div>
+            <div><i class="dot done"></i>scheduled NutriSafe thu 10:00 · AirGated sat 10:00</div>
+          </div>
+        </div>
+        <div class="msg nova">Done. Two posts are scheduled, each linking to its story and technical write-up. I held CivicPulse back: it isn't deployed yet, so a post would point people at something they can't try.<div class="meta">claude · 4 tool calls</div></div>
+        <div class="msg me">nice. what's the weather like for tomorrow</div>
+        <div class="msg nova">Clear in Kanpur, 31° at the warmest, 19° tonight.<div class="meta">answered from today's briefing · no agent turn</div></div>
+        <div class="msg me">and remind me to check the NutriSafe post with Anant before thursday</div>
+        <div class="action">
+          <div class="hd"><span class="title" style="font-size:14px">Reminder</span><span class="tag run">added</span></div>
+          <div class="steps"><div><i class="dot done"></i>wed 14 oct, 18:00 · “Check the NutriSafe post with Anant”</div></div>
+        </div>
+      </div>
+      <div class="composer"><span>Type, or just talk. One conversation: Nova decides when to act.</span><button class="mic" aria-label="Talk">●</button></div>
+    </div>
+
+    <aside class="col side">
+      <section class="inbox">
+        <h2>needs you <span class="n">3</span></h2>
+        <div class="card">
+          <div class="row between"><span class="tag warn">scheduled post</span><span class="meta">thu 15 oct · 10:00</span></div>
+          <div class="title" style="margin-top:8px">NutriSafe: reading the label so you don't have to</div>
+          <div class="meta">linkedin · 3 images · built with Anant Tirupati</div>
+          <div class="thumbs"><i></i><i></i><i></i></div>
+          <div class="btns"><button class="btn primary">Looks good</button><button class="btn">Edit</button><button class="btn">Unschedule</button></div>
+        </div>
+        <div class="card">
+          <div class="row between"><span class="tag warn">automation proposal</span><span class="meta">asked 4× this week</span></div>
+          <div class="title" style="margin-top:8px">“play some lofi”: a saved automation</div>
+          <div class="meta">automations/pending/play_genre.toml · reviewed ✓</div>
+          <div class="btns"><button class="btn primary">Keep it</button><button class="btn">See steps</button><button class="btn">Discard</button></div>
+        </div>
+        <div class="card">
+          <div class="row between"><span class="tag warn">sign-in</span><span class="meta">in 59 days</span></div>
+          <div class="title" style="margin-top:8px">LinkedIn sign-in lapses 12 dec</div>
+          <div class="btns"><button class="btn">Remind me a week before</button></div>
+        </div>
+      </section>
+      <section>
+        <h2>running</h2>
+        <div class="card"><div class="row between"><span class="title" style="font-size:14px">Screenshots of CivicPulse</span><span class="tag run">2 of 4</span></div><div class="meta">local run · localhost:3100</div></div>
+      </section>
+      <section class="today">
+        <h2>today</h2>
+        <div class="row" style="gap:14px;margin-bottom:8px"><span class="wx">29°</span><span class="meta" style="margin:0">Kanpur · haze · Nifty +0.4%</span></div>
+        <div class="t"><span class="mono">14:00</span><span>DBMS lab</span></div>
+        <div class="t"><span class="mono">18:00</span><span>Check the NutriSafe post with Anant</span></div>
+        <div class="t"><span class="mono">21:30</span><span>Journal: Nova writes today's entry</span></div>
+      </section>
+    </aside>
+  </section>
+
+  <!-- ───────────────────────────── WORK ───────────────────────────── -->
+  <section class="screen" id="work">
+    <aside class="col list">
+      <h2>tasks</h2>
+      <div class="li on"><div class="title">Week of posts + portfolio articles</div><div class="meta">today 16:40 · claude · done</div></div>
+      <div class="li"><div class="title">Redeploy Ved Code</div><div class="meta">today 15:10 · claude · done</div></div>
+      <div class="li"><div class="title">Detailed Ved Code post</div><div class="meta">today 14:20 · claude · done</div></div>
+      <div class="li"><div class="title">Play Big Hailey</div><div class="meta">today 09:02 · automation · 2.1 s</div></div>
+      <div class="group"><h2>standing goals</h2>
+        <div class="li"><div class="title">Draft the next unposted project</div><div class="meta">every 12 h · paced 4 days</div></div>
+        <div class="li"><div class="title">Morning briefing</div><div class="meta">weekdays 08:30</div></div>
+      </div>
+      <div class="group"><h2>automations <span class="n">1 proposed</span></h2>
+        <div class="li"><div class="title">20 saved</div><div class="meta">run counts and savings come from usage/</div></div>
+      </div>
+    </aside>
+    <div class="col graph">
+      <div class="node done" style="left:30px;top:40px"><div class="title">Read the three repos</div><div class="meta">code · commits · PROGRESS.md</div></div>
+      <div class="edge" style="left:240px;top:80px;width:30px"></div>
+      <div class="node done" style="left:270px;top:40px"><div class="title">Screenshots</div><div class="meta">live site · local run</div></div>
+      <div class="edge" style="left:480px;top:80px;width:30px"></div>
+      <div class="node done" style="left:510px;top:40px"><div class="title">Write 6 articles</div><div class="meta">story + technical</div></div>
+      <div class="node done" style="left:270px;top:190px"><div class="title">Build + check diagrams</div><div class="meta">2 layout bugs fixed</div></div>
+      <div class="node done" style="left:510px;top:190px"><div class="title">Push portfolio</div><div class="meta">vercel · 200 ×6</div></div>
+      <div class="edge" style="left:480px;top:230px;width:30px"></div>
+      <div class="node run" style="left:510px;top:340px"><div class="title">Schedule the week</div><div class="meta">thu · sat · 10:00</div></div>
+      <div class="edge" style="left:615px;top:290px;width:0;height:50px;border-top:0;border-left:2px solid var(--line-strong)"></div>
+    </div>
+    <aside class="col inspector">
+      <h2>step</h2>
+      <div class="title">Build + check diagrams</div>
+      <div class="kv"><span class="mono">status</span><span>done</span><span class="mono">took</span><span class="mono">6 min 12 s</span><span class="mono">tools</span><span>Bash ×6 · Read ×7</span></div>
+      <pre>Arms race labels overflowed narrow gutters → vertical layout.
+NutriSafe: "Typed text" crossed the Qwen3-VL box → four-column layout.</pre>
+      <div class="btns"><button class="btn">Redo this step</button><button class="btn">Save as automation</button></div>
+    </aside>
+  </section>
+
+  <!-- ───────────────────────────── STUDIO ───────────────────────────── -->
+  <section class="screen" id="studio">
+    <div class="studio-main">
+      <h2>this week · linkedin</h2>
+      <div class="week">
+        <div class="dayc"><span class="mono">mon 12</span></div>
+        <div class="dayc today"><span class="mono">tue 13 · today</span><div class="slot posted">Ved Code ✓<br><span class="meta">4 images · articles linked</span></div></div>
+        <div class="dayc"><span class="mono">wed 14</span></div>
+        <div class="dayc"><span class="mono">thu 15</span><div class="slot sched">NutriSafe<br><span class="meta">10:00 · 3 images</span></div></div>
+        <div class="dayc"><span class="mono">fri 16</span></div>
+        <div class="dayc"><span class="mono">sat 17</span><div class="slot sched">AirGated<br><span class="meta">10:00 · 4 images</span></div></div>
+        <div class="dayc"><span class="mono">sun 18</span></div>
+      </div>
+      <h2>projects</h2>
+      <table>
+        <thead><tr><th>project</th><th>linkedin</th><th>portfolio</th><th>pictures</th><th></th></tr></thead>
+        <tbody>
+          <tr><td><span class="title" style="font-size:14px">Ved Code</span><div class="meta">the-archive · 161 commits · solo</div></td><td><span class="tag done">posted 13 oct</span></td><td>story · technical</td><td class="mono" style="font-size:12px">live site, demo login</td><td><button class="btn">Open</button></td></tr>
+          <tr><td><span class="title" style="font-size:14px">NutriSafe</span><div class="meta">team · 21% yours · Anant</div></td><td><span class="tag warn">thu 10:00</span></td><td>story · technical</td><td class="mono" style="font-size:12px">landing + 2 diagrams</td><td><button class="btn">Edit</button></td></tr>
+          <tr><td><span class="title" style="font-size:14px">AirGated</span><div class="meta">solo · paper in prep</div></td><td><span class="tag warn">sat 10:00</span></td><td>story · technical</td><td class="mono" style="font-size:12px">diagrams only (student faces)</td><td><button class="btn">Edit</button></td></tr>
+          <tr><td><span class="title" style="font-size:14px">CivicPulse</span><div class="meta">2 commits · not deployed</div></td><td><span class="tag">held</span></td><td>—</td><td class="mono" style="font-size:12px">4 from local run</td><td><button class="btn">Draft anyway</button></td></tr>
+          <tr><td><span class="title" style="font-size:14px">Nova</span><div class="meta">this assistant · 87 commits</div></td><td><span class="tag">unposted</span></td><td>—</td><td class="mono" style="font-size:12px">—</td><td><button class="btn">Draft</button></td></tr>
+        </tbody>
+      </table>
+      <h2 style="margin-top:26px">capture inbox</h2>
+      <div class="card row between"><div><div class="title" style="font-size:14px">screen-2026-10-12-2214.mp4</div><div class="meta">4 min 10 s · monitor 1 · not edited</div></div><div class="btns" style="margin:0"><button class="btn">Cut</button><button class="btn">Caption</button><button class="btn">Use in a post</button></div></div>
+    </div>
+    <aside class="draft">
+      <h2>scheduled · thu 10:00</h2>
+      <div class="preview">
+        <div class="who"><span class="av"></span><div><b>Aakshant Kumar</b><div style="color:#666;font-size:12px">ML Engineer & Builder · now</div></div></div>
+        Reading a food label shouldn't need a chemistry degree, least of all when you're managing diabetes, hypertension or an allergy.<br><br>NutriSafe, built with Anant Tirupati, checks packaged food against your own health profile…<br><span style="color:#0a66c2">…see more</span>
+        <div class="imgs"><i></i><div><i></i><i></i></div></div>
+      </div>
+      <div class="btns"><button class="btn primary">Post now</button><button class="btn">Move</button><button class="btn">Edit text</button><button class="btn">Unschedule</button></div>
+      <h2 style="margin-top:28px">arms</h2>
+      <div class="arms">
+        <div class="card row between"><span>LinkedIn</span><span class="tag done">signed in · 59 days</span></div>
+        <div class="card row between"><span>GitHub</span><span class="tag">gh not installed</span></div>
+        <div class="card row between"><span>Instagram</span><span class="tag">not set up</span></div>
+      </div>
+    </aside>
+  </section>
+
+  <!-- ───────────────────────────── YOU ───────────────────────────── -->
+  <section class="screen" id="you">
+    <div class="col">
+      <h2>memory</h2>
+      <div class="search">Search what Nova remembers…</div>
+      <div class="card"><div class="title" style="font-size:14px">Bedrock Nova Pro pricing per 1K tokens</div><div class="meta">chrome · 6 oct · short-term</div></div>
+      <div class="card"><div class="title" style="font-size:14px">AirGated threshold: SFace 0.363 is OpenCV's default</div><div class="meta">vs code · 28 sep · long-term</div></div>
+      <div class="card"><div class="title" style="font-size:14px">“Keep the portfolio's Hindi gender-neutral”</div><div class="meta">you said · remembered</div></div>
+      <h2 style="margin-top:24px">journal</h2>
+      <div class="card"><div class="meta">mon 12 oct</div><p style="margin:6px 0 0;color:var(--body)">Most of the day went into the publishing pipeline. The first LinkedIn post went out, then came back as a detailed one once the code had been read properly.</p></div>
+    </div>
+    <div class="col timeline">
+      <h2>activity · today</h2>
+      <div class="t"><span class="mono">09:00</span><span>VS Code · Assisstant · 2 h 10 m</span></div>
+      <div class="t"><span class="mono">11:15</span><span>Chrome · LinkedIn developer portal · 25 m</span></div>
+      <div class="t"><span class="mono">12:00</span><span>VS Code · the-archive · 1 h 40 m</span></div>
+      <div class="t"><span class="mono">14:00</span><span>DBMS lab · away</span></div>
+      <div class="t"><span class="mono">16:30</span><span>Chrome · aakshantkumar.vercel.app · 15 m</span></div>
+      <h2 style="margin-top:24px">phone</h2>
+      <div class="card row between"><span>Pixel · battery 64%</span><span class="tag done">connected</span></div>
+    </div>
+    <div class="col">
+      <h2>usage · this week</h2>
+      <div class="stat">
+        <div class="card"><div class="meta">handled free</div><div class="big">78%</div><div class="bar"><i style="width:78%"></i></div></div>
+        <div class="card"><div class="meta">claude spend</div><div class="big">$4.12</div></div>
+        <div class="card"><div class="meta">automations</div><div class="big">41 runs</div></div>
+        <div class="card"><div class="meta">saved vs all-claude</div><div class="big">~$9</div></div>
+      </div>
+      <h2 style="margin-top:24px">profile</h2>
+      <div class="card"><div class="title" style="font-size:14px">Aakshant Kumar</div><div class="meta">B.Tech CSE (AI) · CSJMU · Kanpur · 6 sections · visibility per agent</div><div class="btns"><button class="btn">Edit profile</button></div></div>
+      <h2 style="margin-top:24px">machine</h2>
+      <div class="card mono" style="font-size:12px;color:var(--muted)">workspace C:\Assisstant · agent claude · 214 turns · voice id on · wake word "nova"</div>
+    </div>
+  </section>
+</div>
+<script>
+  document.querySelectorAll(".spaces button").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll(".spaces button").forEach((x) => x.classList.toggle("on", x === b));
+    document.querySelectorAll(".screen").forEach((s) => s.classList.toggle("on", s.id === b.dataset.s));
+    history.replaceState(null, "", "#" + b.dataset.s);
+  }));
+  const start = location.hash.slice(1);
+  if (start) document.querySelector(`.spaces button[data-s="${start}"]`)?.click();
+</script>
+</body>
+</html>
