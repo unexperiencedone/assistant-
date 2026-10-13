@@ -99,13 +99,15 @@ class InAMode(unittest.TestCase):
             time.sleep(0.02)
 
     def test_a_name_is_talk_not_a_phone_call(self):
+        # No mode to be in: mid-conversation, a bare name is judged talk and goes to the
+        # conversation, never on to the loose matcher or an agent with tools.
         self.controller.handle("let's chat", "keyboard")
-        self.controller.handle("gulzar ali", "keyboard")
         self.wait_for_turns(1)
-        prompt, talk = self.turns[0]
+        self.controller.handle("gulzar ali", "keyboard")
+        self.wait_for_turns(2)
+        prompt, talk = self.turns[-1]
         self.assertEqual(prompt, "gulzar ali")
         self.assertIn("casual conversation", talk)
-        self.assertNotIn("gulzar ali", [c.args[0] for c in self.automations.match.call_args_list])
 
     def test_handing_over_the_choice_gets_a_topic_not_a_question(self):
         self.controller.handle("talk to me about anything", "keyboard")
@@ -118,21 +120,25 @@ class InAMode(unittest.TestCase):
         addressed, _ = self.controller._addressed("i had the strangest day", "voice")
         self.assertTrue(addressed)
 
-    def test_back_to_work_ends_it_and_restores_the_scripts(self):
+    def test_a_command_mid_conversation_still_runs(self):
+        # The point of removing the modes: no "back to work" needed before asking.
         self.controller.handle("let's chat", "keyboard")
-        self.controller.handle("back to work", "keyboard")
-        self.assertIsNone(self.controller.talk)
-        self.assertEqual(self.events[-1]["kind"], "")
         self.controller.handle("open spotify", "keyboard")
         self.assertIn("open spotify", [c.args[0] for c in self.automations.match.call_args_list])
 
+    def test_back_to_work_still_closes_the_conversation_politely(self):
+        self.controller.handle("let's chat", "keyboard")
+        self.controller.handle("back to work", "keyboard")
+        self.assertIsNone(self.controller.talk)
+
     def test_a_brainstorm_knows_its_topic(self):
         self.controller.handle("let's brainstorm about a podcast name", "keyboard")
-        self.assertEqual(self.events[-1]["label"], "Brainstorming: a podcast name")
-        self.controller.handle("something about coffee", "keyboard")
+        self.assertEqual((self.controller.talk.kind, self.controller.talk.topic), ("brainstorm", "a podcast name"))
         self.wait_for_turns(1)
-        self.assertIn("brainstorming with", self.turns[0][1])
-        self.assertIn("about a podcast name", self.turns[0][1])
+        self.controller.handle("something about coffee", "keyboard")
+        self.wait_for_turns(2)
+        self.assertIn("brainstorming with", self.turns[-1][1])
+        self.assertIn("about a podcast name", self.turns[-1][1])
 
     def test_the_recap_is_saved(self):
         self.controller.handle("let's brainstorm about a podcast name", "keyboard")

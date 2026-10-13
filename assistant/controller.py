@@ -26,7 +26,7 @@ from .config import Settings
 from .controller_capture import CaptureCommands
 from .events import EventBus
 from .intents import LOCAL_INTENTS, Intent, match_intent, normalize, strip_wake_word
-from . import matching, persona, progress, reader
+from . import matching, persona, progress, reader, understanding
 from .persona import delivery
 from .persona import guard as persona_guard
 from .classify import classify
@@ -145,6 +145,11 @@ class Controller(CaptureCommands):
         self._talk_turns = 0
         self._recaps: dict[str, tuple[str, bool]] = {}  # task id -> (topic, end the mode after)
         self._talk_tasks: set[str] = set()              # task ids that are conversation turns
+        # No talk modes: each turn is judged act or talk (assistant/understanding.py).
+        # When the last talk turn was, and whether anything was said since the last
+        # agent task, so an action can be handed the conversation it came out of.
+        self._last_talk_at = 0.0
+        self._talked_since_dispatch = False
         self.waiting: list[str] = []  # said while every task slot was busy
         self.task_labels: dict[str, str] = {}
         self.task_commands: dict[str, str] = {}  # task id -> what you said, recorded once it succeeds
@@ -199,7 +204,7 @@ class Controller(CaptureCommands):
         policy = getattr(self.settings.assistant, "follow_up", "questions")
         # In a conversation every reply is a turn, so the microphone stays open after
         # all of them, the way you'd answer a person without saying their name first.
-        if self.talk is not None or policy == "always" or (policy == "questions" and heard.rstrip().endswith("?")):
+        if self._conversing() or policy == "always" or (policy == "questions" and heard.rstrip().endswith("?")):
             self._expect_reply()
 
     def announce(self, text: str) -> None:
@@ -289,20 +294,8 @@ class Controller(CaptureCommands):
             # Never send something destructive because the next sentence was ambiguous.
             self._pending_phone = None
 
-        # In a conversation, what you say is talk. Only the mode's own phrases and the
-        # urgent ones act as commands; the script matchers are skipped, because a name or
-        # a half-thought must never become an action ("gulzar ali" became a phone call).
-        if self.talk is not None:
-            if self.talk.idle():
-                self._end_talk(quiet=True)
-            else:
-                intent = match_intent(text)
-                if intent and intent.name in TALK_COMMANDS:
-                    self.bus.publish("route", utterance=text, route="intent", name=intent.name)
-                    self._handle_intent(intent, text)
-                else:
-                    self._converse(text)
-                return
+        if self.talk is not None and self.talk.idle():
+            self._end_talk(quiet=True)   # a quiet spell ends the conversation's style, nothing else
 
         # Scripted automations first: user-defined phrases, instant, no Claude usage.
         found = self.automations.match(text) if self.automations else None
@@ -319,9 +312,23 @@ class Controller(CaptureCommands):
             return
 
         intent = match_intent(text)
+        # "How's it going?" is a status question while a task runs, and a greeting
+        # otherwise; with nothing running, the greeting reading wins.
+        if intent is not None and intent.name == "status" and not self.runner.running:
+            ruled = understanding.by_rules(text, self._conversing())
+            if ruled is not None and ruled.kind == understanding.TALK:
+                intent = None
         if intent is None:
-            # Nothing matched strictly. Before paying for an agent turn, check whether
-            # this is something Nova already has a script for, said differently.
+            # Nothing matched strictly. Is it something to do, or something said? Talk
+            # goes to the conversation (no tools, same thread); only a request goes on to
+            # the loose matcher, the classifier and the agent (assistant/understanding.py).
+            judgement = self._understand(text)
+            if judgement.kind == understanding.TALK:
+                self.bus.publish("route", utterance=text, route="talk", name=judgement.source)
+                self._talk(text, judgement)
+                return
+            # Before paying for an agent turn, check whether this is something Nova
+            # already has a script for, said differently.
             if self._try_loosely(text):
                 return
         if intent and intent.name in LOCAL_INTENTS:
@@ -459,7 +466,7 @@ class Controller(CaptureCommands):
             return False
         # Count from when Nova stopped talking, not from when the reply was queued.
         finished = max(self.awaiting_since, getattr(self.speaker, "last_active_at", 0.0))
-        window = conversation.LISTEN_SECONDS if self.talk is not None else \
+        window = conversation.LISTEN_SECONDS if self._conversing() else \
             getattr(self.settings.assistant, "follow_up_seconds", 8)
         return time.time() - finished < window
 
@@ -727,6 +734,13 @@ class Controller(CaptureCommands):
             prompt = self.profile.with_context(prompt, text, backend.name)
         # The date, the weather, the markets and what's on: one line, so no turn ever
         # has to look up what day it is (assistant/today).
+        # Asked straight out of a conversation: the brain doing it may not have been in
+        # it (talk runs on the free model), so it is handed the last few turns.
+        if self._talked_since_dispatch:
+            self._talked_since_dispatch = False
+            recent = self._recent_exchange()
+            if recent:
+                prompt = f"The conversation this request came out of:\n{recent}\n\nRequest: {prompt}"
         # Asked over another app: what was on that screen, for this question only.
         if self.screen_context and self.screen_context[0] == text:
             prompt = f"{self.screen_context[1]}\n\nQuestion: {prompt}"
@@ -862,19 +876,20 @@ class Controller(CaptureCommands):
         self.say(f"Got it. {total - done} to go." if total - done > 1 else "Got it. One more.")
 
     # -- talk modes (assistant/conversation.py) ---------------------------------------
-    def _intent_talk_mode_on(self, _text: str, topic: str = "") -> None:
-        self._start_talk("chat", topic)
+    def _intent_talk_mode_on(self, text: str, topic: str = "") -> None:
+        # There is no mode to enter: "let's chat" is just the first talk turn.
+        self._talk(text, understanding.Judgement(understanding.TALK, "rule", topic=topic))
 
-    def _intent_brainstorm_on(self, _text: str, topic: str = "") -> None:
-        self._start_talk("brainstorm", topic)
+    def _intent_brainstorm_on(self, text: str, topic: str = "") -> None:
+        self._talk(text, understanding.Judgement(understanding.TALK, "rule", style="brainstorm", topic=topic))
 
     def _intent_talk_mode_off(self, _text: str) -> None:
-        if self.talk is None:
-            self.say("We weren't chatting, but I'm here. What do you need?")
-        elif self.talk.kind == "brainstorm" and self._talk_turns >= 2:
+        if self.talk is not None and self.talk.kind == "brainstorm" and self._talk_turns >= 2:
             self._recap(end_after=True)   # leaving a brainstorm keeps what it made
-        else:
+        elif self.talk is not None:
             self._end_talk()
+        else:
+            self.say("Sure. What do you need?")
 
     def _intent_brainstorm_recap(self, text: str) -> None:
         if self.talk is None or self.talk.kind != "brainstorm":
@@ -914,11 +929,57 @@ class Controller(CaptureCommands):
         if self._talk_agent is not None and hasattr(self._talk_agent, "talk"):
             self._talk_agent.talk = ""
         self.talk, self._talk_agent, self._talk_turns = None, None, 0
-        self.bus.publish("talk_mode", kind="", subject="", label="", since=0)
         if quiet:
-            self.bus.log("talk mode ended after a quiet spell")
+            self.bus.log("the conversation went quiet")
         else:
-            self.say("Okay, back to work.")
+            self.say("Sure.")
+
+    # -- one conversation, no modes (assistant/understanding.py) -----------------------
+    CONVERSING_SECONDS = 180
+
+    def _conversing(self) -> bool:
+        """Was the last thing a talk turn, recently? Then a fragment is a reply."""
+        return time.time() - self._last_talk_at < self.CONVERSING_SECONDS
+
+    def _understand(self, text: str) -> "understanding.Judgement":
+        groq = getattr(getattr(self.settings, "agents", None), "groq", None)
+        key = self._classifier_key()
+
+        def ask(said: str, recent: list) -> "understanding.Judgement | None":
+            return understanding.by_model(said, recent, api_key=key, model=getattr(groq, "model", ""),
+                                          timeout=float(getattr(groq, "timeout", 6) or 6) / 2)
+
+        judgement = understanding.judge(text, list(self._recent), self._conversing(), ask if key else None)
+        self.bus.log(f"understood as {judgement.kind} ({judgement.source})")
+        return judgement
+
+    def _talk(self, text: str, judgement: "understanding.Judgement") -> None:
+        """One talk turn on the free model, in the conversation's current style."""
+        style = judgement.style or (self.talk.kind if self.talk is not None else "chat")
+        if self.talk is None or self.talk.kind != style:
+            self._open_talk(style, judgement.topic)
+        self._last_talk_at = time.time()
+        self._talked_since_dispatch = True
+        self._expect_reply()   # a conversation: the next sentence needs no wake word
+        if self.talk.lead and self._talk_turns == 0:
+            self._converse(text, prompt=conversation.LEAD_PROMPT, label="Picking a topic")
+            return
+        self._converse(text)
+
+    def _open_talk(self, kind: str, topic: str = "") -> None:
+        """The conversation's style and its free-model session. No mode, no opening line."""
+        if self._talk_agent is not None and hasattr(self._talk_agent, "talk"):
+            self._talk_agent.talk = ""
+        self.talk = conversation.start(kind, topic)
+        self._talk_turns = 0
+        self._talk_agent = self._talk_backend()
+        # It joins a thread already in progress: what was just said, whoever said it.
+        recent = self._recent_exchange()
+        if recent and hasattr(self._talk_agent, "carry"):
+            self._talk_agent.carry(recent)
+        owner = self.profile.preferred_name if self.profile else ""
+        if hasattr(self._talk_agent, "talk"):
+            self._talk_agent.talk = self.talk.instructions(owner)
 
     def _converse(self, text: str, prompt: str | None = None, label: str = "") -> str | None:
         """One turn of the conversation, on the talk agent, as a light task."""
