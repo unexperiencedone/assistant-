@@ -12,7 +12,7 @@ LinkedIn and Instagram need credentials in .env.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import github, instagram, linkedin
 from .gate import PublishGate, describe
@@ -23,7 +23,11 @@ class PublishService:
         self.bus = bus
         self.workspace = Path(workspace) if workspace else None
         self.gate = PublishGate(path, bus)
-        self.gate.register("linkedin_post", linkedin.sender)
+        # Called with (draft, detail) after a platform confirmed a send -- never before,
+        # and never for a failure. The showcase ledger is written from here.
+        self.after_send: list[Callable[[dict[str, Any], str], None]] = []
+        self.showcase: Any = None   # publish/showcase.py, attached by the app when enabled
+        self.gate.register("linkedin_post", self._send_linkedin)
         self.gate.register("instagram_post", instagram.sender)
         self.gate.register("github_release", self._send_release)
         self.gate.register("github_push", self._send_push)
@@ -69,6 +73,22 @@ class PublishService:
         return self.gate.spoken()
 
     # -- senders ----------------------------------------------------------------------
+    def _send_linkedin(self, draft: dict[str, Any]) -> tuple[bool, str]:
+        ok, detail = linkedin.sender(draft)
+        # A draft that replaces an earlier post deletes it only after the new one is up,
+        # so a failure leaves the old post standing rather than leaving nothing.
+        old = (draft.get("extra") or {}).get("replaces", "")
+        if ok and old:
+            gone, said = linkedin.delete_post(old)
+            detail = f"{detail} {said}" if gone else f"{detail} But I couldn't delete the old post: {said}"
+        if ok:
+            for hook in self.after_send:
+                try:
+                    hook(draft, detail)
+                except Exception:
+                    pass   # the post is out; a bookkeeping slip must not call it failed
+        return ok, detail
+
     def _send_email(self, draft: dict[str, Any]) -> tuple[bool, str]:
         """No email arm yet, said without pretending otherwise.
 
@@ -99,8 +119,7 @@ class PublishService:
     def readiness(self) -> dict[str, tuple[bool, str]]:
         return {
             "github": github.signed_in(),
-            "linkedin": linkedin.check() if linkedin.configured() else
-            (False, f"No LinkedIn token: put {linkedin.TOKEN_ENV} in your .env file."),
+            "linkedin": linkedin.check(),
             "instagram": instagram.check() if instagram.configured() else
             (False, f"Instagram isn't set up: {instagram.TOKEN_ENV} and {instagram.USER_ENV} "
                     "need to be in your .env file."),

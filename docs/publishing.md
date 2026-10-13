@@ -46,15 +46,26 @@ gh auth login
 **No partner approval needed to post to your own profile.** This is the part most guides get
 wrong and it is why LinkedIn is the easier of the two.
 
-1. Create an app in the LinkedIn developer portal.
-2. Add the self-serve **Share on LinkedIn** product. The `w_member_social` scope arrives
-   without a review conversation — it means "act as the member who signed in, on their own
-   feed", which covers posting, commenting and liking.
-3. Put the member access token in `.env`:
+1. Create an app in the LinkedIn developer portal. It wants a company page and a privacy
+   policy URL; ours is `PRIVACY.md` in the public profile repo.
+2. Add two self-serve products: **Share on LinkedIn** (`w_member_social`, "act as the
+   member who signed in, on their own feed") and **Sign In with LinkedIn using OpenID
+   Connect** (`openid profile`: without it `/v2/userinfo` refuses, and that is how the
+   post's author is found).
+3. On the Auth tab, add the redirect URL `http://localhost:8766/linkedin/callback`.
+4. Put the app's credentials in `.env`, then sign in once:
 
    ```
-   LINKEDIN_ACCESS_TOKEN=...
+   LINKEDIN_CLIENT_ID=...
+   LINKEDIN_CLIENT_SECRET=...
    ```
+   ```powershell
+   python main.py linkedin auth
+   ```
+
+   `linkedin_auth.py` opens the consent page, listens on the redirect URL, and stores the
+   token in `data/linkedin_token.json`. Self-serve apps get no refresh token, so every 60
+   days it is `linkedin auth` again (one click; `status` warns a week ahead).
 
 Details the API is strict about: posts go to `POST /rest/posts`, with a `LinkedIn-Version`
 header in `YYYYMM` form (a version they still support — they cut one monthly and support each
@@ -65,7 +76,40 @@ Ceilings, not approvals, are what will bite: roughly **100 calls per day per mem
 tokens expire after **60 days** and refresh tokens after **365**. `linkedin.check()` exists so
 an expired token reads as "sign in again" rather than as a mystery.
 
-Text posts only so far. Images and video need the upload endpoints, which are not wired up.
+Text and images (Images API: initializeUpload, PUT, then the URNs go in the post). Video
+is not wired up. The commentary is "little text": `( ) [ ] # @ * _ ~ < > { } |` are markup
+and are escaped by `little_text()`, or LinkedIn cuts the post at the first one.
+
+### Showcase: your unposted projects (`assistant/publish/showcase.py`)
+
+```
+scan [showcase] roots  ->  diff against data/linkedin_posted.json  ->  newest unposted
+-> free model writes hook / what / how / bugs   (Groq, tool-free, your voice)
+-> Built / Partly there / Next come from the repo, never from the model
+-> staged at the gate with up to 4 screenshots already in the repo
+-> "post it"  ->  LinkedIn  ->  ledger records it (only after LinkedIn confirms)
+```
+
+| Guard | Where |
+|---|---|
+| Only whitelisted roots are read; `ignore` (client work, others' repos) never is | `projects.discover` |
+| A repo with none of your commits is skipped; a team repo is written as "we" and flagged | `projects.read` (`git shortlog`, `user.email`) |
+| Secrets and emails are stripped from every fact before the model sees it | `projects.clean` (AfterThought's redaction) |
+| Only images already on disk, never files named like secrets | `projects._images` |
+| A section with nothing behind it is left out, and the model can't add a bug story | `showcase.compose` / `parse` |
+| One post every `min_gap_days`: the background check drafts only when nothing is waiting | `Showcase.auto` |
+
+Reading your existing posts back needs a scope LinkedIn won't give individuals, so the
+ledger is seeded once from the data export (Settings -> Data privacy -> Get a copy of your
+data -> `Shares.csv`): `python main.py linkedin seed "C:\path\Shares.csv"`.
+
+Voice: **"post my new project"**, **"post nutrisafe on linkedin"**, **"which projects
+haven't I posted"**, then "post it" / "drop it". Terminal: `python main.py linkedin
+scan | draft [name] | pending | approve | drop | mark <name> | skip <name> | ledger`.
+
+Not built yet: capturing fresh screenshots of a running web app (Playwright), and
+redacting text inside screenshots. Until then, the approval line says how many images
+are attached so you look at them.
 
 ## Instagram
 
@@ -102,7 +146,12 @@ until it is made, `instagram.sender` says so plainly rather than pretending to t
 | `assistant/publish/gate.py` | drafts, approval, honest recording of what happened |
 | `assistant/publish/service.py` | owns the gate, registers the senders, reports which arms work |
 | `assistant/publish/github.py` | the `gh` CLI wrapper, plus `git` commit-and-push |
-| `assistant/publish/linkedin.py` | Posts API, own feed, text |
+| `assistant/publish/linkedin.py` | Posts + Images API, own feed |
+| `assistant/publish/linkedin_auth.py` | browser sign-in, token storage, expiry warnings |
+| `assistant/publish/projects.py` | finding projects and reading facts off them |
+| `assistant/publish/ledger.py` | what is already posted; export seeding |
+| `assistant/publish/showcase.py` | picking, writing, pacing, recording |
+| `assistant/publish/__main__.py` | `python main.py linkedin ...` |
 | `assistant/publish/instagram.py` | container-then-publish, professional accounts |
 | `tests/test_publish.py` | that staging sends nothing, and a failure is never a send |
 

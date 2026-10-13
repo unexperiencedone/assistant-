@@ -122,7 +122,7 @@ class Service(unittest.TestCase):
         self.assertIn("linkedin", state)
         ok, detail = state["linkedin"]
         if not ok:
-            self.assertIn("LINKEDIN_ACCESS_TOKEN", detail)
+            self.assertIn("linkedin auth", detail)
 
     def test_a_release_without_a_tag_refuses_rather_than_guessing(self):
         draft = self.service.gate.stage("github_release", "some notes", target="me/repo")

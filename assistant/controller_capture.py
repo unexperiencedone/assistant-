@@ -12,6 +12,7 @@ saying the honest answer back.
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +77,43 @@ class CaptureCommands:
             self.say("Publishing is turned off in the config.")
             return
         self.say(self.publisher.discard())
+
+    # -- your projects on LinkedIn (publish/showcase.py) -------------------------------
+    # Scanning a dozen repos and phrasing a post takes 15-30 seconds, so each of these
+    # says it has started and finishes on its own thread.
+    def _showcase(self) -> Any:
+        showcase = getattr(self.publisher, "showcase", None) if self.publisher else None
+        if showcase is None:
+            self.say("The project showcase is turned off in the config.")
+        return showcase
+
+    def _showcase_in_background(self, opening: str, work: Any) -> None:
+        self.say(opening)
+
+        def run() -> None:
+            try:
+                self.say(work())
+            except Exception as error:
+                self.say(f"I couldn't put that together: {error}")
+
+        threading.Thread(target=run, name="showcase", daemon=True).start()
+
+    def _intent_showcase_draft(self, _text: str) -> None:
+        showcase = self._showcase()
+        if showcase is not None:
+            self._showcase_in_background("Looking through your projects for one that isn't on LinkedIn yet.",
+                                         showcase.draft)
+
+    def _intent_showcase_project(self, _text: str, project: str = "", name: str = "") -> None:
+        showcase = self._showcase()
+        wanted = (project or name).strip()
+        if showcase is not None:
+            self._showcase_in_background(f"Writing up {wanted}.", lambda: showcase.draft(wanted))
+
+    def _intent_showcase_unposted(self, _text: str) -> None:
+        showcase = self._showcase()
+        if showcase is not None:
+            self._showcase_in_background("Checking your project folders.", showcase.spoken_unposted)
 
     # -- provided by Controller --------------------------------------------------------
     def say(self, text: str) -> None:  # pragma: no cover - the real one lives on Controller
