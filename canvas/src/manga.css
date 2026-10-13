@@ -219,7 +219,7 @@ body { font: 400 15px/1.55 var(--text); color: var(--pen); }
 .m-ov-portrait .m-sfx { font-size: 18px; transform: rotate(-5deg); }
 .m-ov-name { position: absolute; left: 0; right: 0; bottom: 0; background: var(--pen); color: var(--paper); text-align: center; font: 900 13px var(--text); letter-spacing: .24em; padding: 5px 0 6px; }
 .m-ov-body { padding: 26px 24px 18px; overflow: auto; }
-.m-ov-sel { display: block; margin-top: 6px; font: 400 13.5px/1.45 Consolas, monospace; color: var(--pen-2); white-space: pre-wrap; }
+.m-ov-sel { display: block; margin-top: 6px; font: 400 13.5px/1.45 "IBM Plex Mono", monospace; color: var(--pen-2); white-space: pre-wrap; }
 .m-ov-choices { display: grid; gap: 8px; margin-top: 14px; }
 .m-ov-choice { display: flex; align-items: center; gap: 14px; border: 2px solid var(--pen); background: var(--paper); padding: 8px 14px; font: 900 15.5px var(--text); color: var(--pen); text-align: left; cursor: pointer; }
 .m-ov-choice:hover { background: var(--pen); color: var(--paper); }

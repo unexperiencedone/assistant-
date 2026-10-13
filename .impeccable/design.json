@@ -1,0 +1,407 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-13T22:52:21+00:00",
+  "title": "Design System: Nova",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Manuscript Paper",
+        "canonical": "#f5f5f2",
+        "tonalRamp": [
+          "#0b0b09",
+          "#252523",
+          "#424240",
+          "#61615f",
+          "#828280",
+          "#a5a5a2",
+          "#c9c9c6",
+          "#efefec"
+        ]
+      },
+      "paper-shade": {
+        "role": "neutral",
+        "displayName": "Paper Shade",
+        "canonical": "#e9e9e4",
+        "tonalRamp": [
+          "#0b0b08",
+          "#252522",
+          "#42423e",
+          "#61615d",
+          "#83837e",
+          "#a5a5a1",
+          "#c9c9c5",
+          "#efefea"
+        ]
+      },
+      "sheet-white": {
+        "role": "neutral",
+        "displayName": "Sheet White",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "pen": {
+        "role": "neutral",
+        "displayName": "G-Pen Ink",
+        "canonical": "#0d0d0d",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "pen-grey": {
+        "role": "neutral",
+        "displayName": "Pen Grey",
+        "canonical": "#3b3b3b",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "body-ink": {
+        "role": "neutral",
+        "displayName": "Body Ink",
+        "canonical": "#1b1b1b",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "faint-graphite": {
+        "role": "neutral",
+        "displayName": "Faint Graphite",
+        "canonical": "#6a6a66",
+        "tonalRamp": [
+          "#0b0b08",
+          "#252522",
+          "#42423f",
+          "#61615d",
+          "#83837e",
+          "#a5a5a1",
+          "#c9c9c5",
+          "#efefea"
+        ]
+      },
+      "guide-blue": {
+        "role": "secondary",
+        "displayName": "Guide Blue",
+        "canonical": "#a9c8e8",
+        "tonalRamp": [
+          "#000c1b",
+          "#0c263f",
+          "#29445f",
+          "#486480",
+          "#6885a3",
+          "#8aa8c7",
+          "#aecded",
+          "#e2f0ff"
+        ]
+      },
+      "spot-pink": {
+        "role": "primary",
+        "displayName": "Spot Pink",
+        "canonical": "#ff1f6f",
+        "tonalRamp": [
+          "#1e0006",
+          "#49041b",
+          "#7d0231",
+          "#b30a4a",
+          "#e82166",
+          "#fe6e8e",
+          "#feb1bd",
+          "#fee8eb"
+        ]
+      },
+      "failed-red": {
+        "role": "error",
+        "displayName": "Failed Red",
+        "canonical": "#b3001f",
+        "tonalRamp": [
+          "#1f0001",
+          "#4b040a",
+          "#800114",
+          "#b60922",
+          "#df4044",
+          "#fc7571",
+          "#fcb4ae",
+          "#ffe9e7"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "sfx": {
+        "displayName": "SFX",
+        "purpose": "Status words and the wordmark; paper-outlined."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section heads, paired with a Rozha One Devanagari line."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Quest titles, tracker head, task names."
+      },
+      "said": {
+        "displayName": "Said",
+        "purpose": "Anything spoken: balloons and captions."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Base text and context lines."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Caption tabs and ledger heads; stamps at 11px."
+      },
+      "pencil": {
+        "displayName": "Pencil",
+        "purpose": "Spot-backed margin notes, spoken hints, said-back lines."
+      },
+      "devanagari-head": {
+        "displayName": "Devanagari Head",
+        "purpose": "Companion line to headlines and the tracker head."
+      },
+      "devanagari-sub": {
+        "displayName": "Devanagari Sub",
+        "purpose": "Nav subs and Devanagari inside tabs."
+      }
+    },
+    "frames": [
+      {
+        "name": "inset",
+        "value": "2px solid #0d0d0d",
+        "purpose": "Captions, buttons, keycaps, slots, ledger rows."
+      },
+      {
+        "name": "panel",
+        "value": "3px solid #0d0d0d",
+        "purpose": "Default panel, balloons, stamps, orb."
+      },
+      {
+        "name": "splash",
+        "value": "5px solid #0d0d0d",
+        "purpose": "Conversation, overlay panel, today's day cell, lock brackets, Work entity."
+      },
+      {
+        "name": "underdrawing",
+        "value": "1.5px solid #a9c8e8; inset 5px -6px -6px 5px; rotate(-.4deg); opacity .65",
+        "purpose": "Behind every panel; structure, never state."
+      }
+    ],
+    "shadows": [
+      {
+        "name": "lock-halo",
+        "value": "0 0 0 2px #f5f5f2, inset 0 0 0 2px #f5f5f2",
+        "purpose": "The only box-shadow in the system: keeps overlay lock brackets legible over any app."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-ink",
+        "value": "cubic-bezier(.16, 1, .3, 1)",
+        "purpose": "All entrances and the orb breath."
+      },
+      {
+        "name": "button-invert",
+        "value": "120ms background, color",
+        "purpose": "Button hover inversion."
+      },
+      {
+        "name": "ink-on",
+        "value": "300ms clip-path inset wipe, 40ms stagger per corner",
+        "purpose": "Lock brackets inking onto what Nova read."
+      },
+      {
+        "name": "rise",
+        "value": "460ms after 260ms delay; translateY 24px to 0, rotate -.6deg to -.4deg",
+        "purpose": "Overlay answer panel after the lock."
+      },
+      {
+        "name": "breathe",
+        "value": "1.6s alternate infinite; scale 1.08 rotate 6deg",
+        "purpose": "Live orb, only while status is busy."
+      },
+      {
+        "name": "slide",
+        "value": "1.4s linear infinite",
+        "purpose": "Screentone fill in the running bar while a job runs."
+      }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Default action: paper box, 2px ink, inverts on hover.",
+      "html": "<button class=\"ds-btn\">Post now</button> <button class=\"ds-btn\" disabled>Unavailable</button>",
+      "css": ":host{--paper:#f5f5f2;--pen:#0d0d0d;--pen-2:#3b3b3b;--guide:#a9c8e8;--spot:#ff1f6f;--faint:#6a6a66;--text:'Zen Kaku Gothic New','Mukta',system-ui,sans-serif;--sfx:'Dela Gothic One','Rozha One',sans-serif;--pencil:'Klee One','Mukta',cursive;--ease-ink:cubic-bezier(.16,1,.3,1)}.ds-btn{display:inline-flex;align-items:center;gap:8px;border:2px solid var(--pen);border-radius:0;background:var(--paper);color:var(--pen);font:900 13.5px var(--text);padding:6px 12px;cursor:pointer;transition:background 120ms,color 120ms}.ds-btn:hover:not(:disabled){background:var(--pen);color:var(--paper)}.ds-btn:focus-visible{outline:3px solid var(--spot);outline-offset:3px}.ds-btn:disabled{border-style:dashed;color:var(--faint);cursor:not-allowed}"
+    },
+    {
+      "name": "Spot Button",
+      "kind": "button",
+      "refersTo": "button-spot",
+      "description": "The one primary action of a quest, with its F-key.",
+      "html": "<button class=\"ds-btn-spot\"><span class=\"ds-key\">F1</span>Looks good</button>",
+      "css": ":host{--paper:#f5f5f2;--pen:#0d0d0d;--pen-2:#3b3b3b;--guide:#a9c8e8;--spot:#ff1f6f;--faint:#6a6a66;--text:'Zen Kaku Gothic New','Mukta',system-ui,sans-serif;--sfx:'Dela Gothic One','Rozha One',sans-serif;--pencil:'Klee One','Mukta',cursive;--ease-ink:cubic-bezier(.16,1,.3,1)}.ds-key{display:inline-grid;place-items:center;min-width:22px;height:20px;padding:0 6px;border:2px solid var(--pen);border-bottom-width:3px;background:var(--paper);font:900 11px var(--text);color:var(--pen)}.ds-btn-spot{display:inline-flex;align-items:center;gap:8px;border:3px solid var(--pen);border-radius:0;background:var(--spot);color:var(--pen);font:900 13.5px var(--text);padding:6px 12px;cursor:pointer;transition:background 120ms,color 120ms}.ds-btn-spot:hover{background:var(--pen);color:var(--spot)}.ds-btn-spot:focus-visible{outline:3px solid var(--spot);outline-offset:3px}"
+    },
+    {
+      "name": "Compose Field",
+      "kind": "input",
+      "refersTo": "caption",
+      "description": "Borderless input inside a 3px ink frame with the spot send square.",
+      "html": "<form class=\"ds-compose\"><input placeholder=\"Say it, or type it. Nova decides when to act.\"><button type=\"button\" class=\"ds-send\" aria-label=\"Send\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 18 18\" fill=\"none\" stroke=\"#0d0d0d\" stroke-width=\"2.8\" stroke-linecap=\"square\"><path d=\"M2 9h12M9 3l6 6-6 6\"/></svg></button></form>",
+      "css": ":host{--paper:#f5f5f2;--pen:#0d0d0d;--pen-2:#3b3b3b;--guide:#a9c8e8;--spot:#ff1f6f;--faint:#6a6a66;--text:'Zen Kaku Gothic New','Mukta',system-ui,sans-serif;--sfx:'Dela Gothic One','Rozha One',sans-serif;--pencil:'Klee One','Mukta',cursive;--ease-ink:cubic-bezier(.16,1,.3,1)}.ds-compose{display:flex;gap:12px;align-items:center;padding:10px 12px 10px 18px;border:3px solid var(--pen);background:var(--paper)}.ds-compose input{flex:1;border:0;background:none;outline:none;font:700 16px var(--text);color:var(--pen);min-width:0}.ds-compose input::placeholder{color:var(--pen-2)}.ds-compose:focus-within{outline:3px solid var(--spot);outline-offset:3px}.ds-send{width:44px;height:44px;border:3px solid var(--pen);background:var(--spot);display:grid;place-items:center;cursor:pointer}.ds-send:focus-visible{outline:3px solid var(--pen);outline-offset:3px}"
+    },
+    {
+      "name": "Space Nav",
+      "kind": "nav",
+      "refersTo": "key",
+      "description": "Masthead spaces: keycap, English label, Devanagari sub; the current space underlined in spot.",
+      "html": "<nav class=\"ds-nav\"><button aria-current=\"page\"><span class=\"ds-key\">1</span><span class=\"l\"><b>Now<span class=\"ds-count\">2</span></b><small lang=\"hi\">अभी</small></span></button><button><span class=\"ds-key\">2</span><span class=\"l\"><b>Work</b><small lang=\"hi\">काम</small></span></button><button><span class=\"ds-key\">3</span><span class=\"l\"><b>Studio</b><small lang=\"hi\">स्टूडियो</small></span></button><button><span class=\"ds-key\">4</span><span class=\"l\"><b>You</b><small lang=\"hi\">आप</small></span></button></nav>",
+      "css": ":host{--paper:#f5f5f2;--pen:#0d0d0d;--pen-2:#3b3b3b;--guide:#a9c8e8;--spot:#ff1f6f;--faint:#6a6a66;--text:'Zen Kaku Gothic New','Mukta',system-ui,sans-serif;--sfx:'Dela Gothic One','Rozha One',sans-serif;--pencil:'Klee One','Mukta',cursive;--ease-ink:cubic-bezier(.16,1,.3,1)}.ds-key{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 6px;border:2px solid var(--pen);border-bottom-width:4px;background:var(--paper);font:900 12px var(--text);color:var(--pen)}.ds-nav{display:flex;gap:20px}.ds-nav button{display:flex;align-items:center;gap:9px;background:none;border:0;padding:2px 0;cursor:pointer;color:var(--pen)}.ds-nav .l{display:grid;line-height:1.1;text-align:left}.ds-nav b{font:700 15px var(--text)}.ds-nav small{font:700 12.5px 'Mukta',sans-serif;color:var(--pen-2)}.ds-nav button[aria-current=page] b{text-decoration:underline 3px var(--spot);text-underline-offset:5px}.ds-nav button:focus-visible{outline:3px solid var(--spot);outline-offset:3px}.ds-count{display:inline-grid;place-items:center;min-width:21px;height:21px;margin-left:6px;background:var(--spot);border:2px solid var(--pen);font:900 11.5px var(--text)}"
+    },
+    {
+      "name": "Stamp",
+      "kind": "chip",
+      "refersTo": "stamp",
+      "description": "Rubber-stamp tag; solid for counts, dashed for scheduled or proposed.",
+      "html": "<span class=\"ds-stamp\">Draft</span> <span class=\"ds-stamp dash\">Scheduled post</span> <span class=\"ds-stamp solid\">2 of 5</span>",
+      "css": ":host{--paper:#f5f5f2;--pen:#0d0d0d;--pen-2:#3b3b3b;--guide:#a9c8e8;--spot:#ff1f6f;--faint:#6a6a66;--text:'Zen Kaku Gothic New','Mukta',system-ui,sans-serif;--sfx:'Dela Gothic One','Rozha One',sans-serif;--pencil:'Klee One','Mukta',cursive;--ease-ink:cubic-bezier(.16,1,.3,1)}.ds-stamp{display:inline-block;border:3px solid var(--pen);font:900 11px var(--text);letter-spacing:.07em;text-transform:uppercase;padding:3px 8px 4px;transform:rotate(-2deg);background:var(--paper);color:var(--pen);white-space:nowrap}.ds-stamp.solid{background:var(--pen);color:var(--paper)}.ds-stamp.dash{border-style:dashed}"
+    },
+    {
+      "name": "Panel with Underdrawing",
+      "kind": "card",
+      "refersTo": "caption",
+      "description": "The base frame: 3px ink square over a rotated guide-blue underdrawing; splash panels go to 5px.",
+      "html": "<div class=\"ds-panel\"><p>Nothing is waiting on you. Drafts, scheduled posts and proposed automations land here.</p></div>",
+      "css": ":host{--paper:#f5f5f2;--pen:#0d0d0d;--pen-2:#3b3b3b;--guide:#a9c8e8;--spot:#ff1f6f;--faint:#6a6a66;--text:'Zen Kaku Gothic New','Mukta',system-ui,sans-serif;--sfx:'Dela Gothic One','Rozha One',sans-serif;--pencil:'Klee One','Mukta',cursive;--ease-ink:cubic-bezier(.16,1,.3,1)}.ds-panel{position:relative;background:var(--paper);padding:16px 18px;margin:8px;isolation:isolate;font:700 15px var(--text);color:var(--pen-2)}.ds-panel p{margin:0}.ds-panel::before{content:'';position:absolute;inset:0;border:3px solid var(--pen);pointer-events:none;z-index:2}.ds-panel::after{content:'';position:absolute;inset:5px -6px -6px 5px;border:1.5px solid var(--guide);transform:rotate(-.4deg);opacity:.65;z-index:-1;pointer-events:none}"
+    },
+    {
+      "name": "Caption with Tab",
+      "kind": "custom",
+      "refersTo": "caption-tab",
+      "description": "The owner's words or Nova's source, attributed by an ink tab with its Devanagari twin.",
+      "html": "<div class=\"ds-caption\"><span class=\"ds-tab\">You · <span lang=\"hi\">आप</span></span><b>Check my mail for anything urgent.</b></div>",
+      "css": ":host{--paper:#f5f5f2;--pen:#0d0d0d;--pen-2:#3b3b3b;--guide:#a9c8e8;--spot:#ff1f6f;--faint:#6a6a66;--text:'Zen Kaku Gothic New','Mukta',system-ui,sans-serif;--sfx:'Dela Gothic One','Rozha One',sans-serif;--pencil:'Klee One','Mukta',cursive;--ease-ink:cubic-bezier(.16,1,.3,1)}.ds-caption{position:relative;margin-top:24px;border:2px solid var(--pen);background:var(--paper);padding:12px 14px 13px;font:700 15.5px/1.55 var(--text);color:var(--pen)}.ds-tab{position:absolute;left:-2px;top:0;transform:translateY(-100%);background:var(--pen);color:var(--paper);font:900 11.5px/1 var(--text);letter-spacing:.08em;text-transform:uppercase;padding:4px 8px 5px;white-space:nowrap}.ds-tab [lang=hi]{font:700 12px 'Mukta',sans-serif;letter-spacing:0}"
+    },
+    {
+      "name": "Balloon with Orb",
+      "kind": "custom",
+      "refersTo": "balloon",
+      "description": "Nova's speech: white balloon beside the screentone orb, the only curves in the world.",
+      "html": "<div class=\"ds-nova\"><span class=\"ds-orb\"></span><div class=\"ds-balloon\"><p>Two posts are scheduled this week. Want to look at NutriSafe first?</p></div></div>",
+      "css": ":host{--paper:#f5f5f2;--pen:#0d0d0d;--pen-2:#3b3b3b;--guide:#a9c8e8;--spot:#ff1f6f;--faint:#6a6a66;--text:'Zen Kaku Gothic New','Mukta',system-ui,sans-serif;--sfx:'Dela Gothic One','Rozha One',sans-serif;--pencil:'Klee One','Mukta',cursive;--ease-ink:cubic-bezier(.16,1,.3,1)}.ds-nova{display:flex;gap:12px;align-items:flex-start}.ds-orb{flex:none;width:40px;height:40px;margin-top:4px;border-radius:50%;border:3px solid var(--pen);background:radial-gradient(circle at 34% 30%,#fff 0 16%,transparent 17%),radial-gradient(var(--pen) 1.1px,transparent 1.3px) 0 0/5px 5px,var(--paper)}.ds-balloon{background:#fff;border:3px solid var(--pen);border-radius:26px;padding:14px 20px 16px}.ds-balloon p{margin:0;font:700 15.5px/1.55 var(--text);color:var(--pen)}"
+    },
+    {
+      "name": "Numbered Choices",
+      "kind": "custom",
+      "refersTo": "choice",
+      "description": "Overlay answers end in spoken choices; the first is in spot with a pencil hint.",
+      "html": "<div class=\"ds-choices\"><button class=\"ds-choice first\"><span class=\"ds-key\">1</span>Summarise the error<span class=\"hint\">say “one”</span></button><button class=\"ds-choice\"><span class=\"ds-key\">2</span>Fix it in place</button><button class=\"ds-choice\"><span class=\"ds-key\">3</span>Explain the stack trace</button></div>",
+      "css": ":host{--paper:#f5f5f2;--pen:#0d0d0d;--pen-2:#3b3b3b;--guide:#a9c8e8;--spot:#ff1f6f;--faint:#6a6a66;--text:'Zen Kaku Gothic New','Mukta',system-ui,sans-serif;--sfx:'Dela Gothic One','Rozha One',sans-serif;--pencil:'Klee One','Mukta',cursive;--ease-ink:cubic-bezier(.16,1,.3,1)}.ds-key{display:inline-grid;place-items:center;min-width:22px;height:20px;padding:0 6px;border:2px solid var(--pen);border-bottom-width:3px;background:var(--paper);font:900 11px var(--text);color:var(--pen)}.ds-choices{display:grid;gap:8px}.ds-choice{display:flex;align-items:center;gap:14px;border:2px solid var(--pen);border-radius:0;background:var(--paper);padding:8px 14px;font:900 15.5px var(--text);color:var(--pen);text-align:left;cursor:pointer}.ds-choice:hover{background:var(--pen);color:var(--paper)}.ds-choice:focus-visible{outline:3px solid var(--spot);outline-offset:3px}.ds-choice.first{background:var(--spot);border-width:3px}.ds-choice.first:hover{background:var(--pen);color:var(--spot)}.ds-choice .hint{margin-left:auto;font:600 15px var(--pencil)}"
+    },
+    {
+      "name": "SFX Status",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "Status word from the real status slice, paper-outlined poster gothic.",
+      "html": "<span class=\"ds-sfx\">listening…</span>",
+      "css": ":host{--paper:#f5f5f2;--pen:#0d0d0d;--pen-2:#3b3b3b;--guide:#a9c8e8;--spot:#ff1f6f;--faint:#6a6a66;--text:'Zen Kaku Gothic New','Mukta',system-ui,sans-serif;--sfx:'Dela Gothic One','Rozha One',sans-serif;--pencil:'Klee One','Mukta',cursive;--ease-ink:cubic-bezier(.16,1,.3,1)}.ds-sfx{font:400 22px/1 var(--sfx);color:var(--pen);paint-order:stroke fill;-webkit-text-stroke:.16em var(--paper);white-space:nowrap}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Character on Your Page",
+    "overview": "Nova is drawn, not rendered. Every surface is a page of manuscript: off-white paper, G-pen black ink, a non-repro blue underdrawing that structure hangs from, and exactly one spot ink, pink, for what happens next or what is live right now. Panels are square ink frames whose stroke weight carries hierarchy; the only curves on the page are the speech balloon and Nova's screentone orb, because those are the parts that speak and breathe. The HUD half of the world contributes mechanics, not chrome: keycaps for the four spaces (1-4) and the first three decisions (F1-F3), numbered spoken choices, and ink lock brackets that close onto what Nova read.\n\nThe canvas and the overlay are the same page. Opened in its window, Nova's page splits into the conversation (7/12) and the quests waiting on the owner (5/12), with today as a single inked timeline along the bottom gutter. Summoned over another app, the same grammar appears as one tilted splash panel over a dimmed still of the screen: portrait with nameplate, the heard question as a caption, the answer as a balloon, numbered choices with the first in spot. Density is moderate and reading-first; paper stays visible around every frame.\n\nEvery reading surface is bilingual by construction: an English line in Zen Kaku Gothic New with a Devanagari companion in Rozha One or Mukta, on nav items, section heads and caption tabs. The world draws its SFX words (Dela Gothic One, paper-outlined) from the real status slice: \"listening...\", \"thinking...\", \"GOT IT!\".",
+    "keyCharacteristics": [
+      "Paper and ink, light scheme only (`color-scheme: light`); depth is frame weight and underdrawing, never shadow.",
+      "Square frames at 2 / 3 / 5px; balloons (26px) and the orb (circle) are the only curves.",
+      "One spot pink, used as a fill under ink: next action, live state, now.",
+      "Screentone dots (radial-gradient dot grids) for tone; no airbrushed gradients.",
+      "Keycaps and numbered choices mirror the voice path; every button has a spoken twin.",
+      "English paired with Devanagari on navigation, headings and caption tabs."
+    ],
+    "rules": [
+      {
+        "name": "The One Spot Rule",
+        "body": "Pink marks the next action or the live state, one per cluster: the primary button of a quest, the first of the choices, the now tick, the live orb. A second pink element in the same panel means one of them is lying.",
+        "section": "colors"
+      },
+      {
+        "name": "The Spot Is a Fill Rule",
+        "body": "Pink sits under ink, never as text on paper (pink on paper is about 3.4:1). Where pink text appears it is on ink (the spot button's hover).",
+        "section": "colors"
+      },
+      {
+        "name": "The Non-Repro Rule",
+        "body": "Guide blue draws structure that a printer would drop: margins and underdrawing. If removing it loses information, it was the wrong color.",
+        "section": "colors"
+      },
+      {
+        "name": "The Bilingual Line Rule",
+        "body": "Navigation, section heads and caption tabs carry an English line and a Devanagari companion (`lang=\"hi\"`). The Devanagari is a second voice, never a translation table.",
+        "section": "typography"
+      },
+      {
+        "name": "The Speech Is Bold Rule",
+        "body": "Anything spoken, by Nova or by the owner, is set at 700. Regular weight is for context and metadata.",
+        "section": "typography"
+      },
+      {
+        "name": "The Weight Not Lift Rule",
+        "body": "To raise importance, thicken the frame (3px to 5px) or fill it; never add a shadow or a radius.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Screentone Rule",
+        "body": "Tone is dots of ink. Gradients appear only as dot grids and the orb's white highlight, never as a color blend.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** express hierarchy with frame weight: 2px inset, 3px panel, 5px splash (conversation, overlay panel, today's day cell).",
+      "**Do** keep spot pink to one live or next-action element per cluster, always with ink on or around it.",
+      "**Do** pair every nav item, section head and caption tab with a Devanagari line (`lang=\"hi\"`).",
+      "**Do** give every primary action a key or a spoken number, and show the keycap only where the key works.",
+      "**Do** use dashed borders for anything scheduled, proposed or unavailable.",
+      "**Do** guard all motion with `prefers-reduced-motion: no-preference`, using `cubic-bezier(.16,1,.3,1)`.",
+      "**Do** self-host every face in `canvas/public/fonts` so the page looks the same offline."
+    ],
+    "donts": [
+      "**Don't** add box-shadows or rounded corners to frames, cards, buttons or inputs; curves belong to balloons and the orb.",
+      "**Don't** set pink text on paper, or use guide blue for anything but structure.",
+      "**Don't** blend colors in gradients; tone is screentone dots.",
+      "**Don't** put a caption tab or uppercase tracked label above a section heading as decoration; tabs attribute speech and sources.",
+      "**Don't** animate the orb or entity without a real status behind it.",
+      "**Don't** design new surfaces in the legacy Living Ink vocabulary (Fraunces, Plex Mono, coral, violet, dark ground); `styles.css` is legacy that `manga.css` overrides."
+    ]
+  }
+}
