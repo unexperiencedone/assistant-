@@ -417,6 +417,16 @@ class VoiceAssistant:
         self.controller.afterthought = self.afterthought
         if self.server is not None:
             self.server.afterthought = self.afterthought
+        # Needs you: one list of every decision waiting on the owner (assistant/inbox.py).
+        from .inbox import InboxService
+        from .intents import match_intent as _match_intent
+
+        self.inbox = InboxService(self.bus, publisher=self.publisher,
+                                  automations=getattr(self.automations, "folder", None) if self.automations else None,
+                                  matches_intent=_match_intent)
+        if self.server:
+            self.server.inbox = self.inbox
+            self.server.publisher = self.publisher
         self._greeting = threading.Lock()
         if self.local_system:
             self.controller.publish_quick_actions()  # the chips are there before the first request
@@ -604,6 +614,8 @@ class VoiceAssistant:
                 self.today.stop()
             if self.capture and self.capture.running:
                 self.capture.stop()  # a half-written recording is worse than a short one
+            if getattr(self, "inbox", None):
+                self.inbox.stop()
             if self.publisher:
                 if self.publisher.showcase is not None:
                     self.publisher.showcase.stop()
@@ -783,6 +795,7 @@ class VoiceAssistant:
             self.goals.start()
         if self.today:
             self.today.start()
+        self.inbox.start()
         if self.publisher is not None:
             self.publisher.notify = self._tray_note
             self.publisher.start()          # sends scheduled posts when their time comes

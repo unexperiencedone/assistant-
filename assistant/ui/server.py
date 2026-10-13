@@ -27,6 +27,8 @@
     GET  /api/ext               is the extension connected
     POST /api/ext               {"method": ..., "params": {...}} -> one extension call (`main.py web`)
     GET  /api/usage?days=30     tokens spent and saved (assistant/usage/report.py); days=0 is all time
+    POST /api/inbox/act         {"id": "draft:7", "action": "approve"} -> act on one Needs-you item
+    GET  /api/studio            drafts, scheduled posts, the posted ledger and which arms work
 
 Runs uvicorn in a background thread, bound to `[ui] host` (loopback by default).
 
@@ -110,6 +112,8 @@ class DashboardServer:
         self.awareness = awareness  # assistant.awareness.AwarenessService
         self.afterthought: Any = None   # assistant.afterthought.AfterThoughtService, set by the app
         self.usage: Any = None      # assistant.usage.UsageService, set by the app once it exists
+        self.inbox: Any = None      # assistant.inbox.InboxService, set by the app
+        self.publisher: Any = None  # assistant.publish.PublishService, set by the app
         self.state = state
         self.port = port
         self.on_text = on_text
@@ -132,6 +136,30 @@ class DashboardServer:
         """For opening a browser or the native window: carries the token once, which
         leaves a cookie behind, so nothing has to print the secret afterwards."""
         return f"{self.url}?{auth.QUERY_NAME}={self.token}" if self.token else self.url
+
+    def _studio(self) -> dict[str, Any]:
+        """Everything the Studio space shows, from the publish service and the ledger."""
+        from ..publish import linkedin_auth
+
+        gate = self.publisher.gate
+
+        def row(draft: dict[str, Any]) -> dict[str, Any]:
+            extra = draft.get("extra") or {}
+            return {"id": draft["id"], "kind": draft["kind"], "status": draft["status"], "name": extra.get("name", ""),
+                    "text": draft["text"], "media": [Path(m).name for m in draft["media"]],
+                    "created_at": draft["created_at"], "send_at": draft.get("send_at"),
+                    "decided_at": draft.get("decided_at"), "result": draft.get("result", "")}
+
+        showcase = getattr(self.publisher, "showcase", None)
+        signed_in, signin = linkedin_auth.status()
+        return {
+            "enabled": True,
+            "pending": [row(d) for d in gate.pending(50)],
+            "scheduled": [row(d) for d in gate.scheduled()],
+            "recent": [row(d) for d in gate.recent(30) if d["status"] in ("sent", "failed")],
+            "ledger": showcase.ledger.entries() if showcase is not None else [],
+            "linkedin": {"ok": signed_in, "detail": signin},
+        }
 
     # -- lifecycle ------------------------------------------------------------------
     def start(self) -> None:
@@ -237,6 +265,21 @@ class DashboardServer:
             origin = origin_of(request.client.host if request.client else None, str(body.get("origin", "")))
             _in_background(self.on_text, f"move step {number} to {to}", origin)
             return JSONResponse({"ok": True})
+
+        @app.post("/api/inbox/act")
+        async def api_inbox_act(body: dict[str, Any]) -> JSONResponse:
+            if self.inbox is None:
+                return JSONResponse({"ok": False, "said": "The inbox isn't running."}, status_code=503)
+            item, action = str(body.get("id", "")), str(body.get("action", ""))
+            # Posting talks to LinkedIn and can take seconds: never on the event loop.
+            ok, said = await asyncio.get_running_loop().run_in_executor(None, self.inbox.act, item, action)
+            return JSONResponse({"ok": ok, "said": said})
+
+        @app.get("/api/studio")
+        async def api_studio() -> JSONResponse:
+            if self.publisher is None:
+                return JSONResponse({"enabled": False})
+            return JSONResponse(await asyncio.get_running_loop().run_in_executor(None, self._studio))
 
         @app.get("/api/profile")
         async def api_profile() -> JSONResponse:

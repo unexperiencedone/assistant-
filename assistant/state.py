@@ -55,6 +55,9 @@ class AppState:
             # canvas here, the canvas on the phone -- sees the same activity live.
             # Not "activity": that name is already the append-only log feed below.
             "live": {"running": [], "macro": "", "recent": []},
+            # Needs you: every decision waiting on the owner, rebuilt from its sources
+            # (assistant/inbox.py). The canvas acts on an item through /api/inbox/act.
+            "inbox": {"items": [], "count": 0},
         }.items():
             self._set(key, value)
         for key in LIST_LIMITS:
@@ -188,6 +191,8 @@ class AppState:
                                            "suggestion": {"id": d.get("id"), "text": d.get("text"), "at": event.ts}})
             elif topic == "usage_ledger":
                 self._set("usage", {"revision": d.get("revision", 0)})
+            elif topic == "inbox":
+                self._set("inbox", {"items": d.get("items", []), "count": d.get("count", 0)})
             elif topic == "awareness":
                 self._set("awareness", {"revision": d.get("revision", 0), "watching": bool(d.get("watching")),
                                         "enabled": bool(d.get("enabled"))})
