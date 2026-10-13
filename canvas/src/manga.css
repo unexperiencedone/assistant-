@@ -201,3 +201,35 @@ body { font: 400 15px/1.55 var(--text); color: var(--pen); }
 .m-space .aw-card { border: 2px solid var(--pen); background: var(--paper); box-shadow: none; }
 .m-space .aw-card h3 { font: 900 12px var(--text); letter-spacing: .08em; text-transform: uppercase; }
 .m-space button { border: 2px solid var(--pen); }
+
+/* ── Nova over another app (spaces/Overlay.jsx) ── */
+.m-ov { position: fixed; inset: 0; overflow: hidden; background: var(--pen); }
+.m-ov-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; user-select: none; }
+.m-ov-dim { position: absolute; inset: 0; background: rgba(13, 13, 13, .22); }
+.m-ov-lock { position: absolute; pointer-events: none; }
+.m-ov-lock i { position: absolute; width: 30px; height: 30px; border: 5px solid var(--pen); box-shadow: 0 0 0 2px var(--paper), inset 0 0 0 2px var(--paper); }
+.m-ov-lock i:nth-child(1) { left: -6px; top: -6px; border-right: 0; border-bottom: 0; }
+.m-ov-lock i:nth-child(2) { right: -6px; top: -6px; border-left: 0; border-bottom: 0; }
+.m-ov-lock i:nth-child(3) { left: -6px; bottom: -6px; border-right: 0; border-top: 0; }
+.m-ov-lock i:nth-child(4) { right: -6px; bottom: -6px; border-left: 0; border-top: 0; }
+.m-ov-panel { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%) rotate(-.4deg); width: min(940px, calc(100% - 48px)); display: grid; grid-template-columns: 124px 1fr; max-height: 70vh; }
+.m-ov-panel.top { bottom: auto; top: 40px; }
+.m-ov-portrait { border-right: 3px solid var(--pen); display: grid; place-items: center; align-content: center; gap: 12px; padding: 18px 0 44px; position: relative; }
+.m-ov-portrait .m-sfx { font-size: 18px; transform: rotate(-5deg); }
+.m-ov-name { position: absolute; left: 0; right: 0; bottom: 0; background: var(--pen); color: var(--paper); text-align: center; font: 900 13px var(--text); letter-spacing: .24em; padding: 5px 0 6px; }
+.m-ov-body { padding: 26px 24px 18px; overflow: auto; }
+.m-ov-sel { display: block; margin-top: 6px; font: 400 13.5px/1.45 Consolas, monospace; color: var(--pen-2); white-space: pre-wrap; }
+.m-ov-choices { display: grid; gap: 8px; margin-top: 14px; }
+.m-ov-choice { display: flex; align-items: center; gap: 14px; border: 2px solid var(--pen); background: var(--paper); padding: 8px 14px; font: 900 15.5px var(--text); color: var(--pen); text-align: left; cursor: pointer; }
+.m-ov-choice:hover { background: var(--pen); color: var(--paper); }
+.m-ov-choice.first { background: var(--spot); border-width: 3px; }
+.m-ov-choice .hint { margin-left: auto; font: 600 15px var(--pencil); }
+.m-ov-ask { display: flex; align-items: center; gap: 12px; margin-top: 16px; border: 3px solid var(--pen); background: #fff; padding: 8px 10px 8px 14px; }
+.m-ov-ask input { flex: 1; border: 0; outline: none; background: none; font: 700 16px var(--text); color: var(--pen); min-width: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .m-ov-lock i { animation: m-ink-on 300ms var(--ease-ink) both; }
+  .m-ov-lock i:nth-child(2) { animation-delay: 40ms; } .m-ov-lock i:nth-child(3) { animation-delay: 80ms; } .m-ov-lock i:nth-child(4) { animation-delay: 120ms; }
+  .m-ov-panel { animation: m-rise 460ms var(--ease-ink) 260ms both; }
+}
+@keyframes m-ink-on { from { clip-path: inset(0 100% 100% 0); } to { clip-path: inset(0); } }
+@keyframes m-rise { from { transform: translate(-50%, 24px) rotate(-.6deg); opacity: 0; } to { transform: translateX(-50%) rotate(-.4deg); opacity: 1; } }

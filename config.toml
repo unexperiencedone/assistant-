@@ -221,6 +221,7 @@ ask_min_seconds = 123   # ...or simply take this long (2 min 3 s). Quicker than 
 # browser: live canvas in your browser | window: native app window | tray: start hidden in the tray
 mode = "browser"
 hotkey = "ctrl+alt+n"          # shows/hides the canvas window (window and tray modes)
+overlay_hotkey = "ctrl+alt+h"   # "help me here": Nova over any app, reads your selection, answers in place (ctrl+alt+space is taken here)
 terminal_dashboard = true      # rich dashboard in the terminal (ignored when there's no console)
 web_dashboard = true           # the canvas server; always on in window/tray mode
 web_port = 8765

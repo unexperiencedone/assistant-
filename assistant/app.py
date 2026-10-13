@@ -429,6 +429,7 @@ class VoiceAssistant:
             self.server.inbox = self.needs_you
             self.server.publisher = self.publisher
             self.server.schedule = self.schedule
+            self.server.overlay = self
         self._greeting = threading.Lock()
         if self.local_system:
             self.controller.publish_quick_actions()  # the chips are there before the first request
@@ -492,6 +493,33 @@ class VoiceAssistant:
         return self._delegate("antigravity", task, "Antigravity isn't installed on this machine.")
 
     # -- input ------------------------------------------------------------------
+    # -- Nova over another app (assistant/screen_context.py) ---------------------------
+    def open_overlay(self, context: dict) -> None:
+        """Called by the shell's hotkey with what was on screen, before Nova shows."""
+        self.overlay_context = context
+        shown = {k: context.get(k) for k in ("process", "title", "rects", "focus_rect", "monitor", "private")}
+        shown["has_selection"] = bool(context.get("selection"))
+        shown["selection"] = (context.get("selection") or "")[:400]
+        self.bus.publish("overlay", open=True, rev=int(time.time() * 1000), context=shown,
+                         question="", answer="", choices=[])
+
+    def overlay_ask(self, text: str) -> None:
+        from .screen_context import describe
+
+        text = (text or "").strip()
+        if not text:
+            return
+        context = getattr(self, "overlay_context", None) or {}
+        self.controller.screen_context = (text, describe(context)) if context else None
+        self.bus.publish("overlay", question=text, answer="", choices=[])
+        self.submit(text, "overlay")
+
+    def close_overlay(self) -> None:
+        self.bus.publish("overlay", open=False)
+        shell = getattr(self, "shell", None)
+        if shell is not None:
+            shell.hide_overlay()
+
     def submit(self, text: str, source: str, origin: str = "desktop", brain: str = "") -> None:
         """`source` is how it arrived (voice, keyboard, canvas); `origin` is which
         machine it came from, so the answer knows where to go back to. `brain` pins

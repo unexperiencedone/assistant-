@@ -34,6 +34,8 @@ class AppShell:
         self.name = app.settings.assistant.name
         self.window = None
         self.reader = None   # the always-on-top reader, created on demand
+        self.overlay = None  # Nova over another app, created on first summon
+        self.overlay_hotkey: GlobalHotkey | None = None
         self.tray = None
         self.hotkey: GlobalHotkey | None = None
         self.visible = not start_hidden
@@ -65,6 +67,47 @@ class AppShell:
             self.tray.stop()
         if self.hotkey:
             self.hotkey.stop()
+        if self.overlay_hotkey:
+            self.overlay_hotkey.stop()
+
+    # -- Nova over another app ------------------------------------------------------------
+    def summon(self) -> None:
+        """Read the screen first (the app in front is still the owner's), then show Nova
+        over it: a still of that monitor with the selection locked, and a question box."""
+        from ..paths import APP_DIR
+        from ..screen_context import capture
+
+        settings = self.app.settings.afterthought
+        context = capture(APP_DIR / "data" / "overlay" / "frame.png",
+                          set(getattr(settings, "deny_apps", []) or []), list(getattr(settings, "deny_titles", []) or []))
+        self.app.open_overlay(context)
+        x, y, width, height = context.get("monitor") or (0, 0, 1440, 900)
+        import webview
+
+        try:
+            if self.overlay is None:
+                self.overlay = webview.create_window(
+                    f"{self.name} - here", f"{self.url.rstrip('/')}/#overlay", x=x, y=y, width=width, height=height,
+                    frameless=True, on_top=True, resizable=False, background_color="#0d0d0d")
+                self.overlay.events.closed += self._on_overlay_closed
+            else:
+                self.overlay.move(x, y)
+                self.overlay.resize(width, height)
+                self.overlay.show()
+            self.overlay.on_top = True
+        except Exception as exc:
+            log.warning("couldn't show the overlay: %s", exc)
+            self.overlay = None
+
+    def hide_overlay(self) -> None:
+        if self.overlay is not None:
+            try:
+                self.overlay.hide()
+            except Exception:
+                self.overlay = None
+
+    def _on_overlay_closed(self) -> None:
+        self.overlay = None
 
     # -- the reader ---------------------------------------------------------------------
     def _watch_documents(self) -> None:
@@ -236,3 +279,10 @@ class AppShell:
             self.app.bus.log(f"Press {combo} to show or hide the canvas.")
         else:
             self.app.bus.log(f"Couldn't register hotkey {combo} (in use or invalid).", "warn")
+        summon = getattr(self.app.settings.ui, "overlay_hotkey", "")
+        if summon:
+            self.overlay_hotkey = GlobalHotkey(summon, lambda: threading.Thread(target=self.summon, daemon=True).start())
+            if self.overlay_hotkey.start():
+                self.app.bus.log(f"Press {summon} to ask Nova about whatever is on your screen.")
+            else:
+                self.app.bus.log(f"Couldn't register hotkey {summon} (in use or invalid).", "warn")

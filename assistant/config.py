@@ -152,6 +152,9 @@ class UISettings:
     # browser: canvas in your browser | window: native app window | tray: start hidden in the tray
     mode: str = "browser"
     hotkey: str = "ctrl+alt+n"  # toggles the canvas window in window/tray mode
+    # Summons Nova over whatever app is in front: it reads the selection and the screen
+    # first, then answers in place (assistant/screen_context.py). Empty turns it off.
+    overlay_hotkey: str = "ctrl+alt+h"
     terminal_dashboard: bool = True
     web_dashboard: bool = True  # the canvas server; needed by every mode
     web_port: int = 8765

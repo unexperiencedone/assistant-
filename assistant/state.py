@@ -58,6 +58,9 @@ class AppState:
             # Needs you: every decision waiting on the owner, rebuilt from its sources
             # (assistant/inbox.py). The canvas acts on an item through /api/inbox/act.
             "inbox": {"items": [], "count": 0},
+            # Nova summoned over another app (assistant/screen_context.py): what it read,
+            # the question asked there, the answer and the numbered choices.
+            "overlay": {"open": False, "rev": 0, "context": {}, "question": "", "answer": "", "choices": []},
         }.items():
             self._set(key, value)
         for key in LIST_LIMITS:
@@ -157,6 +160,11 @@ class AppState:
             elif topic == "transcript":
                 self._append("conversation", {"role": d["role"], "text": d["text"], "ts": event.ts,
                                               "origin": d.get("origin", "desktop"), "source": d.get("source", "")})
+                overlay = self._values.get("overlay") or {}
+                # Whatever Nova says next, after a question asked over another app, is
+                # the answer shown there: an instant command and an agent turn alike.
+                if d["role"] == "assistant" and overlay.get("open") and overlay.get("question") and not overlay.get("answer"):
+                    self._set("overlay", {**overlay, "answer": d["text"]})
                 persist = True
             elif topic == "plan":
                 self._set("plan", d)
@@ -198,6 +206,15 @@ class AppState:
                 self._set("usage", {"revision": d.get("revision", 0)})
             elif topic == "inbox":
                 self._set("inbox", {"items": d.get("items", []), "count": d.get("count", 0)})
+            elif topic == "overlay":
+                current = dict(self._values.get("overlay", {}))
+                current.update({k: v for k, v in d.items() if k in ("open", "rev", "context", "question", "answer", "choices")})
+                self._set("overlay", current)
+            elif topic == "overlay_choices":
+                current = dict(self._values.get("overlay", {}))
+                if current.get("open"):
+                    current["choices"] = list(d.get("choices", []))[:3]
+                    self._set("overlay", current)
             elif topic == "awareness":
                 self._set("awareness", {"revision": d.get("revision", 0), "watching": bool(d.get("watching")),
                                         "enabled": bool(d.get("enabled"))})

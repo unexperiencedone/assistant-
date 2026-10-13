@@ -30,6 +30,9 @@
     POST /api/inbox/act         {"id": "draft:7", "action": "approve"} -> act on one Needs-you item
     GET  /api/studio            drafts, scheduled posts, the posted ledger and which arms work
     GET  /api/schedule/today    today's items (yours and the calendar's), for the Now timeline
+    GET  /api/overlay/frame     the still of the screen Nova was summoned over
+    POST /api/overlay/ask       {"text": ...} -> a question about that screen
+    POST /api/overlay/close     put the overlay away
 
 Runs uvicorn in a background thread, bound to `[ui] host` (loopback by default).
 
@@ -116,6 +119,7 @@ class DashboardServer:
         self.inbox: Any = None      # assistant.inbox.InboxService, set by the app
         self.publisher: Any = None  # assistant.publish.PublishService, set by the app
         self.schedule: Any = None   # assistant.schedule.ScheduleService, set by the app
+        self.overlay: Any = None    # the app: open_overlay / overlay_ask / close_overlay
         self.state = state
         self.port = port
         self.on_text = on_text
@@ -279,6 +283,29 @@ class DashboardServer:
             # Posting talks to LinkedIn and can take seconds: never on the event loop.
             ok, said = await asyncio.get_running_loop().run_in_executor(None, self.inbox.act, item, action)
             return JSONResponse({"ok": ok, "said": said})
+
+        @app.get("/api/overlay/frame")
+        async def api_overlay_frame():
+            from fastapi.responses import FileResponse
+
+            context = getattr(self.overlay, "overlay_context", None) or {}
+            frame = context.get("frame") or ""
+            if not frame or not Path(frame).is_file():
+                return JSONResponse({"error": "no frame"}, status_code=404)
+            return FileResponse(frame, media_type="image/png", headers={"Cache-Control": "no-store"})
+
+        @app.post("/api/overlay/ask")
+        async def api_overlay_ask(body: dict[str, Any]) -> JSONResponse:
+            if self.overlay is None:
+                return JSONResponse({"ok": False}, status_code=503)
+            await asyncio.get_running_loop().run_in_executor(None, self.overlay.overlay_ask, str(body.get("text", "")))
+            return JSONResponse({"ok": True})
+
+        @app.post("/api/overlay/close")
+        async def api_overlay_close() -> JSONResponse:
+            if self.overlay is not None:
+                await asyncio.get_running_loop().run_in_executor(None, self.overlay.close_overlay)
+            return JSONResponse({"ok": True})
 
         @app.get("/api/schedule/today")
         async def api_schedule_today() -> JSONResponse:

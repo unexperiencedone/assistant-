@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from .profile import ProfileService
 
 ACKS = ["On it.", "Working on it.", "Okay, give me a moment.", "Sure, one sec."]
+CHOICES = re.compile(r"\[\[CHOICES:\s*(.+?)\]\]", re.S | re.I)
 URGENT_INTENTS = {"stop_speaking", "cancel_agent", "quit"}
 # The only commands heard during a conversation: leaving it, recapping, starting another.
 TALK_COMMANDS = URGENT_INTENTS | {"talk_mode_on", "talk_mode_off", "brainstorm_on", "brainstorm_recap"}
@@ -119,6 +120,7 @@ class Controller(CaptureCommands):
         self.watcher = watcher
         self.capture = capture
         self.publisher = publisher
+        self.screen_context: tuple[str, str] | None = None   # (question, what was on screen)
         self.capture_settings = capture_settings
         self.history = history
         self.automations = automations
@@ -487,6 +489,14 @@ class Controller(CaptureCommands):
         # Strip Claude's own [[TASK: type]] tag (AGENTS.md section 12) before anything
         # below speaks or shows the reply.
         task_type, result.summary = promotion.extract_task(result.summary)
+        # Numbered next actions for the overlay ([[CHOICES: a | b | c]]): shown as
+        # buttons, never read aloud.
+        choices = CHOICES.search(result.summary or "")
+        if choices:
+            result.summary = CHOICES.sub("", result.summary).strip()
+            options = [c.strip() for c in choices.group(1).split("|") if c.strip()][:3]
+            if options:
+                self.bus.publish("overlay_choices", choices=options)
         # The agent's own progress markers were for narration while it worked; they
         # are not words to read out at the end (assistant/progress.py).
         result.summary = progress.strip_milestones(result.summary).strip()
@@ -717,6 +727,10 @@ class Controller(CaptureCommands):
             prompt = self.profile.with_context(prompt, text, backend.name)
         # The date, the weather, the markets and what's on: one line, so no turn ever
         # has to look up what day it is (assistant/today).
+        # Asked over another app: what was on that screen, for this question only.
+        if self.screen_context and self.screen_context[0] == text:
+            prompt = f"{self.screen_context[1]}\n\nQuestion: {prompt}"
+            self.screen_context = None
         if self.today is not None:
             try:
                 prompt = f"{self.today.context()}\n{prompt}"

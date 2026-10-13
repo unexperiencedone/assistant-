@@ -12,6 +12,7 @@ import Masthead, { SPACES } from "./spaces/Masthead.jsx";
 import Now from "./spaces/Now.jsx";
 import Studio from "./spaces/Studio.jsx";
 import You from "./spaces/You.jsx";
+import Overlay from "./spaces/Overlay.jsx";
 import { typing } from "./spaces/api.js";
 
 function timeLabel(ts) {
@@ -74,7 +75,9 @@ export default function App() {
   const [pastGraph, setPastGraph] = useState(null);
   const [lane, setLane] = useState(null); // null = follow whichever lane moved last
   const [briefing, setBriefing] = useState(false);
-  const [view, setView] = useState(() => (location.hash === "#reader" ? "reader" : location.hash === "#history" ? "history" : "canvas"));
+  const [view, setView] = useState(() =>
+    location.hash === "#reader" ? "reader" : location.hash === "#overlay" ? "overlay" : location.hash === "#history" ? "history" : "canvas",
+  );
   // Four spaces (docs/ui_rethink.md). Old links still land: #profile opens You on Profile.
   const [space, setSpace] = useState(() => HASH_SPACE[location.hash] ?? "now");
   const [youTab, setYouTab] = useState(() => HASH_YOU[location.hash] ?? "memory");
@@ -90,7 +93,7 @@ export default function App() {
   const showCanvas = useCallback(() => setView("canvas"), []);
 
   useEffect(() => {
-    if (view === "reader") return;
+    if (view === "reader" || view === "overlay") return;
     const target =
       space === "now" ? "" : space === "work" ? (view === "history" ? "#history" : "#work") : space === "you" ? `#${youTab}` : `#${space}`;
     // window.history: `history` below is the request rail, this is the browser's.
@@ -192,6 +195,9 @@ export default function App() {
   // The reader is its own always-on-top window, so it renders bare: no rail, no trays,
   // no status bar. Those belong to the canvas, which is a live activity graph; this is
   // a page to read, and chrome around it would only take space from the text.
+  // Nova over another app: its own frameless window, nothing but the frame and the panel.
+  if (view === "overlay") return <Overlay snapshot={snapshot} />;
+
   if (view === "reader") {
     return (
       <div className="app is-reader">
