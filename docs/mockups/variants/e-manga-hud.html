@@ -147,10 +147,69 @@ body { font: 400 15px/1.55 var(--text); color: var(--ink); }
 .tick.now { color: var(--ink); font-weight: 900; background: var(--spot); padding: 0 6px; }
 .tick.now::before { background: var(--spot); height: 16px; top: -19px; width: 5px; }
 .tick b { font-weight: 900; }
+
+/* ── shared space chrome (Work · Studio · You reuse the canvas masthead) ── */
+.space { background: var(--paper); }
+.space::before, .space::after { content: ""; position: absolute; top: 0; bottom: 0; width: 1px; background: var(--guide); }
+.space::before { left: 22px; } .space::after { right: 22px; }
+.cols { display: grid; gap: 16px; padding: 22px 44px 22px; height: calc(900px - 70px); }
+.label-hi { display: flex; align-items: baseline; gap: 12px; margin: 0 0 12px; }
+.label-hi h2 { margin: 0; font: 900 24px/1 var(--text); letter-spacing: -.02em; }
+.label-hi p { margin: 0; font: 400 21px/1 Rozha, serif; }
+.list { display: flex; flex-direction: column; gap: 10px; }
+.row-panel { padding: 12px 14px; }
+.row-panel b { display: block; font: 900 15px/1.3 var(--text); }
+.row-panel small { display: block; color: var(--ink-2); font-size: 13px; margin-top: 2px; }
+.row-panel.on::before { border-width: 5px; }
+.note { font: 600 19px var(--pencil); color: var(--ink); background: var(--spot); padding: 1px 8px; display: inline-block; transform: rotate(-2deg); }
+/* Work: plan graph as linked panels */
+.graph { position: relative; padding: 22px; }
+.node { position: absolute; width: 196px; padding: 12px 14px; }
+.node b { display: block; font: 900 15px/1.3 var(--text); }
+.node small { color: var(--ink-2); font-size: 13px; }
+.node.done .stamp { position: absolute; right: 10px; top: -14px; }
+.node.focus { background: var(--spot); }
+.wire { position: absolute; background: var(--ink); }
+.inspect { padding: 18px 20px; }
+.inspect dl { display: grid; grid-template-columns: 82px 1fr; gap: 6px 12px; margin: 12px 0 0; font-size: 14px; }
+.inspect dt { font-weight: 900; } .inspect dd { margin: 0; }
+.inspect pre { margin: 14px 0 0; padding: 12px; border: 2px solid var(--ink); font: 13px/1.55 Consolas, monospace; white-space: pre-wrap; background: #fff; }
+.btn-ink { display: inline-flex; align-items: center; gap: 8px; border: 3px solid var(--ink); background: var(--paper); font: 900 13.5px var(--text); padding: 6px 12px; }
+.btn-ink.spot { background: var(--spot); }
+/* Studio */
+.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; }
+.day { min-height: 128px; padding: 10px 10px 12px; }
+.day .d { font: 900 13px var(--text); letter-spacing: .05em; text-transform: uppercase; }
+.day .d small { font: 700 12px Mukta, sans-serif; letter-spacing: 0; color: var(--ink-2); margin-left: 4px; }
+.slot { margin-top: 10px; border: 2px solid var(--ink); padding: 7px 8px; font: 900 13.5px/1.25 var(--text); background: #fff; }
+.slot small { display: block; font: 700 12px var(--text); color: var(--ink-2); margin-top: 3px; }
+.slot.posted { background: var(--ink); color: var(--paper); } .slot.posted small { color: #cfcfca; }
+.slot.sched { border-style: dashed; border-width: 3px; }
+table.ledger { width: 100%; border-collapse: collapse; font-size: 14px; }
+.ledger th { text-align: left; font: 900 11.5px var(--text); letter-spacing: .08em; text-transform: uppercase; padding: 8px 10px; border-bottom: 3px solid var(--ink); }
+.ledger td { padding: 10px; border-bottom: 2px solid var(--ink); vertical-align: top; }
+.ledger td b { font-weight: 900; } .ledger td small { display: block; color: var(--ink-2); font-size: 12.5px; }
+.preview { background: #fff; border: 2px solid var(--ink); padding: 12px; font: 13px/1.45 system-ui, sans-serif; }
+.preview .who { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 13px; }
+.preview .av { width: 34px; height: 34px; border-radius: 50%; background: var(--ink); }
+.thumbs { display: grid; grid-template-columns: 2fr 1fr; gap: 3px; margin-top: 8px; }
+.thumbs i { height: 110px; background: #16302a; } .thumbs span { display: grid; gap: 3px; } .thumbs span i { height: 53.5px; background: var(--paper); border: 1px solid #ccc; }
+.arm { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; }
+.arm b { font: 900 15px var(--text); }
+/* You */
+.empty { padding: 22px; text-align: left; }
+.empty .sfx { font-size: 26px; display: block; margin-bottom: 10px; }
+.weights { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.weight { border: 2px solid var(--ink); padding: 4px 10px; font: 700 13px var(--text); }
+.weight.w3 { background: var(--ink); color: var(--paper); } .weight.w2 { border-width: 3px; } .weight.w0 { border-style: dashed; color: var(--ink-2); }
+.big { font: 400 46px/1 var(--sfx); }
+.stat { padding: 14px 16px; }
+.stat small { display: block; font: 900 11.5px var(--text); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 8px; }
+.journal p { margin: 10px 0 0; font: 400 15px/1.65 var(--text); }
 </style>
 </head>
 <body>
-<div class="switch"><button data-v="overlay" class="on">Over any app</button><button data-v="canvas">Canvas · Now</button></div>
+<div class="switch"><button data-v="overlay" class="on">Over any app</button><button data-v="canvas">Now</button><button data-v="work">Work</button><button data-v="studio">Studio</button><button data-v="you">You</button></div>
 <div class="frame">
 
   <section class="view on" id="overlay">
@@ -240,6 +299,134 @@ body { font: 400 15px/1.55 var(--text); color: var(--ink); }
         <span class="tick" style="left:72%"><b>18:00</b> check post with Anant</span>
         <span class="tick" style="left:93%">21:30 journal</span>
       </div>
+    </div>
+  </section>
+
+  <section class="view space" id="work">
+    <header class="mast"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="name">Nova</span>
+      <nav class="nav" aria-label="Spaces"><a href="#"><span class="key">1</span><span><b>Now<span class="count">3</span></b><small>अभी</small></span></a><a href="#" class="on"><span class="key">2</span><span><b>Work</b><small>काम</small></span></a><a href="#"><span class="key">3</span><span><b>Studio</b><small>स्टूडियो</small></span></a><a href="#"><span class="key">4</span><span><b>You</b><small>आप</small></span></a></nav><span class="spacer"></span>
+      <span class="state"><span class="sfx" style="font-size:22px">listening…</span><span class="orb" aria-hidden="true"></span></span></header>
+    <div class="cols" style="grid-template-columns: 300px 1fr 340px">
+      <aside>
+        <div class="label-hi"><h2>Tasks</h2><p lang="hi">काम</p></div>
+        <div class="list">
+          <div class="panel row-panel on"><b>Week of posts + portfolio</b><small>today · claude · 7 of 7 done</small></div>
+          <div class="panel row-panel"><b>Redeploy Ved Code</b><small>today · claude · done</small></div>
+          <div class="panel row-panel"><b>Detailed Ved Code post</b><small>today · claude · done</small></div>
+          <div class="panel row-panel"><b>Gmail check</b><small>10 oct · asked for a date instead · fixed since</small></div>
+        </div>
+        <div class="label-hi" style="margin-top:22px"><h2>Goals</h2><p lang="hi">नियम</p></div>
+        <div class="panel row-panel"><b>Read new Gmail, tell me what matters</b><small>hourly · claude · read-only · quiet otherwise</small></div>
+        <div class="label-hi" style="margin-top:22px"><h2>Automations</h2><p lang="hi">आदतें</p></div>
+        <div class="panel row-panel"><b>20 saved · 1 proposed</b><small>19 instant runs this week instead of a model</small></div>
+      </aside>
+      <section class="panel splash graph" aria-label="Plan">
+        <div class="label-hi"><h2>Week of posts + portfolio</h2></div>
+        <div class="wire" style="left:218px;top:122px;width:24px;height:3px"></div>
+        <div class="wire" style="left:438px;top:122px;width:24px;height:3px"></div>
+        <div class="wire" style="left:340px;top:162px;width:3px;height:66px"></div>
+        <div class="wire" style="left:438px;top:268px;width:24px;height:3px"></div>
+        <div class="wire" style="left:560px;top:308px;width:3px;height:66px"></div>
+        <div class="panel node done" style="left:22px;top:84px"><span class="stamp solid">Done</span><b>Read the three repos</b><small>code · commits · PROGRESS.md</small></div>
+        <div class="panel node done" style="left:242px;top:84px"><span class="stamp solid">Done</span><b>Screenshots</b><small>live site · local run</small></div>
+        <div class="panel node done" style="left:462px;top:84px"><span class="stamp solid">Done</span><b>Write six articles</b><small>story + technical</small></div>
+        <div class="panel node done focus" style="left:242px;top:228px"><span class="stamp solid">Done</span><b>Build + check diagrams</b><small>2 layout bugs fixed</small></div>
+        <div class="panel node done" style="left:462px;top:228px"><span class="stamp solid">Done</span><b>Push portfolio</b><small>vercel · six pages live</small></div>
+        <div class="panel node done" style="left:462px;top:374px"><span class="stamp solid">Done</span><b>Schedule the week</b><small>thu · sat · 10:00</small></div>
+        <p class="note" style="position:absolute;left:40px;bottom:30px" lang="hi">सब पूरा</p>
+      </section>
+      <aside class="panel inspect">
+        <div class="label-hi"><h2>Build + check diagrams</h2></div>
+        <dl><dt>Status</dt><dd>done</dd><dt>Took</dt><dd>6 min 12 s</dd><dt>Tools</dt><dd>Bash ×6 · Read ×7</dd></dl>
+        <pre>Arms race labels overflowed the gutters → vertical layout.
+NutriSafe: "Typed text" crossed the Qwen3-VL box → four columns.</pre>
+        <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap"><span class="btn-ink"><span class="key">R</span>Redo this step</span><span class="btn-ink spot"><span class="key">S</span>Save as automation</span></div>
+      </aside>
+    </div>
+  </section>
+
+  <section class="view space" id="studio">
+    <header class="mast"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="name">Nova</span>
+      <nav class="nav" aria-label="Spaces"><a href="#"><span class="key">1</span><span><b>Now<span class="count">3</span></b><small>अभी</small></span></a><a href="#"><span class="key">2</span><span><b>Work</b><small>काम</small></span></a><a href="#" class="on"><span class="key">3</span><span><b>Studio</b><small>स्टूडियो</small></span></a><a href="#"><span class="key">4</span><span><b>You</b><small>आप</small></span></a></nav><span class="spacer"></span>
+      <span class="state"><span class="sfx" style="font-size:22px">listening…</span><span class="orb" aria-hidden="true"></span></span></header>
+    <div class="cols" style="grid-template-columns: 1fr 380px; grid-template-rows: auto 1fr">
+      <section style="grid-column: 1 / -1">
+        <div class="label-hi"><h2>This week on LinkedIn</h2><p lang="hi">इस हफ़्ते</p></div>
+        <div class="week">
+          <div class="panel day"><div class="d">Mon<small>सोम</small></div></div>
+          <div class="panel day"><div class="d">Tue<small>मंगल</small></div><div class="slot posted">Ved Code<small>posted · 4 images · articles linked</small></div></div>
+          <div class="panel day"><div class="d">Wed<small>बुध</small></div><div class="slot">Check with Anant<small>18:00 · reminder</small></div></div>
+          <div class="panel day"><div class="d">Thu<small>गुरु</small></div><div class="slot sched">NutriSafe<small>10:00 · 3 images</small></div></div>
+          <div class="panel day"><div class="d">Fri<small>शुक्र</small></div></div>
+          <div class="panel day"><div class="d">Sat<small>शनि</small></div><div class="slot sched">AirGated<small>10:00 · 4 diagrams</small></div></div>
+          <div class="panel day"><div class="d">Sun<small>रवि</small></div></div>
+        </div>
+      </section>
+      <section class="panel" style="padding:18px 20px;overflow:hidden">
+        <div class="label-hi"><h2>Projects</h2><p lang="hi">परियोजनाएँ</p></div>
+        <table class="ledger">
+          <thead><tr><th>Project</th><th>LinkedIn</th><th>Portfolio</th><th>Pictures</th></tr></thead>
+          <tbody>
+            <tr><td><b>Ved Code</b><small>161 commits · solo</small></td><td><span class="stamp solid">Posted</span></td><td>story · technical</td><td>live site, demo login</td></tr>
+            <tr><td><b>NutriSafe</b><small>team · 21% yours</small></td><td><span class="stamp dash">Thu 10:00</span></td><td>story · technical</td><td>landing + 2 diagrams</td></tr>
+            <tr><td><b>AirGated</b><small>solo · paper in prep</small></td><td><span class="stamp dash">Sat 10:00</span></td><td>story · technical</td><td>diagrams only · student faces never</td></tr>
+            <tr><td><b>CivicPulse</b><small>2 commits · not deployed</small></td><td><span class="stamp">Held</span></td><td>—</td><td>4 from a local run</td></tr>
+            <tr><td><b>Nova</b><small>this assistant · 87 commits</small></td><td><span class="stamp">Unposted</span></td><td>—</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </section>
+      <aside style="display:flex;flex-direction:column;gap:14px">
+        <div class="panel" style="padding:16px 18px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-weight:900">Thu 10:00 · NutriSafe</b><span class="stamp dash">Scheduled</span></div>
+          <div class="preview"><div class="who"><span class="av"></span><b>Aakshant Kumar</b></div>Reading a food label shouldn't need a chemistry degree, least of all when you're managing diabetes…<div class="thumbs"><i></i><span><i></i><i></i></span></div></div>
+          <div style="display:flex;gap:10px;margin-top:12px"><span class="btn-ink spot"><span class="key">F1</span>Looks good</span><span class="btn-ink">Edit</span><span class="btn-ink">Move</span></div>
+        </div>
+        <div class="panel arm"><b>LinkedIn</b><span class="stamp solid">Signed in · 59 days</span></div>
+        <div class="panel arm"><b>GitHub</b><span class="stamp dash">gh not installed</span></div>
+        <div class="panel arm"><b>Recordings</b><span style="font-weight:700;font-size:13.5px">None yet · say “record my screen”</span></div>
+      </aside>
+    </div>
+  </section>
+
+  <section class="view space" id="you">
+    <header class="mast"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="name">Nova</span>
+      <nav class="nav" aria-label="Spaces"><a href="#"><span class="key">1</span><span><b>Now<span class="count">3</span></b><small>अभी</small></span></a><a href="#"><span class="key">2</span><span><b>Work</b><small>काम</small></span></a><a href="#"><span class="key">3</span><span><b>Studio</b><small>स्टूडियो</small></span></a><a href="#" class="on"><span class="key">4</span><span><b>You</b><small>आप</small></span></a></nav><span class="spacer"></span>
+      <span class="state"><span class="sfx" style="font-size:22px">listening…</span><span class="orb" aria-hidden="true"></span></span></header>
+    <div class="cols" style="grid-template-columns: 1fr 1fr 1fr">
+      <section style="display:flex;flex-direction:column;gap:14px">
+        <div class="label-hi"><h2>Memory</h2><p lang="hi">याद</p></div>
+        <div class="caption" style="margin-top:14px"><span class="tab">Ask · <span lang="hi">पूछिए</span></span><b>what was I reading about Bedrock last week?</b></div>
+        <div class="panel splash empty">
+          <span class="sfx">quiet so far…</span>
+          <p style="margin:0;font-weight:700">AfterThought started watching today: every app and tab except WhatsApp and Instagram. Nothing remembered yet; give it a day.</p>
+          <p style="margin:10px 0 0;color:var(--ink-2);font-size:14px">Never read: password managers, incognito, banking, payments, sign-in pages. Secrets are stripped before anything is kept.</p>
+        </div>
+        <div class="panel journal" style="padding:16px 18px"><span class="stamp">Journal · 7 Oct</span>
+          <p>I had one session lasting one hour six minutes, handled thirty requests with three unfinished… forty-nine minutes in Chrome, thirty-one in the terminal and two in Spotify.</p></div>
+      </section>
+      <section style="display:flex;flex-direction:column;gap:14px">
+        <div class="label-hi"><h2>Activity</h2><p lang="hi">आज</p></div>
+        <div class="panel" style="padding:16px 18px">
+          <div class="obj"><i class="quest-mark done"></i><div>VS Code · Assisstant<small>morning, the longest stretch</small></div></div>
+          <div class="obj"><i class="quest-mark done"></i><div>Chrome · LinkedIn developer portal<small>signing Nova in</small></div></div>
+          <div class="obj"><i class="quest-mark done"></i><div>VS Code · the-archive<small>reading Ved Code's audit</small></div></div>
+          <div class="obj"><i class="quest-mark live"></i><div>Chrome · aakshantkumar.vercel.app<small>now</small></div></div>
+          <p style="margin:12px 0 0;font-size:12.5px;color:var(--ink-2)">illustrative: the real list comes from awareness</p>
+        </div>
+        <div class="label-hi" style="margin-top:8px"><h2>Profile</h2><p lang="hi">परिचय</p></div>
+        <div class="panel" style="padding:16px 18px"><b style="font-weight:900">Aakshant Kumar</b><div style="font-size:14px;color:var(--ink-2)">B.Tech CSE (AI) · CSJMU · Kanpur · visibility set per brain</div><div style="margin-top:12px"><span class="btn-ink">Edit profile</span></div></div>
+      </section>
+      <section style="display:flex;flex-direction:column;gap:14px">
+        <div class="label-hi"><h2>This week</h2><p lang="hi">इस हफ़्ते</p></div>
+        <div class="panel stat"><small>never reached a paid model</small><span class="big">72%</span><div style="font-weight:700;font-size:14px;margin-top:6px">of 92 requests: automations, instant commands and free models</div></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div class="panel stat"><small>Claude, list price</small><span class="big" style="font-size:34px">$4.39</span></div>
+          <div class="panel stat"><small>saved, likely</small><span class="big" style="font-size:34px">$5.64</span></div>
+        </div>
+        <div class="panel stat"><small>brains this week</small>
+          <div class="weights"><span class="weight w3">Groq ×47</span><span class="weight w2">Claude ×25</span><span class="weight w2">Automations ×19</span><span class="weight">Antigravity ×1</span><span class="weight w0">OpenRouter ×0</span></div></div>
+        <div class="panel arm"><b>Phone</b><span style="font-weight:700;font-size:13.5px">over Tailscale · ask “how's my battery”</span></div>
+      </section>
     </div>
   </section>
 </div>
