@@ -15,7 +15,30 @@ function union(rects) {
 }
 
 function appName(process) {
-  return (process || "the app").replace(/\.exe$/i, "").replace(/^Code$/i, "VS Code").replace(/^WindowsTerminal$/i, "Terminal");
+  const name = (process || "the app").replace(/\.exe$/i, "").replace(/^Code$/i, "VS Code").replace(/^WindowsTerminal$/i, "Terminal");
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+const MIN_LOCK = 44; // px: a one-line target still gets four distinct corners
+
+function Tracker({ items, left }) {
+  if (!items.length) return null;
+  return (
+    <aside className={`m-panel m-ov-tracker${left ? " left" : ""}`} aria-label="Needs you">
+      <h3>
+        Needs you <small lang="hi">आपकी बारी</small>
+      </h3>
+      {items.slice(0, 3).map((item, i) => (
+        <div key={item.id} className="m-obj">
+          <i className={`m-mark${i === 0 ? " live" : ""}`} />
+          <div>
+            {item.title}
+            <small>{[item.tag, item.at].filter(Boolean).join(" · ")}</small>
+          </div>
+        </div>
+      ))}
+    </aside>
+  );
 }
 
 export default function Overlay({ snapshot }) {
@@ -28,9 +51,16 @@ export default function Overlay({ snapshot }) {
   const lock = useMemo(() => {
     const box = union(context.rects) ?? context.focus_rect;
     if (!box || !mw || !mh) return null;
-    const [x, y, w, h] = box;
-    return { left: ((x - mx) / mw) * 100, top: ((y - my) / mh) * 100, width: (w / mw) * 100, height: (h / mh) * 100 };
+    let [x, y, w, h] = box;
+    // Screen pixels per CSS pixel here, so a short target can be padded in real terms.
+    const scale = mw / window.innerWidth;
+    const min = MIN_LOCK * scale;
+    if (h < min) [y, h] = [y - (min - h) / 2, min];
+    if (w < min) [x, w] = [x - (min - w) / 2, min];
+    const arm = Math.max(10, Math.min(30, (0.35 * Math.min(w, h)) / scale));
+    return { left: ((x - mx) / mw) * 100, top: ((y - my) / mh) * 100, width: (w / mw) * 100, height: (h / mh) * 100, arm };
   }, [context.rects, context.focus_rect, mx, my, mw, mh]);
+  const items = snapshot?.inbox?.items ?? [];
 
   useEffect(() => {
     setText("");
@@ -73,13 +103,24 @@ export default function Overlay({ snapshot }) {
       <img className="m-ov-frame" src={`/api/overlay/frame?rev=${overlay.rev ?? 0}`} alt="" aria-hidden="true" />
       <div className="m-ov-dim" aria-hidden="true" onClick={close} />
       {lock ? (
-        <div className="m-ov-lock" style={{ left: `${lock.left}%`, top: `${lock.top}%`, width: `${lock.width}%`, height: `${lock.height}%` }} aria-hidden="true">
+        <div
+          className="m-ov-lock"
+          style={{ left: `${lock.left}%`, top: `${lock.top}%`, width: `${lock.width}%`, height: `${lock.height}%`, "--arm": `${lock.arm}px` }}
+          aria-hidden="true"
+        >
           <i />
           <i />
           <i />
           <i />
+          <span className="m-caption m-ov-locktab">
+            <span className="m-tab">
+              Nova is reading · <span lang="hi">पढ़ा जा रहा</span>
+            </span>
+            {context.has_selection ? "your selection" : appName(context.process)}
+          </span>
         </div>
       ) : null}
+      <Tracker items={items} left={Boolean(lock && lock.left + lock.width > 70 && lock.top < 35)} />
 
       <section className={`m-panel splash m-ov-panel${panelAtTop ? " top" : ""}`} role="dialog" aria-label="Nova">
         <div className="m-ov-portrait">

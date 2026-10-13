@@ -48,7 +48,7 @@ export default function Studio({ snapshot, active }) {
         if (t.getFullYear() === day.getFullYear() && t.getMonth() === day.getMonth() && t.getDate() === day.getDate()) byDay[i].push(slot);
       });
     };
-    for (const d of data?.scheduled ?? []) put(d.send_at, { cls: "sched", title: d.name || "Post", sub: `${time(d.send_at)} · ${d.media.length} image(s)` });
+    for (const d of data?.scheduled ?? []) put(d.send_at, { cls: "sched", title: d.name || "Post", sub: `${time(d.send_at)} · ${d.media.length} image${d.media.length === 1 ? "" : "s"}` });
     for (const d of data?.recent ?? [])
       if (d.decided_at) put(d.decided_at, { cls: d.status === "sent" ? "posted" : "failed", title: d.name || "Post", sub: d.status === "sent" ? "posted" : "didn't go out" });
     return byDay;

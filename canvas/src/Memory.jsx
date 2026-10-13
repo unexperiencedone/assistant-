@@ -117,7 +117,7 @@ export default function Memory({ onClose, revision }) {
             <h2>Memory</h2>
           </div>
           <button type="button" className="close" onClick={onClose} aria-label="Close memory">
-            ×
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="2.4" strokeLinecap="square" /></svg>
           </button>
         </header>
         <div className="aw-off">
@@ -170,7 +170,7 @@ export default function Memory({ onClose, revision }) {
             </>
           )}
           <button type="button" className="close" onClick={onClose} aria-label="Close memory">
-            ×
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="2.4" strokeLinecap="square" /></svg>
           </button>
         </div>
       </header>
@@ -179,7 +179,7 @@ export default function Memory({ onClose, revision }) {
         <div className="banner mem-note" role="status">
           <span>{note}</span>
           <button type="button" className="banner-close" onClick={() => setNote("")} aria-label="Dismiss">
-            ×
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="2.4" strokeLinecap="square" /></svg>
           </button>
         </div>
       ) : null}

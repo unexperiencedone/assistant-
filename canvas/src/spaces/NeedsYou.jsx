@@ -11,11 +11,10 @@ function Quest({ item, index, onAct, busy, said }) {
   return (
     <article className="m-panel m-quest" aria-labelledby={`q-${item.id}`}>
       <div className="row">
+        <h3 id={`q-${item.id}`}>{item.title}</h3>
         <span className={`m-stamp${item.kind === "scheduled" || item.kind === "automation" ? " dash" : ""}`}>{item.tag}</span>
-        {item.at ? <b style={{ fontSize: 13 }}>{item.at}</b> : null}
       </div>
-      <h3 id={`q-${item.id}`}>{item.title}</h3>
-      {item.detail ? <div className="ctx">{item.detail}</div> : null}
+      <div className="ctx">{[item.at, item.detail].filter(Boolean).join(" · ")}</div>
       {item.text ? (
         <details>
           <summary>Read it{item.media?.length ? ` · ${item.media.length} image${item.media.length > 1 ? "s" : ""}` : ""}</summary>

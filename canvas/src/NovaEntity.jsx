@@ -209,7 +209,6 @@ function NovaEntity({ snapshot, status, mode, onMode, ambientLine, onOpenBriefin
       </div>
 
       <div className="entity-status" role="status" aria-live="polite">
-        {simple ? <div className="label">Right now</div> : null}
         <div className={simple ? "now" : "line"}>
           <Typed text={line} />
           {bouncing ? <Dots /> : null}

@@ -184,7 +184,8 @@ def describe(context: dict[str, Any]) -> str:
         lines.append(f"They have this selected:\n'''\n{context['selection']}\n'''")
     elif context.get("excerpt"):
         lines.append(f"Visible text around the cursor:\n'''\n{context['excerpt']}\n'''")
-    lines.append("Answer about that, briefly. If there are clear next actions, end with a line "
-                 "[[CHOICES: first action | second action | third action]] (two or three, short, "
-                 "imperative); it is shown as numbered buttons and never read aloud.")
+    lines.append("Answer about that, briefly. Then ALWAYS end with one line "
+                 "[[CHOICES: first | second | third]]: two or three short, imperative next steps the user "
+                 "could take from here (for a pure explanation, follow-ups such as 'Explain it simpler' or "
+                 "'Show an example'). It is shown as numbered buttons and never read aloud.")
     return "\n".join(lines)

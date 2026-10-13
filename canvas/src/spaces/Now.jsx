@@ -35,6 +35,12 @@ function useToday() {
   return [items, now];
 }
 
+/** A standing goal's instruction, shortened, with its control tokens ([[QUIET]]) removed. */
+const goalText = (text) => {
+  const clean = text.replace(/\[\[[A-Z]+\]\]\.?/g, "").replace(/\s+/g, " ").trim();
+  return clean.length > 120 ? `${clean.slice(0, 117)}…` : clean;
+};
+
 const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 
 function Timeline({ items, now }) {
@@ -106,7 +112,8 @@ export default function Now({ snapshot, graph, say, active }) {
   return (
     <div className="m-now">
       <div className="m-story">
-        <section className="m-panel splash m-convo" ref={listRef} aria-label="Conversation">
+        <section className="m-panel splash m-convo-frame" aria-label="Conversation">
+          <div className="m-convo" ref={listRef}>
           {conversation.length === 0 ? (
             <p className="m-empty">Say “Nova…”, or type below. One conversation: Nova decides when to act.</p>
           ) : (
@@ -117,7 +124,7 @@ export default function Now({ snapshot, graph, say, active }) {
                     <span className="m-tab">
                       Standing goal · <span lang="hi">नियम</span>
                     </span>
-                    <b>{m.text.length > 120 ? `${m.text.slice(0, 117)}…` : m.text}</b>
+                    <b>{goalText(m.text)}</b>
                   </div>
                 </div>
               ) : m.role === "user" ? (
@@ -140,6 +147,7 @@ export default function Now({ snapshot, graph, say, active }) {
             )
           )}
           <Mission graph={graph} running={Boolean(snapshot?.agent_running)} />
+          </div>
         </section>
         <form className="m-panel m-compose" onSubmit={submit}>
           <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Say it, or type it. Nova decides when to act." aria-label="Message Nova" />
