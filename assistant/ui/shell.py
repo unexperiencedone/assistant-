@@ -159,13 +159,17 @@ class AppShell:
         hwnd = self._ensure_overlay()
         if not hwnd:
             raise RuntimeError("the overlay window didn't come up")
+        from ..screen_context import physical_pixels
+
         x, y, width, height = (int(v) for v in monitor)
         user32 = _user32()
-        for _ in range(2):
-            user32.SetWindowPos(hwnd, _HWND_TOPMOST, x, y, width, height, _SWP_NOACTIVATE)
+        with physical_pixels():   # the rectangle is in real pixels (screen_context.capture)
+            for _ in range(2):
+                user32.SetWindowPos(hwnd, _HWND_TOPMOST, x, y, width, height, _SWP_NOACTIVATE)
         self.overlay.show()
-        if not user32.SetWindowPos(hwnd, _HWND_TOPMOST, x, y, width, height, 0):
-            log.warning("couldn't place the overlay: error %s", ctypes.get_last_error())
+        with physical_pixels():
+            if not user32.SetWindowPos(hwnd, _HWND_TOPMOST, x, y, width, height, 0):
+                log.warning("couldn't place the overlay: error %s", ctypes.get_last_error())
         user32.SetForegroundWindow(hwnd)
 
     def hide_overlay(self) -> None:

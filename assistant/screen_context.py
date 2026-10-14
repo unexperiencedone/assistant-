@@ -24,6 +24,7 @@ import ctypes
 import sys
 import threading
 import time
+from contextlib import contextmanager
 from ctypes import wintypes
 from pathlib import Path
 from typing import Any
@@ -43,7 +44,8 @@ def _bounded(fn, timeout: float = 1.2) -> Any:
 
             comtypes.CoInitialize()
             try:
-                result["value"] = fn()
+                with physical_pixels():   # selection rectangles in the same pixels as the monitor
+                    result["value"] = fn()
             finally:
                 comtypes.CoUninitialize()
         except Exception:
@@ -109,6 +111,24 @@ def _selection() -> dict[str, Any] | None:
 
 if sys.platform == "win32":
     _user32 = ctypes.WinDLL("user32", use_last_error=True)
+    _user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+    _user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+    _PER_MONITOR_V2 = ctypes.c_void_p(-4)
+
+    @contextmanager
+    def physical_pixels():
+        """Measure and place in real pixels on this thread.
+
+        Nova's window process is only system-DPI aware, so a 100% monitor next to the
+        200% laptop is reported at twice its size and position ([5760, 0, 3840, 2160]
+        for a 1920x1080 at x=2880). The screen grab and UI Automation use real pixels,
+        so the grab of that rectangle was pure black."""
+        old = _user32.SetThreadDpiAwarenessContext(_PER_MONITOR_V2)
+        try:
+            yield
+        finally:
+            if old:
+                _user32.SetThreadDpiAwarenessContext(old)
 
     class _MonitorInfo(ctypes.Structure):
         _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
@@ -131,6 +151,10 @@ if sys.platform == "win32":
             screen = [r.left, r.top, r.right - r.left, r.bottom - r.top]
         return window, screen
 else:  # pragma: no cover - the overlay only exists on Windows
+    @contextmanager
+    def physical_pixels():
+        yield
+
     def _foreground_rects() -> tuple[list[int] | None, list[int] | None]:
         return None, None
 
@@ -138,6 +162,14 @@ else:  # pragma: no cover - the overlay only exists on Windows
 def _grab(frame_path: Path, monitor: list[int], out: dict[str, str]) -> None:
     """A still of one monitor, as JPEG: a 2880x1800 PNG took half a second to encode,
     the JPEG takes about fifty milliseconds and looks the same under the overlay's dim."""
+    try:
+        with physical_pixels():
+            _grab_into(frame_path, monitor, out)
+    except Exception:
+        pass
+
+
+def _grab_into(frame_path: Path, monitor: list[int], out: dict[str, str]) -> None:
     try:
         from PIL import ImageGrab
 
@@ -160,7 +192,8 @@ def capture(frame_path: Path | None = None, deny_apps: set[str] | None = None,
     started = time.monotonic()
     front = foreground() or ("", "")
     process, title = front
-    window, monitor = _foreground_rects()
+    with physical_pixels():
+        window, monitor = _foreground_rects()
     # The still is grabbed beside the UI Automation probes rather than after them: the
     # two don't touch each other and the overlay waits for both.
     grabbed: dict[str, str] = {}

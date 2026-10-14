@@ -16,7 +16,9 @@ from assistant.config import load_settings  # noqa: E402
 from assistant.ui import auth  # noqa: E402
 from assistant.ui.shell import AppShell  # noqa: E402
 
+ctypes.windll.shcore.SetProcessDpiAwareness(1)   # system-aware, as Nova's window process is
 u = ctypes.windll.user32
+from assistant.screen_context import physical_pixels  # noqa: E402
 settings = load_settings()
 from pathlib import Path
 token = auth.read(Path(__file__).resolve().parents[1] / settings.ui.token_file)
@@ -41,7 +43,8 @@ TITLE = "NovaTest - here"
 
 def rect(h):
     r = wintypes.RECT()
-    u.GetWindowRect(h, ctypes.byref(r))
+    with physical_pixels():
+        u.GetWindowRect(h, ctypes.byref(r))
     return [r.left, r.top, r.right - r.left, r.bottom - r.top]
 
 
@@ -54,7 +57,8 @@ def monitors():
         found.append([rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top])
         return 1
 
-    u.EnumDisplayMonitors(None, None, proc(on_monitor), 0)
+    with physical_pixels():
+        u.EnumDisplayMonitors(None, None, proc(on_monitor), 0)
     return found
 
 
@@ -78,7 +82,13 @@ def scenario():
             hung |= bool(u.IsHungAppWindow(h))
             time.sleep(0.2)
         got = rect(h)
-        ok = got == monitor and bool(u.IsWindowVisible(h)) and not hung
+        frame = app.opened[-1].get("frame")
+        lit = None
+        if frame:
+            from PIL import Image
+            lit = Image.open(frame).convert("L").getextrema()[1] > 0   # not a pure black still
+        ok = got == monitor and bool(u.IsWindowVisible(h)) and not hung and lit is not False
+        print(f"   screen still: {frame or 'none (display asleep?)'} | has content: {lit}")
         print(f"[{label}] summon returned in {took:.2f} s (capture {app.opened[-1].get('took_ms')} ms) | rect {got} "
               f"expected {monitor} | visible {bool(u.IsWindowVisible(h))} | hung {hung} -> {'OK' if ok else 'FAIL'}")
         results.append(ok)
