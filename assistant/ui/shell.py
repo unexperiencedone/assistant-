@@ -98,6 +98,9 @@ class AppShell:
         if not self._summoning.acquire(blocking=False):
             return
         try:
+            if self._overlay_visible():   # the same keys again put it away
+                self.app.close_overlay()
+                return
             from ..paths import APP_DIR
             from ..screen_context import capture
 
@@ -117,6 +120,12 @@ class AppShell:
         already left its cookie."""
         return f"{self.url.split('#')[0]}#{view}"
 
+    def _overlay_visible(self) -> bool:
+        if self.overlay is None:
+            return False
+        hwnd = _user32().FindWindowW(None, self._overlay_title)
+        return bool(hwnd and ctypes.windll.user32.IsWindowVisible(hwnd))
+
     @property
     def _overlay_title(self) -> str:
         return f"{self.name} - here"
@@ -131,7 +140,7 @@ class AppShell:
         if self.overlay is None:
             self.overlay = webview.create_window(
                 self._overlay_title, self._page("overlay"), width=640, height=400,
-                frameless=True, on_top=True, hidden=True, background_color="#0d0d0d")
+                frameless=True, easy_drag=False, on_top=True, hidden=True, background_color="#0d0d0d")
             self.overlay.events.closed += self._on_overlay_closed
         deadline = time.monotonic() + 5.0
         while time.monotonic() < deadline:

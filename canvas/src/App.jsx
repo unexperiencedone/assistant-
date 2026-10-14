@@ -64,6 +64,10 @@ const HASH_SPACE = {
   "#now": "now", "#work": "work", "#history": "work", "#studio": "studio",
   "#you": "you", "#memory": "you", "#awareness": "you", "#profile": "you", "#usage": "you", "#connections": "you",
 };
+// The overlay and the reader are windows of their own, opened on that hash. Whatever the
+// canvas does later (a briefing arriving switches it to Work) must never turn them into
+// the full app: the overlay window lives for the whole session, built ahead of the hotkey.
+const WINDOW = location.hash === "#overlay" ? "overlay" : location.hash === "#reader" ? "reader" : null;
 const HASH_YOU = { "#memory": "memory", "#awareness": "awareness", "#profile": "profile", "#usage": "usage", "#connections": "connections" };
 
 export default function App() {
@@ -162,7 +166,7 @@ export default function App() {
   const seenAmbient = useRef(null);
   useEffect(() => {
     if (ambientRevision == null) return;
-    if (seenAmbient.current != null && ambientRevision > seenAmbient.current) {
+    if (!WINDOW && seenAmbient.current != null && ambientRevision > seenAmbient.current) {
       setBriefing(true);
       setView("canvas");
       setSpace("work");
@@ -196,9 +200,9 @@ export default function App() {
   // no status bar. Those belong to the canvas, which is a live activity graph; this is
   // a page to read, and chrome around it would only take space from the text.
   // Nova over another app: its own frameless window, nothing but the frame and the panel.
-  if (view === "overlay") return <Overlay snapshot={snapshot} />;
+  if (WINDOW === "overlay") return <Overlay snapshot={snapshot} />;
 
-  if (view === "reader") {
+  if (WINDOW === "reader" || view === "reader") {
     return (
       <div className="app is-reader">
         <Reader document={snapshot?.document} />

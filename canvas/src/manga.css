@@ -256,6 +256,7 @@ body { font: 400 15px/1.55 var(--text); color: var(--pen); }
 .m-ov-locktab { position: absolute; left: 0; top: calc(100% + 34px); white-space: nowrap; padding: 6px 12px 7px; font: 900 13.5px var(--text); }
 .m-ov-tracker { position: absolute; right: 28px; top: 28px; width: 320px; padding: 14px 16px 16px; transform: rotate(.5deg); }
 .m-ov-tracker.left { right: auto; left: 28px; }
+.m-ov-tracker.low { top: auto; bottom: 28px; }   /* the panel took the top: the list goes under it, never over it */
 .m-ov-tracker h3 { margin: 0; display: flex; justify-content: space-between; align-items: baseline; font: 900 18px/1 var(--text); }
 .m-ov-tracker h3 small { font: 400 17px "Rozha One", serif; }
 .m-quest details summary { cursor: pointer; font-weight: 700; list-style: none; }

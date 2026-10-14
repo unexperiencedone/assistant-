@@ -22,10 +22,10 @@ function appName(process) {
 
 const MIN_LOCK = 44; // px: a one-line target still gets four distinct corners
 
-function Tracker({ items, left }) {
+function Tracker({ items, left, low }) {
   if (!items.length) return null;
   return (
-    <aside className={`m-panel m-ov-tracker${left ? " left" : ""}`} aria-label="Needs you">
+    <aside className={`m-panel m-ov-tracker${left ? " left" : ""}${low ? " low" : ""}`} aria-label="Needs you">
       <h3>
         Needs you <small lang="hi">आपकी बारी</small>
       </h3>
@@ -129,7 +129,7 @@ export default function Overlay({ snapshot }) {
           </span>
         </div>
       ) : null}
-      <Tracker items={items} left={Boolean(lock && lock.left + lock.width > 70 && lock.top < 35)} />
+      <Tracker items={items} left={Boolean(lock && lock.left + lock.width > 70 && lock.top < 35)} low={panelAtTop} />
 
       <section className={`m-panel splash m-ov-panel${panelAtTop ? " top" : ""}`} role="dialog" aria-label="Nova">
         <div className="m-ov-portrait">
