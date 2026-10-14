@@ -60,3 +60,15 @@ class Context(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OverlayPlacement(unittest.TestCase):
+    def test_topmost_goes_to_windows_as_a_pointer_sized_handle(self):
+        # A plain -1 went as 32 bits, SetWindowPos refused it, and the overlay stayed
+        # at pywebview's DPI-doubled size.
+        import ctypes
+
+        from assistant.ui import shell
+
+        self.assertEqual(ctypes.sizeof(shell._HWND_TOPMOST), ctypes.sizeof(ctypes.c_void_p))
+        self.assertEqual(shell._HWND_TOPMOST.value, ctypes.c_void_p(-1).value)   # all bits set, 64 of them

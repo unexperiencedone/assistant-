@@ -292,7 +292,8 @@ class DashboardServer:
             frame = context.get("frame") or ""
             if not frame or not Path(frame).is_file():
                 return JSONResponse({"error": "no frame"}, status_code=404)
-            return FileResponse(frame, media_type="image/png", headers={"Cache-Control": "no-store"})
+            media = "image/png" if frame.lower().endswith(".png") else "image/jpeg"
+            return FileResponse(frame, media_type=media, headers={"Cache-Control": "no-store"})
 
         @app.post("/api/overlay/ask")
         async def api_overlay_ask(body: dict[str, Any]) -> JSONResponse:

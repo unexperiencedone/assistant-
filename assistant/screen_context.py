@@ -135,6 +135,21 @@ else:  # pragma: no cover - the overlay only exists on Windows
         return None, None
 
 
+def _grab(frame_path: Path, monitor: list[int], out: dict[str, str]) -> None:
+    """A still of one monitor, as JPEG: a 2880x1800 PNG took half a second to encode,
+    the JPEG takes about fifty milliseconds and looks the same under the overlay's dim."""
+    try:
+        from PIL import ImageGrab
+
+        frame_path.parent.mkdir(parents=True, exist_ok=True)
+        left, top, width, height = monitor
+        image = ImageGrab.grab(bbox=(left, top, left + width, top + height), all_screens=True)
+        image.convert("RGB").save(frame_path, "JPEG", quality=85)
+        out["path"] = str(frame_path)
+    except Exception:
+        pass
+
+
 def capture(frame_path: Path | None = None, deny_apps: set[str] | None = None,
             deny_titles: list[str] | None = None) -> dict[str, Any]:
     """Everything the overlay and the agent need about the screen, right now."""
@@ -146,6 +161,13 @@ def capture(frame_path: Path | None = None, deny_apps: set[str] | None = None,
     front = foreground() or ("", "")
     process, title = front
     window, monitor = _foreground_rects()
+    # The still is grabbed beside the UI Automation probes rather than after them: the
+    # two don't touch each other and the overlay waits for both.
+    grabbed: dict[str, str] = {}
+    grabber = None
+    if frame_path is not None and monitor:
+        grabber = threading.Thread(target=_grab, args=(frame_path, monitor, grabbed), name="screen-grab", daemon=True)
+        grabber.start()
     context: dict[str, Any] = {"process": process, "title": title, "window": window, "monitor": monitor,
                                "selection": "", "rects": [], "focus_rect": None, "excerpt": "",
                                "private": False, "frame": "", "at": time.time()}
@@ -157,16 +179,9 @@ def capture(frame_path: Path | None = None, deny_apps: set[str] | None = None,
         context["selection"] = privacy.redact(context.get("selection", ""))
         if not context["selection"]:
             context["excerpt"] = privacy.redact(window_text(EXCERPT_LIMIT, timeout=1.0) or "")
-    if frame_path is not None and monitor:
-        try:
-            from PIL import ImageGrab
-
-            frame_path.parent.mkdir(parents=True, exist_ok=True)
-            left, top, width, height = monitor
-            ImageGrab.grab(bbox=(left, top, left + width, top + height), all_screens=True).save(frame_path)
-            context["frame"] = str(frame_path)
-        except Exception:
-            context["frame"] = ""
+    if grabber is not None:
+        grabber.join(3.0)
+        context["frame"] = grabbed.get("path", "")
     context["took_ms"] = int((time.monotonic() - started) * 1000)
     return context
 

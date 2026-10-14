@@ -11,8 +11,11 @@ tray icon and hotkey run on their own threads.
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import threading
+import time
+from ctypes import wintypes
 from typing import TYPE_CHECKING
 
 from ..events import Event
@@ -21,6 +24,23 @@ from .icon import make_image
 from .win32 import GlobalHotkey, system_prefers_dark
 
 log = logging.getLogger("nova.shell")
+
+PREWARM_SECONDS = 8.0   # after startup, build the overlay hidden so the hotkey only shows it
+_SWP_NOACTIVATE = 0x0010
+_HWND_TOPMOST = wintypes.HWND(-1)   # pointer-sized: a plain -1 goes as 32 bits and SetWindowPos refuses it
+
+
+def _user32():
+    """user32 with the signatures declared, on its own handle so other modules' ctypes
+    use is untouched."""
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+                                    ctypes.c_int, ctypes.c_int, wintypes.UINT]
+    user32.SetWindowPos.restype = wintypes.BOOL
+    user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+    user32.FindWindowW.restype = wintypes.HWND
+    user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+    return user32
 
 if TYPE_CHECKING:
     from ..app import VoiceAssistant
@@ -42,6 +62,7 @@ class AppShell:
         self._quitting = False
         self._icon_state = ""
         self._lock = threading.Lock()
+        self._summoning = threading.Lock()   # one summon at a time: a held key repeats
 
     # -- lifecycle ------------------------------------------------------------------
     def run(self) -> None:
@@ -74,30 +95,72 @@ class AppShell:
     def summon(self) -> None:
         """Read the screen first (the app in front is still the owner's), then show Nova
         over it: a still of that monitor with the selection locked, and a question box."""
-        from ..paths import APP_DIR
-        from ..screen_context import capture
-
-        settings = self.app.settings.afterthought
-        context = capture(APP_DIR / "data" / "overlay" / "frame.png",
-                          set(getattr(settings, "deny_apps", []) or []), list(getattr(settings, "deny_titles", []) or []))
-        self.app.open_overlay(context)
-        x, y, width, height = context.get("monitor") or (0, 0, 1440, 900)
-        import webview
-
+        if not self._summoning.acquire(blocking=False):
+            return
         try:
-            if self.overlay is None:
-                self.overlay = webview.create_window(
-                    f"{self.name} - here", f"{self.url.rstrip('/')}/#overlay", x=x, y=y, width=width, height=height,
-                    frameless=True, on_top=True, resizable=False, background_color="#0d0d0d")
-                self.overlay.events.closed += self._on_overlay_closed
-            else:
-                self.overlay.move(x, y)
-                self.overlay.resize(width, height)
-                self.overlay.show()
-            self.overlay.on_top = True
+            from ..paths import APP_DIR
+            from ..screen_context import capture
+
+            settings = self.app.settings.afterthought
+            context = capture(APP_DIR / "data" / "overlay" / "frame.jpg",
+                              set(getattr(settings, "deny_apps", []) or []), list(getattr(settings, "deny_titles", []) or []))
+            self.app.open_overlay(context)
+            self._show_overlay(context.get("monitor") or [0, 0, 1440, 900])
         except Exception as exc:
             log.warning("couldn't show the overlay: %s", exc)
-            self.overlay = None
+        finally:
+            self._summoning.release()
+
+    @property
+    def _overlay_title(self) -> str:
+        return f"{self.name} - here"
+
+    def _ensure_overlay(self) -> int:
+        """The overlay's window handle, building the window hidden if it isn't there.
+
+        Built once and then only shown and hidden: a WebView2 window plus the canvas
+        take a few seconds to start, which is the hang the hotkey used to cause."""
+        import webview
+
+        if self.overlay is None:
+            self.overlay = webview.create_window(
+                self._overlay_title, f"{self.url.rstrip('/')}/#overlay", width=640, height=400,
+                frameless=True, on_top=True, hidden=True, background_color="#0d0d0d")
+            self.overlay.events.closed += self._on_overlay_closed
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            hwnd = _user32().FindWindowW(None, self._overlay_title)
+            if hwnd:
+                return hwnd
+            time.sleep(0.05)
+        return 0
+
+    def _prewarm_overlay(self) -> None:
+        time.sleep(PREWARM_SECONDS)
+        try:
+            self._ensure_overlay()
+        except Exception as exc:
+            log.warning("couldn't prepare the overlay: %s", exc)
+
+    def _show_overlay(self, monitor: list[int]) -> None:
+        """Cover exactly that monitor, in physical pixels.
+
+        pywebview's x/y/width/height are logical pixels it multiplies by the display
+        scale, so the monitor rectangle (physical, from GetMonitorInfo) came out twice
+        the size on a 200% laptop screen: a 5760x3600 WebView. SetWindowPos takes the
+        rectangle as it is. It goes twice because crossing to a monitor with another
+        DPI makes WinForms rescale the window once it lands there."""
+        hwnd = self._ensure_overlay()
+        if not hwnd:
+            raise RuntimeError("the overlay window didn't come up")
+        x, y, width, height = (int(v) for v in monitor)
+        user32 = _user32()
+        for _ in range(2):
+            user32.SetWindowPos(hwnd, _HWND_TOPMOST, x, y, width, height, _SWP_NOACTIVATE)
+        self.overlay.show()
+        if not user32.SetWindowPos(hwnd, _HWND_TOPMOST, x, y, width, height, 0):
+            log.warning("couldn't place the overlay: error %s", ctypes.get_last_error())
+        user32.SetForegroundWindow(hwnd)
 
     def hide_overlay(self) -> None:
         if self.overlay is not None:
@@ -283,6 +346,7 @@ class AppShell:
         if summon:
             self.overlay_hotkey = GlobalHotkey(summon, lambda: threading.Thread(target=self.summon, daemon=True).start())
             if self.overlay_hotkey.start():
+                threading.Thread(target=self._prewarm_overlay, name="overlay-prewarm", daemon=True).start()
                 self.app.bus.log(f"Press {summon} to ask Nova about whatever is on your screen.")
             else:
                 self.app.bus.log(f"Couldn't register hotkey {summon} (in use or invalid).", "warn")

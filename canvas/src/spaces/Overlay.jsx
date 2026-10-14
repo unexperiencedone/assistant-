@@ -67,6 +67,14 @@ export default function Overlay({ snapshot }) {
     inputRef.current?.focus();
   }, [overlay.rev]);
 
+  // The window is built hidden ahead of time and only shown on the hotkey, so the page
+  // is already mounted by then: take focus each time the window does.
+  useEffect(() => {
+    const onFocus = () => inputRef.current?.focus();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+
   const close = () => postJSON("/api/overlay/close", {});
   const ask = (question) => {
     if (!question.trim()) return;
