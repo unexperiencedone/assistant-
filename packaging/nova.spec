@@ -16,6 +16,7 @@ ROOT = Path(SPECPATH).parent
 datas = [
     (str(ROOT / "assistant" / "ui" / "canvas_dist"), "assistant/ui/canvas_dist"),
     (str(ROOT / "assistant" / "ui" / "nova.ico"), "assistant/ui"),
+    (str(ROOT / "assistant" / "ui" / "nova-mark.png"), "assistant/ui"),   # the N the tray icon draws
     (str(ROOT / "AGENTS.md"), "."),
     (str(ROOT / "CLAUDE.md"), "."),
 ]

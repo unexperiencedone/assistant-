@@ -109,11 +109,8 @@ body { font: 400 15px/1.55 var(--text); color: var(--pen); }
 
 /* ── masthead ── */
 .m-mast { position: relative; z-index: 3; display: flex; align-items: center; gap: 24px; padding: 12px 32px 10px; border-bottom: 3px solid var(--pen); background: var(--paper); }
-.m-brand { display: flex; align-items: center; gap: 12px; }
-.m-brand .cells { display: grid; grid-template-columns: 10px 10px; gap: 2px; }
-.m-brand .cells i { width: 10px; height: 10px; background: var(--pen); }
-.m-brand .cells i:nth-child(2) { background: var(--spot); }
-.m-brand b { font: 400 24px/1 var(--sfx); }
+.m-brand { display: flex; align-items: center; color: var(--pen); margin: -4px 0 -6px; }
+.m-brand svg { display: block; }
 .m-spaces { display: flex; gap: 20px; margin-left: 8px; }
 .m-spaces button { display: flex; align-items: center; gap: 9px; background: none; border: 0; padding: 2px 0; cursor: pointer; color: var(--pen); }
 .m-spaces button span.l { display: grid; line-height: 1.1; text-align: left; }
@@ -152,6 +149,25 @@ body { font: 400 15px/1.55 var(--text); color: var(--pen); }
 .m-quest details { margin-top: 10px; font-size: 13.5px; }
 .m-quest details p { margin: 6px 0 0; white-space: pre-wrap; max-height: 160px; overflow: auto; border: 2px solid var(--pen); background: #fff; padding: 8px 10px; }
 .m-said-back { font: 600 15px var(--pencil); margin-top: 8px; }
+
+/* Connections (You · Connections): one panel per brain or key, the same quest grammar. */
+.m-conns { max-width: 1100px; }
+.m-conn-first { margin: 0 0 18px; max-width: 720px; }
+.m-conn-group { margin: 22px 0 10px; font: 900 13px var(--text); letter-spacing: .14em; text-transform: uppercase; color: var(--pen-2); }
+.m-conn-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 18px; }
+.m-conn { padding: 16px 18px 18px; }
+.m-conn .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.m-conn h3 { margin: 0; font: 900 20px/1.2 var(--text); letter-spacing: -.01em; }
+.m-conn .role { margin: 8px 0 6px; font: 600 14.5px/1.5 var(--text); }
+.m-conn .detail { margin: 0; font: 500 12.5px var(--mono, "IBM Plex Mono", monospace); color: var(--pen-2); overflow-wrap: anywhere; }
+.m-conn-acts { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
+.m-conn-acts a.m-btn { text-decoration: none; }
+.m-conn-key { display: flex; flex: 1 1 100%; border: 3px solid var(--pen); background: #fff; }
+.m-conn-key input { flex: 1; min-width: 0; border: 0; outline: none; background: none; padding: 8px 12px; font: 600 14px var(--mono, "IBM Plex Mono", monospace); color: var(--pen); }
+.m-conn-key .m-btn { border-width: 0 0 0 3px; }
+.m-setup { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+.m-setup .m-said { flex: 1; }
+.m-conn-note { margin: 22px 0 0; font: 600 13px var(--text); color: var(--pen-2); max-width: 70ch; }
 .m-today { grid-column: 1 / -1; display: grid; grid-template-columns: 300px 1fr; gap: 22px; align-items: center; }
 .m-running { padding: 10px 14px; min-height: 58px; }
 .m-running b { font: 900 14px var(--text); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -217,7 +233,8 @@ body { font: 400 15px/1.55 var(--text); color: var(--pen); }
 .m-ov-panel.top { bottom: auto; top: 40px; }
 .m-ov-portrait { border-right: 3px solid var(--pen); display: grid; place-items: center; align-content: center; gap: 12px; padding: 18px 0 44px; position: relative; }
 .m-ov-portrait .m-sfx { font-size: 18px; transform: rotate(-5deg); }
-.m-ov-name { position: absolute; left: 0; right: 0; bottom: 0; background: var(--pen); color: var(--paper); text-align: center; font: 900 13px var(--text); letter-spacing: .24em; padding: 5px 0 6px; }
+.m-ov-name { position: absolute; left: 0; right: 0; bottom: 0; display: grid; place-items: center; background: var(--pen); color: var(--paper); padding: 4px 0 5px; }
+.m-ov-name svg { display: block; }
 .m-ov-body { padding: 26px 24px 18px; overflow: auto; }
 .m-ov-sel { display: block; margin-top: 6px; font: 400 13.5px/1.45 "IBM Plex Mono", monospace; color: var(--pen-2); white-space: pre-wrap; }
 .m-ov-choices { display: grid; gap: 8px; margin-top: 14px; }

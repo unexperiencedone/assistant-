@@ -2,6 +2,7 @@ import Awareness from "../Awareness.jsx";
 import Memory from "../Memory.jsx";
 import Profile from "../Profile.jsx";
 import Usage from "../Usage.jsx";
+import Connections from "./Connections.jsx";
 
 // You: what Nova knows about you. The existing screens, one at a time, under one space.
 
@@ -10,6 +11,7 @@ export const YOU_TABS = [
   { id: "awareness", en: "Activity", hi: "गतिविधि" },
   { id: "profile", en: "Profile", hi: "परिचय" },
   { id: "usage", en: "Usage", hi: "खर्च" },
+  { id: "connections", en: "Connections", hi: "जुड़ाव" },
 ];
 
 export default function You({ tab, onTab, snapshot, onClose }) {
@@ -22,7 +24,9 @@ export default function You({ tab, onTab, snapshot, onClose }) {
           </button>
         ))}
       </div>
-      {tab === "profile" ? (
+      {tab === "connections" ? (
+        <Connections />
+      ) : tab === "profile" ? (
         <Profile onClose={onClose} revision={snapshot?.profile?.revision} />
       ) : tab === "awareness" ? (
         <Awareness onClose={onClose} revision={snapshot?.awareness?.revision} />

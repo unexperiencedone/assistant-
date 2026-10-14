@@ -1,6 +1,8 @@
 // The masthead: Nova's name, the four spaces (keys 1–4), the Needs-you count, and what
 // Nova is doing right now, said as an SFX word from the real status slice.
 
+import Logo from "../Logo.jsx";
+
 export const SPACES = [
   { id: "now", key: "1", en: "Now", hi: "अभी" },
   { id: "work", key: "2", en: "Work", hi: "काम" },
@@ -39,13 +41,7 @@ export default function Masthead({ space, onSpace, status, working, count, live,
   return (
     <header className="m-mast">
       <span className="m-brand">
-        <span className="cells" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-          <i />
-        </span>
-        <b>Nova</b>
+        <Logo kind="wordmark" height={40} />
       </span>
       <nav className="m-spaces" aria-label="Spaces">
         {SPACES.map((s) => (

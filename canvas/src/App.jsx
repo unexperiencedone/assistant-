@@ -62,9 +62,9 @@ function useAmbientLine(revision) {
 
 const HASH_SPACE = {
   "#now": "now", "#work": "work", "#history": "work", "#studio": "studio",
-  "#you": "you", "#memory": "you", "#awareness": "you", "#profile": "you", "#usage": "you",
+  "#you": "you", "#memory": "you", "#awareness": "you", "#profile": "you", "#usage": "you", "#connections": "you",
 };
-const HASH_YOU = { "#memory": "memory", "#awareness": "awareness", "#profile": "profile", "#usage": "usage" };
+const HASH_YOU = { "#memory": "memory", "#awareness": "awareness", "#profile": "profile", "#usage": "usage", "#connections": "connections" };
 
 export default function App() {
   const { snapshot, connected, say, dismissDenials } = useAssistant();
@@ -236,7 +236,7 @@ export default function App() {
       ) : null}
 
       {space === "now" ? (
-        <Now snapshot={snapshot} graph={liveGraph} say={say} active />
+        <Now snapshot={snapshot} graph={liveGraph} say={say} active onSetup={() => (setYouTab("connections"), setSpace("you"))} />
       ) : space === "studio" ? (
         <Studio snapshot={snapshot} active />
       ) : space === "you" ? (

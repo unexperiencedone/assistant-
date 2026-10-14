@@ -93,7 +93,22 @@ function Mission({ graph, running }) {
   );
 }
 
-export default function Now({ snapshot, graph, say, active }) {
+// First run: no brain connected yet, so nothing typed or said could be answered.
+function useSetupNeeded() {
+  const [needed, setNeeded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    getJSON("/api/connections")
+      .then((d) => !cancelled && setNeeded(d.ready === false))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return needed;
+}
+
+export default function Now({ snapshot, graph, say, active, onSetup }) {
   const conversation = snapshot?.conversation ?? [];
   const items = snapshot?.inbox?.items ?? [];
   const live = snapshot?.live;
@@ -101,6 +116,7 @@ export default function Now({ snapshot, graph, say, active }) {
   const [text, setText] = useState("");
   const listRef = useStickToBottom(conversation.length);
   const [today, now] = useToday();
+  const setupNeeded = useSetupNeeded();
 
   const submit = (event) => {
     event.preventDefault();
@@ -112,6 +128,14 @@ export default function Now({ snapshot, graph, say, active }) {
   return (
     <div className="m-now">
       <div className="m-story">
+        {setupNeeded ? (
+          <div className="m-balloon m-setup">
+            <p className="m-said">Nova has no brain connected yet, so it can't answer anything. Connect one first: a free Groq key takes a minute.</p>
+            <button type="button" className="m-btn spot" onClick={onSetup}>
+              Set up connections
+            </button>
+          </div>
+        ) : null}
         <section className="m-panel splash m-convo-frame" aria-label="Conversation">
           <div className="m-convo" ref={listRef}>
           {conversation.length === 0 ? (

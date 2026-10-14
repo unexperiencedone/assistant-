@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import Logo from "../Logo.jsx";
 import { postJSON, typing } from "./api.js";
 
 // Nova over another app. The still of the monitor the owner was on, ink brackets locked
@@ -134,7 +135,9 @@ export default function Overlay({ snapshot }) {
         <div className="m-ov-portrait">
           <span className={`m-orb${waiting ? " live" : ""}`} style={{ width: 70, height: 70 }} aria-hidden="true" />
           <span className="m-sfx">{sfx}</span>
-          <span className="m-ov-name">NOVA</span>
+          <span className="m-ov-name">
+            <Logo kind="wordmark" height={22} />
+          </span>
         </div>
         <div className="m-ov-body">
           <div className="m-caption">

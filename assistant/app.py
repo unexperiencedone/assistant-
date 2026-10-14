@@ -430,6 +430,12 @@ class VoiceAssistant:
             self.server.publisher = self.publisher
             self.server.schedule = self.schedule
             self.server.overlay = self
+            from .connections import ConnectionsService
+            from .paths import APP_DIR
+
+            # Keys go where load_settings reads them from: next to config.toml.
+            env_dir = getattr(settings, "base_dir", None) or APP_DIR
+            self.server.connections = ConnectionsService(settings, Path(env_dir) / ".env")
         self._greeting = threading.Lock()
         if self.local_system:
             self.controller.publish_quick_actions()  # the chips are there before the first request

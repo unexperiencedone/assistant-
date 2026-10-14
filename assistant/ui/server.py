@@ -120,6 +120,7 @@ class DashboardServer:
         self.publisher: Any = None  # assistant.publish.PublishService, set by the app
         self.schedule: Any = None   # assistant.schedule.ScheduleService, set by the app
         self.overlay: Any = None    # the app: open_overlay / overlay_ask / close_overlay
+        self.connections: Any = None   # assistant.connections.ConnectionsService, set by the app
         self.state = state
         self.port = port
         self.on_text = on_text
@@ -283,6 +284,27 @@ class DashboardServer:
             # Posting talks to LinkedIn and can take seconds: never on the event loop.
             ok, said = await asyncio.get_running_loop().run_in_executor(None, self.inbox.act, item, action)
             return JSONResponse({"ok": ok, "said": said})
+
+        # -- connections: sign-ins and keys (assistant/connections.py) ------------------
+        @app.get("/api/connections")
+        async def api_connections(refresh: int = 0) -> JSONResponse:
+            if self.connections is None:
+                return JSONResponse({"providers": [], "ready": True})
+            return JSONResponse(self.connections.status(refresh=bool(refresh)))
+
+        @app.post("/api/connections/{action}")
+        async def api_connections_act(action: str, body: dict[str, Any]) -> JSONResponse:
+            if self.connections is None:
+                return JSONResponse({"ok": False, "said": "Connections aren't available."}, status_code=503)
+            pid = str(body.get("id", ""))
+            calls = {"key": lambda: self.connections.save_key(pid, str(body.get("key", ""))),
+                     "remove": lambda: self.connections.remove_key(pid),
+                     "signin": lambda: self.connections.sign_in(pid)}
+            if action not in calls:
+                return JSONResponse({"ok": False, "said": "Unknown action."}, status_code=404)
+            # Trying a key is a network round trip: never on the event loop.
+            ok, said = await asyncio.get_running_loop().run_in_executor(None, calls[action])
+            return JSONResponse({"ok": ok, "said": said, **self.connections.status()})
 
         @app.get("/api/overlay/frame")
         async def api_overlay_frame():
