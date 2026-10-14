@@ -72,3 +72,12 @@ class OverlayPlacement(unittest.TestCase):
 
         self.assertEqual(ctypes.sizeof(shell._HWND_TOPMOST), ctypes.sizeof(ctypes.c_void_p))
         self.assertEqual(shell._HWND_TOPMOST.value, ctypes.c_void_p(-1).value)   # all bits set, 64 of them
+
+    def test_the_overlay_url_keeps_the_token_intact(self):
+        from assistant.ui.shell import AppShell
+
+        shell = AppShell.__new__(AppShell)
+        shell.url = "http://127.0.0.1:8765/?token=abc"
+        self.assertEqual(shell._page("overlay"), "http://127.0.0.1:8765/?token=abc#overlay")
+        shell.url = "http://127.0.0.1:8765/"
+        self.assertEqual(shell._page("reader"), "http://127.0.0.1:8765/#reader")

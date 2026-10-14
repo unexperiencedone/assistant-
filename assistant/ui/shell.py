@@ -111,6 +111,12 @@ class AppShell:
         finally:
             self._summoning.release()
 
+    def _page(self, view: str) -> str:
+        """The canvas URL for one view. The hash goes after the query: "/#view" appended
+        to "...?token=abc" made the token "abc/", refused unless the main window had
+        already left its cookie."""
+        return f"{self.url.split('#')[0]}#{view}"
+
     @property
     def _overlay_title(self) -> str:
         return f"{self.name} - here"
@@ -124,7 +130,7 @@ class AppShell:
 
         if self.overlay is None:
             self.overlay = webview.create_window(
-                self._overlay_title, f"{self.url.rstrip('/')}/#overlay", width=640, height=400,
+                self._overlay_title, self._page("overlay"), width=640, height=400,
                 frameless=True, on_top=True, hidden=True, background_color="#0d0d0d")
             self.overlay.events.closed += self._on_overlay_closed
         deadline = time.monotonic() + 5.0
@@ -217,7 +223,7 @@ class AppShell:
         try:
             self.reader = webview.create_window(
                 f"{self.name} - reader",
-                f"{self.url.rstrip('/')}/#reader",
+                self._page("reader"),
                 width=settings.width,
                 height=settings.height,
                 min_size=(360, 320),
