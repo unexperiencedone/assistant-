@@ -204,6 +204,68 @@ body { font: 400 15px/1.55 var(--text); color: var(--pen); }
 .m-subtabs button { font: 900 14px var(--text); border: 2px solid var(--pen); background: var(--paper); padding: 6px 14px; cursor: pointer; color: var(--pen); }
 .m-subtabs button[aria-pressed="true"] { background: var(--pen); color: var(--paper); }
 
+/* Studio: every post in one queue, the picked one as a proof of what goes out. */
+.m-studio-head { display: flex; align-items: center; gap: 18px; margin-bottom: 14px; }
+.m-studio-head .m-head { margin: 0; }
+.m-studio-head .m-arm { margin-left: auto; padding: 0; }
+.m-weekbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 10px; }
+.m-weekbar h3 { margin: 0; font: 900 17px/1.25 var(--text); letter-spacing: -.01em; }
+.m-weekbar h3 small { font: 700 12.5px "Mukta", sans-serif; color: var(--pen-2); margin-left: 8px; }
+.m-weekbar .nav { display: flex; gap: 8px; }
+.m-weekbar .nav .m-btn { min-width: 36px; justify-content: center; }
+button.m-slot { display: block; width: 100%; text-align: left; color: var(--pen); cursor: pointer; transition: background 120ms, color 120ms; }
+button.m-slot.posted { color: var(--paper); }
+button.m-slot.failed { color: var(--failed); }
+button.m-slot:hover, button.m-slot[aria-pressed="true"] { outline: 3px solid var(--pen); outline-offset: 2px; }
+button.m-slot:focus-visible { outline: 3px solid var(--spot); outline-offset: 3px; }
+.m-elsewhere { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.m-elsewhere > span { font: 600 17px var(--pencil); }
+.m-elsewhere .m-btn { border-style: dashed; border-width: 3px; }
+
+.m-posts { display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 20px; margin-top: 22px; align-items: start; }
+.m-queue { padding: 12px 12px 14px; position: sticky; top: 0; max-height: calc(100vh - 140px); overflow: auto; }
+.m-queue .qhead { display: flex; justify-content: space-between; align-items: center; padding: 2px 4px 10px; border-bottom: 3px solid var(--pen); }
+.m-queue .qhead b { font: 900 17px var(--text); }
+.m-queue .qhead > span { display: flex; gap: 4px; }
+.m-queue h4 { margin: 16px 4px 6px; font: 900 11.5px var(--text); letter-spacing: .08em; text-transform: uppercase; color: var(--pen); }
+.m-queue h4 small { font: 700 12.5px "Mukta", sans-serif; letter-spacing: 0; text-transform: none; color: var(--pen-2); margin-left: 6px; }
+.m-space .m-qrow { display: grid; grid-template-columns: 66px minmax(0, 1fr); gap: 10px; width: 100%; text-align: left; padding: 8px; margin-top: 6px; background: var(--paper); color: var(--pen); border: 2px solid transparent; cursor: pointer; font: inherit; transition: border-color 120ms, background 120ms, color 120ms; }
+.m-space .m-qrow:hover { border-color: var(--pen); }
+.m-space .m-qrow[aria-pressed="true"] { background: var(--pen); color: var(--paper); border-color: var(--pen); }
+.m-qrow .when { border-right: 2px solid currentColor; padding-right: 8px; }
+.m-qrow .when b { display: block; white-space: nowrap; font: 900 14px/1.1 var(--text); text-transform: uppercase; letter-spacing: .03em; }
+.m-qrow .when small { display: block; font: 700 12.5px var(--text); margin-top: 3px; font-variant-numeric: tabular-nums; }
+.m-qrow .what { display: flex; gap: 10px; align-items: flex-start; font: 900 14.5px/1.3 var(--text); min-width: 0; }
+.m-qrow .what > span { min-width: 0; }
+.m-qrow .what small { display: block; font: 700 12.5px var(--text); color: var(--pen-2); margin-top: 3px; }
+.m-qrow[aria-pressed="true"] .what small { color: #cfcfca; }
+.m-space .m-qrow[aria-pressed="true"] b { color: var(--paper); }
+.m-qrow[aria-pressed="true"] .m-mark { border-color: var(--paper); }
+.m-qrow[aria-pressed="true"] .m-mark.done { background: var(--paper); }
+
+.m-proof { padding: 20px 24px 22px; min-width: 0; }
+.m-proof .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; }
+.m-proof h3 { margin: 0 0 6px; font: 900 24px/1.1 var(--text); letter-spacing: -.02em; }
+.m-proof .ctx { font: 700 13.5px var(--text); color: var(--pen-2); font-variant-numeric: tabular-nums; }
+.m-sheet { margin-top: 16px; background: #fff; border: 2px solid var(--pen); padding: 18px 22px 20px; }
+.m-sheet p { margin: 0; max-width: 68ch; white-space: pre-wrap; font: 400 15.5px/1.6 var(--text); color: var(--pen); }
+.m-fold { display: inline-block; margin: 0 6px; padding: 0 6px; border: 2px dashed var(--pen-2); font: 600 13px/1.5 var(--pencil); color: var(--pen-2); white-space: nowrap; transform: rotate(-1.5deg); cursor: help; }
+.m-proof-media { display: grid; gap: 10px; margin-top: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.m-proof-media.n1 { grid-template-columns: minmax(0, 1fr); }
+.m-proof-media.n3 > a:first-child { grid-column: 1 / -1; }
+.m-proof-media a { display: block; border: 2px solid var(--pen); background: #fff; aspect-ratio: 16 / 10; overflow: hidden; }
+.m-proof-media.n3 > a:first-child, .m-proof-media.n1 > a { aspect-ratio: 16 / 8; }
+.m-proof-media img { width: 100%; height: 100%; object-fit: contain; display: block; transition: transform 200ms cubic-bezier(.16, 1, .3, 1); }
+.m-proof-media a:hover img { transform: scale(1.02); }
+.m-proof-why { margin: 12px 0 0; border: 2px dashed var(--failed); color: var(--failed); padding: 8px 12px; font-weight: 700; }
+.m-proof .acts { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+.m-proof a.m-btn { text-decoration: none; }
+.m-when { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 2px solid var(--pen); }
+.m-when label { display: grid; gap: 4px; }
+.m-when label span { font: 900 11.5px var(--text); letter-spacing: .08em; text-transform: uppercase; }
+.m-when input { border: 2px solid var(--pen); background: #fff; color: var(--pen); font: 700 15px var(--text); padding: 6px 10px; font-variant-numeric: tabular-nums; accent-color: var(--spot); }
+.m-ledger-panel { padding: 16px 18px; margin-top: 22px; }
+
 /* the existing screens, on paper */
 .topbar, .statusbar { display: none; }
 .panel { background: var(--paper); border: 2px solid var(--pen); border-radius: 0; box-shadow: none; }

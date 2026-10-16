@@ -29,6 +29,8 @@
     GET  /api/usage?days=30     tokens spent and saved (assistant/usage/report.py); days=0 is all time
     POST /api/inbox/act         {"id": "draft:7", "action": "approve"} -> act on one Needs-you item
     GET  /api/studio            drafts, scheduled posts, the posted ledger and which arms work
+    GET  /api/studio/media/{id}/{n}   a post's n-th image, only ever one a draft lists
+    POST /api/studio/schedule   {"id": 7, "at": <epoch seconds>} -> schedule or move a post
     GET  /api/schedule/today    today's items (yours and the calendar's), for the Now timeline
     GET  /api/overlay/frame     the still of the screen Nova was summoned over
     POST /api/overlay/ask       {"text": ...} -> a question about that screen
@@ -47,6 +49,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 import socket
 import threading
 import time
@@ -63,6 +66,9 @@ from ..automation.extension import BRIDGE as EXTENSION
 from ..paths import resource_path
 from ..state import LIST_LIMITS, AppState
 from . import auth
+
+# A sent post's id in the gate's result line: "Posted to LinkedIn (urn:li:share:75...)".
+_POST_URN = re.compile(r"urn:li:(?:share|ugcPost|activity):\d+")
 
 SEND_INTERVAL = 0.05  # at most 20 updates per second per client
 
@@ -152,10 +158,13 @@ class DashboardServer:
 
         def row(draft: dict[str, Any]) -> dict[str, Any]:
             extra = draft.get("extra") or {}
+            result = draft.get("result", "") or ""
+            posted = _POST_URN.search(result) if draft["status"] == "sent" else None
             return {"id": draft["id"], "kind": draft["kind"], "status": draft["status"], "name": extra.get("name", ""),
                     "text": draft["text"], "media": [Path(m).name for m in draft["media"]],
-                    "created_at": draft["created_at"], "send_at": draft.get("send_at"),
-                    "decided_at": draft.get("decided_at"), "result": draft.get("result", "")}
+                    "alt": extra.get("alt", ""), "created_at": draft["created_at"], "send_at": draft.get("send_at"),
+                    "decided_at": draft.get("decided_at"), "result": result,
+                    "post": posted.group(0) if posted else ""}
 
         showcase = getattr(self.publisher, "showcase", None)
         signed_in, signin = linkedin_auth.status()
@@ -346,6 +355,32 @@ class DashboardServer:
             if self.publisher is None:
                 return JSONResponse({"enabled": False})
             return JSONResponse(await asyncio.get_running_loop().run_in_executor(None, self._studio))
+
+        @app.get("/api/studio/media/{draft_id}/{index}")
+        async def api_studio_media(draft_id: int, index: int):
+            from fastapi.responses import FileResponse
+
+            # Only a file a draft itself lists: the path never comes from the request.
+            draft = self.publisher.gate.get(draft_id) if self.publisher is not None else None
+            media = (draft or {}).get("media") or []
+            if not 0 <= index < len(media) or not Path(media[index]).is_file():
+                return JSONResponse({"error": "no such image"}, status_code=404)
+            return FileResponse(media[index])
+
+        @app.post("/api/studio/schedule")
+        async def api_studio_schedule(body: dict[str, Any]) -> JSONResponse:
+            if self.publisher is None:
+                return JSONResponse({"ok": False, "said": "Publishing is off."}, status_code=503)
+            try:
+                draft_id, at = int(body.get("id")), float(body.get("at"))
+            except (TypeError, ValueError):
+                return JSONResponse({"ok": False, "said": "That needs a post and a time."}, status_code=400)
+            if at < time.time() + 60:
+                return JSONResponse({"ok": False, "said": "Pick a time that hasn't passed."})
+            ok, said = await asyncio.get_running_loop().run_in_executor(None, self.publisher.gate.schedule, draft_id, at)
+            if self.inbox is not None:
+                self.inbox.refresh()
+            return JSONResponse({"ok": ok, "said": said})
 
         @app.get("/api/profile")
         async def api_profile() -> JSONResponse:
