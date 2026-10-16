@@ -101,7 +101,7 @@ class VoiceAssistant:
         self.runner = AgentRunner(
             self.bus, self.plan, self.speaker,
             on_finished=lambda backend, result, task: self.inbox.put(("agent_done", (backend, result, task), "")),
-            max_parallel=settings.agents.max_parallel)
+            max_parallel=settings.agents.max_parallel, backends=self.registry.backends)
 
         # The briefing panel's cache, and the activity record. Both are opt-in-ish:
         # the briefing never fetches until asked, and awareness never watches until
@@ -465,7 +465,7 @@ class VoiceAssistant:
         Splitting the two is what stops every errand costing a Claude turn.
         """
         backend = self.registry.backends.get(backend_name)
-        if backend is None or not backend.is_available():
+        if backend is None:
             return missing
 
         # A session already in a turn gets no second message: the two would share one
@@ -478,11 +478,20 @@ class VoiceAssistant:
             self.bus.publish("agent", kind=event.kind, backend=backend.label,
                              tool=event.tool, text=event.text[:400])
 
+        from .agents import failover
+
+        answered = backend
         try:
-            result = backend.run(task, on_event, self.runner.cancel_event)
+            # No check first: a brain that can't answer hands the job to the other one.
+            answered, result = failover.run(
+                backend, task, on_event, self.runner.cancel_event, self.registry.backends,
+                lambda failed, partner, why: self.bus.log(f"{failed.label} couldn't take it; {partner.label} is doing it"))
         finally:
             if spawned:
                 backend.close()   # a one-job session: don't leave its process running
+            if answered is not backend:
+                answered.close()
+        backend = answered
         # Not through the runner, so no result event: say what it cost, or the usage
         # ledger never sees a Claude turn a free model handed over (assistant/usage).
         self.bus.publish("usage", backend=backend.label, data=result.data, request=task,

@@ -139,7 +139,7 @@ Python 3.11 voice assistant. Entry point `main.py`, settings in `config.toml` â†
 | Event bus, UI state (versioned slices, patched to the canvas) | `events.py`, `state.py` |
 | Mic, speech-to-text, TTS, noise gate | `audio/` (`gate.py` drops garbage transcripts) |
 | Instant commands (regex) | `intents.py`, handled in `controller.py` (`_intent_<name>`) |
-| Agents: live `claude -p`, `agy -p`, Groq + OpenRouter (`chat_api.py` + `tools.py`) | `agents/` |
+| Agents: live `claude -p`, `agy -p`, Groq + OpenRouter (`chat_api.py` + `tools.py`); Claude and Antigravity stand in for each other, no check first: a turn that comes back without an answer goes to the other (`failover.py`) | `agents/` |
 | Task pool (parallel tasks, errand/big-job triage), plan DAG, live graph (per-task lanes) | `agent_runner.py`, `triage.py`, `planning/` |
 | Raw per-turn agent logs, restart persistence | `sessions.py`, `store.py` |
 | Live activity: what is running and what ran last, one answer for the voice, the `nova_status` tool, the canvas and the phone | `watcher.py`; the `live` state slice (not `activity`, which is the append-only log feed) |

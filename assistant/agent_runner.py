@@ -19,8 +19,9 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Mapping
 
+from .agents import failover
 from .agents.base import AgentBackend, AgentEvent, AgentResult, short
 from .audio.tts import Speaker
 from .events import EventBus
@@ -56,6 +57,7 @@ class Task:
     started: float = field(default_factory=time.time)
     last_activity: str = ""
     thread: threading.Thread | None = None
+    handed_over: bool = False   # the other CLI agent answered (agents/failover.py)
     # What this task has been doing, grouped into kinds of work rather than tool names,
     # so the spoken progress says "still writing code" instead of "running a command"
     # for the fifth time (assistant/progress.py).
@@ -72,8 +74,11 @@ class Task:
 
 class AgentRunner:
     def __init__(self, bus: EventBus, plan: Plan, speaker: Speaker, on_finished: Finished,
-                 max_parallel: int = 2) -> None:
+                 max_parallel: int = 2, backends: Mapping[str, AgentBackend] | None = None) -> None:
         self.bus = bus
+        # Every agent by name, so a Claude or Antigravity turn that comes back without
+        # an answer is handed to the other one (agents/failover.py).
+        self.backends = backends or {}
         self.plan = plan
         self.speaker = speaker
         self.on_finished = on_finished
@@ -214,7 +219,20 @@ class AgentRunner:
                         task.last_activity = task.progress.latest
                 self._update_plan(event.text, task)
 
-        result = task.backend.run(task.prompt, on_event, task.cancel)
+        first = task.backend
+
+        def handover(failed: AgentBackend, partner: AgentBackend, result: AgentResult) -> None:
+            # No announcement: the reply simply comes from the other one.
+            self.bus.log(f"{failed.label} couldn't take it ({short(result.detail or result.summary, 120)}); "
+                         f"{partner.label} is doing it instead")
+            self.bus.publish("agent", kind="tool", backend=partner.label, tool="handover",
+                             text=f"handed over from {failed.label}", task=task.id)
+            task.backend = partner
+
+        answered, result = failover.run(first, task.prompt, on_event, task.cancel, self.backends, handover)
+        if answered is not first:
+            first.close()   # nothing more goes to the one that failed this turn
+            task.handed_over = True
         self._update_plan(result.summary, task)
         self._finish(task, result)
 
@@ -226,7 +244,7 @@ class AgentRunner:
         self.bus.publish("agent", kind="result" if result.ok else "error", backend=task.backend.label,
                          text=f"{result.summary or result.detail} ({result.seconds:.0f}s)",
                          data=result.data, task=task.id)
-        if task.backend is not None and task.id != self.focus:
+        if task.backend is not None and (task.id != self.focus or task.handed_over):
             task.backend.close()  # a spawned session for a background task isn't reused
         self.on_finished(task.backend, result, task.id)
         with self._lock:
