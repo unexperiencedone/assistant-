@@ -44,6 +44,8 @@ value = "{query}"          # placeholders: phrase captures, earlier save_as valu
 press_enter = true
 ```
 
+A file can name `fallback = "<other file, without .toml>"`: when a step fails, the same request and values go to that automation instead (once, without saying the first one failed), and only if it fails too does the request go to an agent. `play_song.toml` falls back to `play_on_yt_music.toml`.
+
 Any step can have `label = "..."` (the text shown on the canvas), `timeout = 10` (seconds) and `optional = true` (skip instead of stopping if it fails).
 
 ## Desktop app steps (Windows UI Automation)
@@ -83,7 +85,7 @@ It prints `Type<TAB>Name<TAB>AutomationId` for each clickable control. Use the N
 | `do` | Fields |
 |---|---|
 | `browser_goto` | `url`, optional `new_tab` |
-| `browser_click` | one of `text`, `selector`, `role` + `name`, `label`, `placeholder` |
+| `browser_click` | one of `text`, `selector`, `role` + `name`, `label`, `placeholder`; optional `trusted = true` for a real mouse click (pages only start audio or video for one) |
 | `browser_fill` | a target as above, `value`, optional `press_enter` |
 | `browser_press` | `key` (e.g. `Enter`, `Control+L`) |
 | `browser_wait` | a target as above |

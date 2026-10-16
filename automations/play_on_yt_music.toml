@@ -1,0 +1,53 @@
+name = "YT Music"
+description = "Plays {query} on YouTube Music in your Chrome: searches for it and plays the top result. Spotify hands a song here when it can't play it."
+phrases = [
+  "play {query} on youtube music",
+  "play {query} on yt music",
+  "play {query} in youtube music",
+  "youtube music play {query}",
+  "yt music play {query}",
+]
+ignore_words = ["music", "song", "songs", "track", "the", "some", "a"]
+
+[[steps]]
+do = "browser_goto"
+label = "Search YT Music for {query}"
+url = "https://music.youtube.com/search?q={query_url}"
+
+# The top result card, or the first song when a search has no card. Its button is
+# "Play <title> - <artist>".
+[[steps]]
+do = "browser_wait"
+label = "Wait for the results"
+selector = "ytmusic-card-shelf-renderer ytmusic-play-button-renderer, ytmusic-shelf-renderer ytmusic-play-button-renderer"
+timeout = 15
+
+# Chrome won't start sound in a tab hidden behind another window (Nova's own, often).
+[[steps]]
+do = "focus"
+label = "Bring Chrome to the front"
+window = "exe:chrome"
+optional = true
+
+# Trusted: a scripted click loads the song but leaves it at 0:00.
+[[steps]]
+do = "browser_click"
+label = "Play the top result"
+selector = "ytmusic-card-shelf-renderer ytmusic-play-button-renderer, ytmusic-shelf-renderer ytmusic-play-button-renderer"
+trusted = true
+timeout = 10
+
+[[steps]]
+do = "wait"
+seconds = 2
+
+[[steps]]
+do = "browser_read"
+label = "Check what is playing"
+selector = "ytmusic-player-bar .title"
+save_as = "playing"
+timeout = 8
+
+[[steps]]
+do = "say"
+text = "Playing {playing} on YT Music."

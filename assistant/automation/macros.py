@@ -80,6 +80,12 @@ class Macro:
     phrases: list[str]
     steps: list[dict[str, Any]]
     path: Path
+    # Words dropped from every captured value ("play perfect music" -> "perfect"). A value
+    # left empty means the phrase didn't match: "play the music" is not a search for "the".
+    ignore_words: list[str] = field(default_factory=list)
+    # Another automation (its file name, without .toml) that gets the same request when
+    # this one fails: Spotify that doesn't start playing hands the song to YT Music.
+    fallback: str = ""
     _patterns: list[re.Pattern[str]] = field(default_factory=list, repr=False)
 
     def __post_init__(self) -> None:
@@ -93,8 +99,14 @@ class Macro:
         for pattern in self._patterns:
             m = pattern.match(text)
             if m:
-                return {k: v.strip() for k, v in m.groupdict().items()}
+                values = {k: self._clean(v) for k, v in m.groupdict().items()}
+                if all(values.values()):
+                    return values
         return None
+
+    def _clean(self, value: str) -> str:
+        drop = {w.lower() for w in self.ignore_words}
+        return " ".join(w for w in value.split() if w.lower() not in drop)
 
     def describe(self, step: dict[str, Any], values: dict[str, str]) -> str:
         template = STEP_LABELS.get(step.get("do", ""), step.get("do", "step"))
@@ -126,7 +138,8 @@ def load_macros(folder: Path) -> list[Macro]:
             if unknown:
                 raise MacroError(f"unknown step types {unknown}")
             macros.append(Macro(data.get("name", path.stem), data.get("description", ""),
-                                list(data.get("phrases", [])), steps, path))
+                                list(data.get("phrases", [])), steps, path,
+                                list(data.get("ignore_words", [])), str(data.get("fallback", ""))))
         except (OSError, tomllib.TOMLDecodeError, MacroError) as exc:
             print(f"[automations] skipping {path.name}: {exc}")
     return macros
@@ -183,7 +196,8 @@ class MacroRunner:
     def run(self, macro: Macro, params: dict[str, str], utterance: str = "") -> tuple[bool, str]:
         return self._on_worker(self._run, macro, params, utterance)
 
-    def _run(self, macro: Macro, params: dict[str, str], utterance: str = "") -> tuple[bool, str]:
+    def _run(self, macro: Macro, params: dict[str, str], utterance: str = "",
+             fell_from: str = "") -> tuple[bool, str]:
         self._worker_ident = threading.get_ident()
         values: dict[str, str] = {}
         for key, value in params.items():
@@ -208,6 +222,12 @@ class MacroRunner:
                         continue
                     self.bus.publish("macro_step", index=index, status="failed", detail=message)
                     summary = f"{macro.name} stopped at step {index + 1}: {message}"
+                    backup = self._fallback(macro) if not fell_from else None
+                    if backup is not None:
+                        # No announcement: the request quietly goes to the other automation,
+                        # and only if that fails too does anyone hear about it.
+                        self.bus.log(f"{summary}; trying {backup.name} instead", "warn")
+                        return self._run(backup, params, utterance, fell_from=macro.name)
                     # Structured fields (name/path/step/error) let Controller fall back to the
                     # agent for this one request, then ask it to patch the automation file.
                     self.bus.publish("macro_done", ok=False, text=summary, name=macro.name,
@@ -229,6 +249,16 @@ class MacroRunner:
         finally:
             if self._browser is not None:
                 self._browser.release()  # keep the connection for the next automation
+
+    @staticmethod
+    def _fallback(macro: Macro) -> Macro | None:
+        if not macro.fallback:
+            return None
+        path = macro.path.parent / f"{macro.fallback}.toml"
+        found = [m for m in load_macros(macro.path.parent) if m.path == path] if path.exists() else []
+        if not found:
+            print(f"[automations] {macro.name} names a fallback {path.name} that doesn't load")
+        return found[0] if found else None
 
     def _find(self, query: str, kind: str = "folder") -> str | None:
         """The best indexed match for `query`, opened on first use (the index is local)."""
@@ -387,6 +417,12 @@ class MacroRunner:
         if kind == "browser_goto":
             return browser.goto(s["url"], bool(s.get("new_tab", False)))
         if kind == "browser_click":
+            if s.get("trusted") and hasattr(browser, "act_click"):
+                # A real mouse click through the debugger: a page only starts audio or
+                # video for a user gesture, and a scripted click isn't one.
+                browser.wait_for(timeout=timeout, **target)
+                browser.act_click(trusted=True, guard=False, **target)
+                return ""
             browser.click(timeout=timeout, **target)
             return ""
         if kind == "browser_fill":

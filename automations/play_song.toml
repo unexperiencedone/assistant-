@@ -1,16 +1,21 @@
-name = "Play something on Spotify"
-description = "Searches Spotify for {query}, plays the result that best matches it, and says what is actually playing. For a genre or a mood, say \"play some {query}\" instead."
+name = "Spotify"
+description = "Plays whatever comes after \"play\" on Spotify: a song, an artist, a genre or a mood. Searches for it, plays the best match, and says what is actually playing."
 phrases = [
   "play {query} on spotify",
-  "play the song {query} on spotify",
-  "put on {query}",
-  "play the song {query}",
-  "play {query}",
+  "play {query} in spotify",
   "put on {query} on spotify",
   "spotify play {query}",
   "search spotify for {query}",
-  "play {query} in spotify",
+  "play a bit of {query}",
+  "put on {query}",
+  "play {query}",
 ]
+# "play perfect music" searches "perfect"; "play the music" is left with nothing and goes
+# to the play/pause script instead of searching Spotify for "the".
+ignore_words = ["music", "song", "songs", "track", "the", "some", "a"]
+# When Spotify can't play it (not installed, nothing found, never starts), the same request
+# goes to YT Music in Chrome.
+fallback = "play_on_yt_music"
 
 [[steps]]
 do = "open"
