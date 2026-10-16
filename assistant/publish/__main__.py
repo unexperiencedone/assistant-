@@ -17,6 +17,9 @@
     due                  send whatever is due now (Nova does this by itself while running)
     edit <urn> <file>    replace a live post's text with the contents of a file (images stay)
     drop [id]            discard one
+    articles <project>   write the portfolio Story + Technical pieces (Claude Code, long)
+    articles-brief <p>   print that job's brief without running it
+    articles-ready <p>   stage the portfolio push for approval (the article job runs this)
 
 Drafts staged here land in the same SQLite file the running app reads, so "post it"
 by voice works on a draft made from the terminal, and the other way round.
@@ -115,6 +118,9 @@ def main(argv: list[str]) -> int:
         publisher.close()
         return 0
 
+    if command in ("articles", "articles-brief", "articles-ready"):
+        return _articles(command, rest)
+
     publisher, showcase = _services(with_writer=command == "draft")
     try:
         if command == "scan":
@@ -161,3 +167,45 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
+
+
+def _articles(command: str, rest: str) -> int:
+    """Portfolio articles for a project (publish/articles.py)."""
+    import threading
+
+    from . import articles, video
+
+    settings = load_settings()
+    publisher, showcase = _services()
+    try:
+        name = rest.strip().strip('"')
+        if command == "articles-ready":
+            print(articles.stage(publisher, settings.articles.portfolio, name))
+            return 0
+        found = video.project_for(showcase, name)
+        # A project already posted or drafted carries its post text: the facts made public.
+        posts = [d for d in publisher.gate.recent(60) + publisher.gate.pending(50) + publisher.gate.scheduled()
+                 if d["kind"] == "linkedin_post" and (d.get("extra") or {}).get("name", "").lower() == name.lower()]
+        post_text = posts[0]["text"] if posts else ""
+        path = found.path if found is not None else None
+        display = found.name if found is not None else name
+        repo = articles.repo_url(post_text)
+        if found is None and not repo:
+            print(f"I couldn't find {name!r} on disk or a GitHub link for it in a post.")
+            return 1
+        prompt = articles.brief(display, path, settings.articles.portfolio, post_text, repo)
+        if command == "articles-brief":
+            print(prompt)
+            return 0
+        from ..agents.claude_cli import ClaudeCliAgent
+
+        agent = ClaudeCliAgent(settings.agents.claude, Path(settings.articles.portfolio), False, "")
+        print(f"Writing the {display} articles in {settings.articles.portfolio}. This takes a while.", flush=True)
+        result = agent.run(prompt, lambda e: print(f"  {e.kind}: {' '.join(e.text.split())[:140]}", flush=True)
+                           if e.kind in ("tool", "text") else None, threading.Event())
+        agent.close()
+        print(result.summary or result.detail)
+        return 0 if result.ok else 1
+    finally:
+        publisher.close()
+

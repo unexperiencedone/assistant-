@@ -169,10 +169,30 @@ description, thumbnail, "not made for kids", tags and visibility, waits for the 
 finish and publishes. The Studio steps are written from Studio's current page and **haven't
 been through a supervised run yet**; the first upload should be watched.
 
+## Portfolio articles: a Story and a Technical piece for every project post
+
+The owner's standing rule: whatever project goes on LinkedIn also gets two articles on the
+portfolio (aakshantkumar.vercel.app). When the showcase stages a project post, it starts a
+Claude Code session in the portfolio repo (`[articles] portfolio`, `auto = true`) with the
+brief in `assistant/publish/articles.py`. "Write the portfolio articles for AirGated" or
+`python main.py linkedin articles airgated` does the same by hand.
+
+The Technical piece is the one that mustn't sell the work short: the session reads every
+doc page in the project (README, docs/, reports, PDFs), then the code and the git history,
+and covers the architecture, components, data model, flows, algorithms, testing with real
+numbers, failures and what is open, with diagrams, tables and real code excerpts. A
+project that isn't on disk is cloned from the GitHub link in its post. Each project is one
+file, `lib/writing/<slug>.ts`, so two jobs never edit the same file.
+
+The session checks the site builds, then stages a commit-and-push of the portfolio
+(`linkedin articles-ready`). Approving that push redeploys the site; nothing is published
+before.
+
 ## Files
 
 | File | Does |
 |---|---|
+| `assistant/publish/articles.py` | the brief for a project's portfolio Story and Technical pieces, and staging the push |
 | `assistant/publish/video.py` | the brief for a video job in the Remotion studio |
 | `assistant/publish/youtube.py` | the package check, staging, and the YouTube Studio upload |
 | `assistant/publish/video_cli.py` | `python main.py youtube make\|brief\|stage\|pending` |

@@ -359,6 +359,14 @@ enabled = true
 folder = 'C:/video-comp'
 render_concurrency = 3
 
+[articles]
+# Whatever project goes on LinkedIn also gets a Story and a Technical article on your
+# portfolio. Claude Code writes them in the portfolio repo from every doc in the project;
+# the push that publishes them waits in Studio for your yes.
+enabled = true
+portfolio = 'C:/commercial folder/my_portfolio'
+auto = true
+
 [showcase]
 # Your projects that aren't on LinkedIn yet, drafted one at a time (docs/publishing.md).
 # Only folders under `roots` are read; anything matching `ignore` (a folder name or a

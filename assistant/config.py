@@ -326,6 +326,16 @@ class VideoSettings:
 
 
 @dataclass
+class ArticleSettings:
+    """Every project posted on LinkedIn also gets a Story and a Technical article on the
+    portfolio (assistant/publish/articles.py), written by Claude Code in the portfolio repo
+    and pushed only when you approve."""
+    enabled: bool = True
+    portfolio: str = "C:/commercial folder/my_portfolio"
+    auto: bool = True      # start the articles whenever a project post is drafted
+
+
+@dataclass
 class ShowcaseSettings:
     """Unposted projects turned into LinkedIn drafts (assistant/publish/showcase.py).
 
@@ -585,6 +595,7 @@ class Settings:
     publish: PublishSettings = field(default_factory=PublishSettings)
     showcase: ShowcaseSettings = field(default_factory=ShowcaseSettings)
     video: VideoSettings = field(default_factory=VideoSettings)
+    articles: ArticleSettings = field(default_factory=ArticleSettings)
     skills: SkillsSettings = field(default_factory=SkillsSettings)
     recipes: RecipeSettings = field(default_factory=RecipeSettings)
     orchestrate: OrchestrateSettings = field(default_factory=OrchestrateSettings)

@@ -54,6 +54,9 @@ class Showcase:
         self.bus = bus
         self.ask = ask
         self.notify = notify
+        # Called with (project, post text) after a project post is staged: the app starts
+        # the portfolio articles for it (publish/articles.py), the owner's standing rule.
+        self.on_drafted: Callable[[Project, str], None] | None = None
         path = Path(settings.ledger_path).expanduser()
         self.ledger = Ledger(path if path.is_absolute() else base_dir / path)
         self.base_dir = Path(base_dir)
@@ -177,6 +180,12 @@ class Showcase:
             "linkedin_post", text, target="your feed", media=images,
             extra={"project": project.key, "name": project.name, "path": project.path,
                    "head": project.head, "alt": f"Screenshot of {project.name}"})
+        if self.on_drafted is not None:
+            try:
+                self.on_drafted(project, text)
+            except Exception as error:   # the post is staged either way
+                if self.bus is not None:
+                    self.bus.log(f"couldn't start the {project.name} articles: {error}", "warn")
         if self.bus is not None:
             self.bus.log(f"Drafted a LinkedIn post about {project.name}"
                          f"{' on my own' if automatic else ''}; waiting on you.")

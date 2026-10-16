@@ -13,6 +13,7 @@ saying the honest answer back.
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -109,6 +110,57 @@ class CaptureCommands:
         wanted = (project or name).strip()
         if showcase is not None:
             self._showcase_in_background(f"Writing up {wanted}.", lambda: showcase.draft(wanted))
+
+    def start_articles(self, name: str, path: str | Path | None = None, post_text: str = "",
+                       repo: str = "") -> str:
+        """A Claude Code session in the portfolio writes the project's Story and Technical
+        pieces, then stages the push (publish/articles.py). Returns what to say.
+
+        A heavy job already running makes this one wait its turn on a thread, rather than
+        being dropped: the articles are a standing rule, not a request to forget."""
+        from ..agents.claude_cli import ClaudeCliAgent
+        from ..publish import articles
+
+        settings = getattr(self.settings, "articles", None)
+        if settings is None or not settings.enabled:
+            return "Portfolio articles are turned off in the config, under articles."
+        portfolio = Path(settings.portfolio)
+        if not portfolio.is_dir():
+            return f"I can't find your portfolio at {portfolio}."
+        prompt = articles.brief(name, path, portfolio, post_text, repo or articles.repo_url(post_text))
+        label = f"portfolio articles for {name}"
+
+        def start() -> str | None:
+            agent = ClaudeCliAgent(self.settings.agents.claude, portfolio, False, "")
+            agent.recorder = getattr(self.registry.current, "recorder", None)
+            task_id = self.runner.start(agent, prompt, label, weight="heavy")
+            if task_id:
+                self.task_labels[task_id] = label
+                self.bus.publish("route", utterance=label, route="agent", name="task", backend=agent.label, task=task_id)
+            return task_id
+
+        if not self.runner.blocked_by("heavy") and start():
+            return f"Writing the {name} story and technical articles for your portfolio. They'll wait in Studio."
+
+        def later() -> None:
+            for _ in range(240):            # up to four hours, checked every minute
+                time.sleep(60)
+                if not self.runner.blocked_by("heavy") and start():
+                    self.bus.log(f"started the {name} portfolio articles")
+                    return
+            self.bus.log(f"gave up waiting to start the {name} portfolio articles", "warn")
+
+        threading.Thread(target=later, name="articles-wait", daemon=True).start()
+        return f"I'll write the {name} portfolio articles as soon as the job that's running finishes."
+
+    def _intent_portfolio_articles(self, _text: str, project: str = "") -> None:
+        from ..publish import video
+
+        found = video.project_for(self._showcase(), project.strip())
+        if found is None:
+            self.say(f"I couldn't find a project called {project} in your project folders.")
+            return
+        self.say(self.start_articles(found.name, found.path))
 
     def _intent_video_project(self, text: str, project: str = "") -> None:
         """A Claude Code session in the Remotion studio makes the video and stages it."""

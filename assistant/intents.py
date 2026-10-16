@@ -214,6 +214,11 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
                              r"\s+(?:on|to)\s+linkedin[.!]?$"
                              r"|^(?:draft\s+)?(?:a\s+)?linkedin\s+post\s+(?:about|for)\s+(?:my\s+)?(?:project\s+)?"
                              r"(?P<name>[\w .'-]{2,40}?)[.!]?$"),
+        # The Story and Technical pieces on the portfolio (assistant/publish/articles.py).
+        ("portfolio_articles", r"^(?:write|redo|rewrite|update|make)\s+(?:the\s+|my\s+)?(?:portfolio\s+)?"
+                               r"(?:articles?|write-?ups?|story\s+and\s+technical(?:\s+(?:pieces?|posts?|articles?))?)\s+"
+                               r"(?:about|on|for|of)\s+(?:the\s+)?(?:my\s+)?(?:project\s+)?(?P<project>[\w .'-]{2,40}?)"
+                               r"(?:\s+project)?(?:\s+(?:on|for)\s+(?:my\s+)?portfolio)?[.!]?$"),
         # An explainer video of a project, for YouTube (assistant/publish/video.py).
         ("video_project", r"^(?:make|create|build|do|render)\s+(?:me\s+)?(?:a\s+|an\s+)?(?:new\s+)?"
                           r"(?:youtube\s+|explainer\s+|informative\s+|short\s+)*video\s+"

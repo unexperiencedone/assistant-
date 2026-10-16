@@ -407,6 +407,12 @@ class VoiceAssistant:
             publisher=self.publisher,
             capture_settings=settings.capture,
         )
+        # The owner's standing rule: a project posted on LinkedIn also gets its portfolio
+        # articles. The showcase calls this right after it stages a project post.
+        showcase = getattr(self.publisher, "showcase", None) if self.publisher else None
+        if showcase is not None and settings.articles.enabled and settings.articles.auto:
+            showcase.on_drafted = lambda project, text: self.bus.log(
+                self.controller.start_articles(project.name, project.path, text))
         if self.voice_id is not None:
             self.voice_id.on_enrol_progress = self.controller.voice_progress
             self.voice_id.on_enrolled = self.controller.say
