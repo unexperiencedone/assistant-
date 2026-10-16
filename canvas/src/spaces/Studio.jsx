@@ -69,6 +69,10 @@ function images(n) {
   return n ? `${n} image${n === 1 ? "" : "s"}` : "text only";
 }
 
+const PLATFORM = { linkedin_post: "LinkedIn", youtube_video: "YouTube", instagram_post: "Instagram" };
+const isVideo = (p) => p.kind === "youtube_video";
+const carries = (p) => (isVideo(p) ? "video" : images(p.media.length));
+
 function fold(text) {
   if (text.length <= FOLD + 40) return [text, ""];
   const cut = text.lastIndexOf(" ", FOLD);
@@ -98,7 +102,7 @@ function QueueRow({ post, selected, next, onPick }) {
         <span>
           {post.name || "Untitled post"}
           <small>
-            {post.status === "scheduled" ? relative(at) : post.status === "pending" ? "no time yet" : relative(at)} · {images(post.media.length)}
+            {post.status === "pending" ? "no time yet" : relative(at)} · {carries(post)}
           </small>
         </span>
       </span>
@@ -146,7 +150,8 @@ function Proof({ post, onDone }) {
   };
 
   const group = GROUPS.find((g) => g.key === post.status) ?? GROUPS[1];
-  const [head, rest] = fold(post.text || "");
+  // The fold is LinkedIn's feed; a YouTube description is read on the watch page.
+  const [head, rest] = isVideo(post) ? [post.text || "", ""] : fold(post.text || "");
   const at = placed(post);
   const line =
     post.status === "scheduled"
@@ -167,8 +172,24 @@ function Proof({ post, onDone }) {
         </span>
       </div>
       <div className="ctx">
-        {line} · LinkedIn · {images(post.media.length)}
+        {line} · {PLATFORM[post.kind] || "LinkedIn"} · {carries(post)}
       </div>
+
+      {isVideo(post) ? (
+        <div className="m-proof-video">
+          <video controls preload="metadata" src={`/api/studio/media/${post.id}/0`} poster={post.media[1] ? `/api/studio/media/${post.id}/1` : undefined} />
+          {post.youtube?.chapters?.length ? (
+            <ol className="m-chapters" aria-label="Chapters">
+              {post.youtube.chapters.map(([at, name]) => (
+                <li key={at + name}>
+                  <span>{at}</span>
+                  {name}
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </div>
+      ) : null}
 
       <article className="m-sheet" aria-label="The post as it goes out">
         <p>
@@ -184,7 +205,15 @@ function Proof({ post, onDone }) {
         </p>
       </article>
 
-      {post.media.length ? (
+      {isVideo(post) && post.youtube?.tags?.length ? (
+        <p className="m-tags">
+          {post.youtube.tags.map((t) => (
+            <span key={t}>{t}</span>
+          ))}
+        </p>
+      ) : null}
+
+      {post.media.length && !isVideo(post) ? (
         <div className={`m-proof-media n${Math.min(post.media.length, 4)}`}>
           {post.media.map((name, i) => (
             <a key={name + i} href={`/api/studio/media/${post.id}/${i}`} target="_blank" rel="noreferrer" title={name}>
@@ -374,7 +403,7 @@ export default function Studio({ snapshot, active }) {
                 onClick={() => pick(p.id)}
               >
                 {p.name || "Post"}
-                <small>{p.status === "scheduled" ? `${time(p.send_at)} · ${images(p.media.length)}` : p.status === "sent" ? "posted" : "didn't go out"}</small>
+                <small>{p.status === "scheduled" ? `${time(p.send_at)} · ${carries(p)}` : p.status === "sent" ? "posted" : p.status === "pending" ? "draft" : "didn't go out"}</small>
               </button>
             ))}
           </div>

@@ -139,10 +139,43 @@ the public internet.** A render sitting in the inbox on this laptop cannot be po
 something has put it somewhere with a URL. That is a hosting decision and it is still open;
 until it is made, `instagram.sender` says so plainly rather than pretending to try.
 
+## YouTube: explainer videos of your projects
+
+"Make a video about AirGated" (or `python main.py youtube make airgated`) starts one Claude
+Code session **in the Remotion studio** (`[video] folder`, `C:\video-comp`). It runs through
+the task pool, so it has a lane on the canvas and narrates its milestones. The brief
+(`assistant/publish/video.py`) tells it to:
+
+- read the project itself and explain its architecture in technical but plain terms,
+  4 to 6 minutes, following the films already in the studio (AirGated, Nova) and the
+  remotion-* and impeccable skills installed there;
+- take every fact from the project, show nothing recreated as real footage, and never show
+  secrets or an `evidence/` folder (real student faces);
+- narrate with Fish through `scripts/generate-voiceover.ts`, render with
+  `--concurrency` at most `[video] render_concurrency` (this laptop has about 16 GB);
+- write `out/<slug>/youtube.json` (title, description, chapters, tags, pinned comment,
+  visibility, video, thumbnail) and stage it with `python main.py youtube stage <json>`.
+
+The draft lands in **Studio**: the video plays there, with its chapters and tags, and waits
+like any post. `youtube.load` refuses what YouTube would (a title over 100 characters or
+with `<`/`>`, a description over 5,000 with chapters), and puts the chapters into the
+description, starting at 00:00, because that is how YouTube finds them.
+
+**Uploading goes through YouTube Studio in your own Chrome**, through the Nova extension,
+not the Data API. Google locks every video uploaded through an unaudited API project to
+private, so an API upload could never go public. The extension attaches the file with the
+debugger (`upload`, `DOM.setFileInputFiles`), then `youtube.sender` fills in the title,
+description, thumbnail, "not made for kids", tags and visibility, waits for the upload to
+finish and publishes. The Studio steps are written from Studio's current page and **haven't
+been through a supervised run yet**; the first upload should be watched.
+
 ## Files
 
 | File | Does |
 |---|---|
+| `assistant/publish/video.py` | the brief for a video job in the Remotion studio |
+| `assistant/publish/youtube.py` | the package check, staging, and the YouTube Studio upload |
+| `assistant/publish/video_cli.py` | `python main.py youtube make\|brief\|stage\|pending` |
 | `assistant/publish/gate.py` | drafts, approval, honest recording of what happened |
 | `assistant/publish/service.py` | owns the gate, registers the senders, reports which arms work |
 | `assistant/publish/github.py` | the `gh` CLI wrapper, plus `git` commit-and-push |

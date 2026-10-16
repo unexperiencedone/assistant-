@@ -316,6 +316,16 @@ class PublishSettings:
 
 
 @dataclass
+class VideoSettings:
+    """Explainer videos of your projects, made by Claude Code in a Remotion studio
+    (assistant/publish/video.py), staged as YouTube drafts, uploaded through YouTube
+    Studio in your Chrome only when you approve one."""
+    enabled: bool = True
+    folder: str = "C:/video-comp"     # the Remotion studio with the remotion-* skills
+    render_concurrency: int = 3          # Remotion threads; this laptop has ~16 GB of RAM
+
+
+@dataclass
 class ShowcaseSettings:
     """Unposted projects turned into LinkedIn drafts (assistant/publish/showcase.py).
 
@@ -574,6 +584,7 @@ class Settings:
     capture: CaptureSettings = field(default_factory=CaptureSettings)
     publish: PublishSettings = field(default_factory=PublishSettings)
     showcase: ShowcaseSettings = field(default_factory=ShowcaseSettings)
+    video: VideoSettings = field(default_factory=VideoSettings)
     skills: SkillsSettings = field(default_factory=SkillsSettings)
     recipes: RecipeSettings = field(default_factory=RecipeSettings)
     orchestrate: OrchestrateSettings = field(default_factory=OrchestrateSettings)

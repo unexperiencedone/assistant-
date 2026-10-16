@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from . import github, instagram, linkedin
+from . import github, instagram, linkedin, youtube
 from .gate import PublishGate, describe
 
 
@@ -34,6 +34,7 @@ class PublishService:
         self.gate.register("instagram_post", instagram.sender)
         self.gate.register("github_release", self._send_release)
         self.gate.register("github_push", self._send_push)
+        self.gate.register("youtube_video", youtube.sender)
         # Staged outreach has nowhere to go yet: there is no email arm. Registered all
         # the same, so approving one gives a straight answer instead of a broken
         # sentence about an unknown draft kind, and the draft stays for later.
@@ -103,6 +104,15 @@ class PublishService:
 
     def draft_push(self, folder: str, message: str) -> str:
         return self._staged(self.gate.stage("github_push", message, target=folder))
+
+    def draft_youtube(self, package: str) -> str:
+        """A finished video's package (publish/youtube.py) staged for approval."""
+        try:
+            draft = youtube.stage(self.gate, package)
+        except youtube.PackageError as error:
+            return f"That video isn't ready to stage: {error}."
+        return (f"The video {draft['extra']['title']!r} is waiting in Studio for you to watch. "
+                "Nothing has gone up. Say post it, or drop it.")
 
     def _staged(self, draft: dict[str, Any]) -> str:
         return f"Drafted {describe(draft)} Nothing has gone out. Say post it, or drop it."

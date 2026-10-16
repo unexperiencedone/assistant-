@@ -206,6 +206,7 @@ KINDS = {
     "github_push": "a commit and push",
     "linkedin_post": "a LinkedIn post",
     "instagram_post": "an Instagram post",
+    "youtube_video": "a YouTube video",
 }
 
 

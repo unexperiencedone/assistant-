@@ -241,6 +241,10 @@ class ExtensionBrowser:
     def press(self, key: str) -> None:
         self._call("press", key=key)
 
+    def upload(self, files: list[str], selector: str = "input[type=file]", timeout: float = 30) -> str:
+        """Local files into the page's file input (through shadow roots), as if picked by hand."""
+        return self._call("upload", _wait=timeout, files=[str(f) for f in files], selector=selector).get("page", "")
+
     def wait_for(self, timeout: float = 15, **target: str) -> None:
         self._call("wait", _wait=timeout + 10, target=_target(**target), timeout=timeout)
 

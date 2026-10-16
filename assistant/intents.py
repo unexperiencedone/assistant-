@@ -214,6 +214,11 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
                              r"\s+(?:on|to)\s+linkedin[.!]?$"
                              r"|^(?:draft\s+)?(?:a\s+)?linkedin\s+post\s+(?:about|for)\s+(?:my\s+)?(?:project\s+)?"
                              r"(?P<name>[\w .'-]{2,40}?)[.!]?$"),
+        # An explainer video of a project, for YouTube (assistant/publish/video.py).
+        ("video_project", r"^(?:make|create|build|do|render)\s+(?:me\s+)?(?:a\s+|an\s+)?(?:new\s+)?"
+                          r"(?:youtube\s+|explainer\s+|informative\s+|short\s+)*video\s+"
+                          r"(?:about|on|for|explaining|of)\s+(?:the\s+)?(?:my\s+)?(?:project\s+)?(?P<project>[\w .'-]{2,40}?)"
+                          r"(?:\s+(?:project))?(?:\s+(?:for|on|to)\s+youtube)?[.!]?$"),
         ("publish_waiting", r"^(?:what'?s|what\s+is|anything)\s+(?:waiting|pending|queued)"
                             r"(?:\s+to\s+(?:go\s+out|post|publish|be\s+posted))?\b"
                             r"|^(?:show|list)\s+(?:my\s+|the\s+)?drafts?\b"),

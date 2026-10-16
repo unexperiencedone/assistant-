@@ -351,6 +351,14 @@ audio = false   # system audio needs a loopback capture device set up first
 enabled = true
 db_path = "data/publish.db"
 
+[video]
+# Explainer videos of your projects ("make a video about AirGated"): Claude Code works in
+# this Remotion studio, renders, writes the YouTube title/description/chapters, and the
+# video waits in Studio. It goes up through YouTube Studio in your Chrome when you say so.
+enabled = true
+folder = 'C:/video-comp'
+render_concurrency = 3
+
 [showcase]
 # Your projects that aren't on LinkedIn yet, drafted one at a time (docs/publishing.md).
 # Only folders under `roots` are read; anything matching `ignore` (a folder name or a

@@ -110,6 +110,42 @@ class CaptureCommands:
         if showcase is not None:
             self._showcase_in_background(f"Writing up {wanted}.", lambda: showcase.draft(wanted))
 
+    def _intent_video_project(self, text: str, project: str = "") -> None:
+        """A Claude Code session in the Remotion studio makes the video and stages it."""
+        from ..agents.claude_cli import ClaudeCliAgent
+        from ..publish import video
+
+        settings = getattr(self.settings, "video", None)
+        if settings is None or not settings.enabled:
+            self.say("Making videos is turned off in the config, under video.")
+            return
+        studio = Path(settings.folder)
+        if not studio.is_dir():
+            self.say(f"I can't find the video studio at {studio}.")
+            return
+        found = video.project_for(self._showcase(), project.strip())
+        if found is None:
+            self.say(f"I couldn't find a project called {project} in your project folders.")
+            return
+        weight = "heavy"
+        blocker = self.runner.blocked_by(weight)
+        if blocker:
+            self.say(f"A video is a big job, so I'll wait until {blocker.label} is done. Ask me again then.")
+            return
+        agent = ClaudeCliAgent(self.settings.agents.claude, studio, False, "")
+        agent.recorder = getattr(self.registry.current, "recorder", None)
+        label = f"video about {found.name}"
+        prompt = video.brief(found.name, found.path, studio, settings.render_concurrency)
+        task_id = self.runner.start(agent, prompt, label, weight=weight)
+        if task_id is None:
+            self.say("I couldn't start the video right now.")
+            return
+        self.task_labels[task_id] = label
+        self.task_origins[task_id] = self.reply_to
+        self.bus.publish("route", utterance=text, route="agent", name="task", backend=agent.label, task=task_id)
+        self.say(f"Starting a video about {found.name}. Script, narration and render take a while; "
+                 "it'll wait in Studio when it's done.")
+
     def _intent_showcase_unposted(self, _text: str) -> None:
         showcase = self._showcase()
         if showcase is not None:

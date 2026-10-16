@@ -10,6 +10,7 @@
     python main.py web open https://example.com # drive your Chrome through the Nova extension
     python main.py usage [--days 7|--all]       # tokens spent and saved (assistant/usage)
     python main.py linkedin auth|status|scan|draft|seed|mark|ledger   # projects -> LinkedIn
+    python main.py youtube make|brief|stage|pending                   # project explainer videos -> YouTube
     python main.py sysindex find "invoice"      # local index CLI
     python main.py voice-check          # is this still the same Nova? (assistant/persona/drift.py)
     python main.py autostart install|remove|status
@@ -104,6 +105,10 @@ def main(argv: list[str] | None = None) -> int:
         from assistant.usage.__main__ import main as usage_main
 
         return usage_main(argv[1:])
+    if argv and argv[0] == "youtube":
+        from assistant.publish.video_cli import main as youtube_main
+
+        return youtube_main(argv[1:])
     if argv and argv[0] == "linkedin":
         from assistant.publish.__main__ import main as linkedin_main
 

@@ -164,7 +164,10 @@ class DashboardServer:
                     "text": draft["text"], "media": [Path(m).name for m in draft["media"]],
                     "alt": extra.get("alt", ""), "created_at": draft["created_at"], "send_at": draft.get("send_at"),
                     "decided_at": draft.get("decided_at"), "result": result,
-                    "post": posted.group(0) if posted else ""}
+                    "post": posted.group(0) if posted else "",
+                    # A video draft's YouTube details (publish/youtube.py), for the Studio proof.
+                    "youtube": {k: extra.get(k) for k in ("title", "tags", "chapters", "visibility", "pinned_comment")}
+                    if draft["kind"] == "youtube_video" else None}
 
         showcase = getattr(self.publisher, "showcase", None)
         signed_in, signin = linkedin_auth.status()

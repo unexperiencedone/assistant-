@@ -383,4 +383,35 @@ const METHODS = {
   async wait(params) {
     return page((await currentTab(params)).id, 'wait', params);
   },
+
+  // Local files into a page's file input, the way a person picking them would: through
+  // the debugger, since a page script can't name a path on disk. The input is found
+  // through shadow roots too (YouTube Studio keeps its own inside them).
+  async upload(params) {
+    const tab = await currentTab(params);
+    const files = params.files || [];
+    if (!files.length) throw new Error('upload needs at least one file');
+    const selector = params.selector || 'input[type=file]';
+    const find = `(() => { const sel = ${JSON.stringify(selector)};
+      const walk = (root) => { const hit = root.querySelector(sel); if (hit) return hit;
+        for (const el of root.querySelectorAll('*')) if (el.shadowRoot) { const h = walk(el.shadowRoot); if (h) return h; }
+        return null; };
+      return walk(document); })()`;
+    let attached = false;
+    await trusted(tab.id, async (send) => {
+      await send('DOM.getDocument', { depth: 0 });
+      const { result } = await send('Runtime.evaluate', { expression: find });
+      if (!result || !result.objectId) return;
+      await send('DOM.setFileInputFiles', { files, objectId: result.objectId });
+      attached = true;
+    });
+    if (!attached) throw new Error(`no file input matching ${selector} on the page`);
+    return report(tab, { line: `${files.length} file${files.length === 1 ? '' : 's'}` }, 'Attached');
+  },
+
+  // Pick up a changed background.js without a trip to chrome://extensions.
+  async reload() {
+    setTimeout(() => chrome.runtime.reload(), 200);
+    return { page: 'Reloading the Nova extension.' };
+  },
 };

@@ -113,7 +113,7 @@ class InboxService:
     @staticmethod
     def _draft_detail(draft: dict[str, Any]) -> str:
         kind = {"linkedin_post": "LinkedIn", "instagram_post": "Instagram", "github_release": "GitHub release",
-                "github_push": "Commit and push", "outreach_email": "Email"}.get(draft["kind"], draft["kind"])
+                "github_push": "Commit and push", "outreach_email": "Email", "youtube_video": "YouTube"}.get(draft["kind"], draft["kind"])
         files = len(draft["media"])
         return f"{kind}" + (f" · {files} image{'s' if files != 1 else ''}" if files else "")
 
