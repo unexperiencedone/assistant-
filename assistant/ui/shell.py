@@ -152,6 +152,8 @@ class AppShell:
 
     def _prewarm_overlay(self) -> None:
         time.sleep(PREWARM_SECONDS)
+        if self._quitting:
+            return   # a window built after stop() would keep the process alive
         try:
             self._ensure_overlay()
         except Exception as exc:
@@ -264,6 +266,15 @@ class AppShell:
     def stop(self) -> None:
         self._quitting = True
         self.close_reader()
+        # The overlay is built hidden ahead of time and never closed by hand. webview.start
+        # only returns once *every* window is gone, so a live hidden overlay kept Nova
+        # running with no window after "shut down", holding the single-instance lock.
+        overlay, self.overlay = self.overlay, None
+        if overlay is not None:
+            try:
+                overlay.destroy()
+            except Exception:
+                pass
         if self.window:
             try:
                 self.window.destroy()
