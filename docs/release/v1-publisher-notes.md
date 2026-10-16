@@ -26,7 +26,8 @@ Notes for the first public release. **Not started yet.** These are the decisions
    - **Keys:** they live in `.env` on the user's PC.
    - **Defaults:** private apps are never read (password managers, banking, incognito).
    - **Opting out:** how to turn things off and delete data.
-5. **Publisher docs.** This file, plus a release checklist: build, smoke test on a clean Windows account, a signed installer if possible, then the listing copy for Kaiketsu's site.
+5. **Tray icon pinned.** Windows 11 hides every new tray icon behind the ^ overflow, so a user who autostarts Nova (it starts hidden, `--tray`) sees nothing at login. The pin is per executable (`HKCU\Control Panel\NotifyIconSettings\<id>\IsPromoted = 1`), so `Nova.exe` gets a new entry. The installer or first run should set it, or the user docs must say how.
+6. **Publisher docs.** This file, plus a release checklist: build, smoke test on a clean Windows account, a signed installer if possible, then the listing copy for Kaiketsu's site.
 
 ## Already done that the release builds on
 
