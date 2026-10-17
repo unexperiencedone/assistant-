@@ -95,12 +95,25 @@ def stage(gate: Any, path: str | Path) -> dict[str, Any]:
 
 
 def sender(draft: dict[str, Any]) -> tuple[bool, str]:
-    """Upload through YouTube Studio in the owner's Chrome. Returns (ok, what happened)."""
-    from ..automation.extension import BRIDGE, ExtensionBrowser, ExtensionError
+    """Publish one approved video: through the Data API when YouTube is signed in (exact,
+    checked details), otherwise through YouTube Studio in the owner's Chrome."""
+    from . import youtube_api
 
     package = draft.get("extra") or {}
     if not package.get("video") or not Path(package["video"]).is_file():
         return False, "The video file for this draft is gone."
+    if youtube_api.signed_in():
+        try:
+            return youtube_api.publish(package, full_description(package))
+        except youtube_api.YouTubeError as error:
+            return False, str(error)
+    return _studio_sender(package)
+
+
+def _studio_sender(package: dict[str, Any]) -> tuple[bool, str]:
+    """Upload through YouTube Studio in the owner's Chrome. Returns (ok, what happened)."""
+    from ..automation.extension import BRIDGE, ExtensionBrowser, ExtensionError
+
     if not BRIDGE.usable():
         return False, "YouTube goes up through your Chrome, and the Nova extension isn't connected."
     browser = ExtensionBrowser()

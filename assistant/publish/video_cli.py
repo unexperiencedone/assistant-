@@ -1,13 +1,17 @@
 """`python main.py youtube ...`: explainer videos of your projects, and the YouTube gate.
 
+    auth                 sign in to YouTube (once; uses GOOGLE_CLIENT_ID/SECRET from .env)
+    status               is YouTube signed in, and which channel
     make <project>       have Claude Code make the video in the Remotion studio (long:
                          script, narration, render), then stage it for approval
     brief <project>      print the brief that job gets, without running anything
     stage <youtube.json> stage a finished video's package (the video job does this itself)
     pending              YouTube drafts waiting for you
 
-Approving ("post it", or Post now in Studio) uploads through YouTube Studio in your
-Chrome; the Nova extension has to be connected, which means Nova has to be running.
+Approving ("post it", or Post now in Studio) publishes through the YouTube Data API once
+signed in (youtube_api.py: a video already on the channel is finished in place, every detail
+is read back before it goes public); without a sign-in it falls back to YouTube Studio in
+your Chrome through the Nova extension.
 """
 
 from __future__ import annotations
@@ -29,6 +33,25 @@ def main(argv: list[str]) -> int:
     from .__main__ import _services
 
     settings = load_settings()
+    if command in ("auth", "status"):
+        from . import youtube_api
+
+        if command == "auth":
+            ok, said = youtube_api.sign_in()
+            print(said)
+            return 0 if ok else 1
+        if not youtube_api.signed_in():
+            print("YouTube isn't signed in: run python main.py youtube auth")
+            return 1
+        try:
+            videos = youtube_api.my_uploads(5)
+        except youtube_api.YouTubeError as error:
+            print(error)
+            return 1
+        print("Signed in. Latest uploads:")
+        for v in videos:
+            print(f"  {v['status']['privacyStatus']:9} {v['snippet']['title']}")
+        return 0
     publisher, showcase = _services()
     try:
         if command == "stage":
