@@ -21,8 +21,8 @@ the things you repeat so they stop costing anything at all.
 ![Tailscale](https://img.shields.io/badge/Tailscale-242424?style=for-the-badge&logo=tailscale&logoColor=white)
 ![Termux](https://img.shields.io/badge/Termux-000000?style=for-the-badge&logo=android&logoColor=3DDC84)
 
-![Tests](https://img.shields.io/badge/tests-420_passing-3fb950?style=flat-square)
-![Modules](https://img.shields.io/badge/python-110_modules-3776AB?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-908_passing-3fb950?style=flat-square)
+![Modules](https://img.shields.io/badge/python-171_modules-3776AB?style=flat-square)
 ![API billing](https://img.shields.io/badge/API_billing-none-8957e5?style=flat-square)
 ![Speech](https://img.shields.io/badge/speech-100%25_local-0969da?style=flat-square)
 
@@ -236,6 +236,13 @@ canvas header shows which is active.
 | **OpenRouter** | The same loop against free models. | A fallback when Groq is rate-limited |
 | **Antigravity** | Google's `agy` CLI. | An alternative coding agent |
 
+**Claude Code and Antigravity stand in for each other.** There is no check before a
+request: it goes straight to the brain it was meant for. Only a turn that comes back
+without an answer (not installed, signed out, out of usage, crashed, blocked) is handed to
+the other one, once, and its reply is your answer, with no announcement. If the first had
+already started doing things, the second is told to check what's done before repeating
+anything (`assistant/agents/failover.py`).
+
 **Groq leads on purpose.** It costs nothing and replies in about a second, so the
 question is not whether it's as good as Claude — it's how much it can finish by itself.
 Nova supplies the loop and the hands, in five groups:
@@ -442,7 +449,8 @@ Nova also does things nobody asked for in that moment.
 | 📔 **Journal** | One short entry per finished day, written from the work history — never invented. The last few entries go into every brain's instructions, which is where continuity between sessions comes from. | [`docs/journal.md`](docs/journal.md) |
 | 🎯 **Standing goals** | *"Every morning, tell me what changed in my repos."* The one place Nova starts something itself. | [`docs/standing_agent.md`](docs/standing_agent.md) |
 | 🎬 **Capture** | Screen recording via ffmpeg, phone camera photos, and local CPU cut/caption/reframe. | [`docs/standing_agent.md`](docs/standing_agent.md) |
-| 📤 **Publishing** | GitHub, LinkedIn and Instagram — all three behind one approval gate. | [`docs/publishing.md`](docs/publishing.md) |
+| 📤 **Publishing** | GitHub, LinkedIn, Instagram and YouTube, all behind one approval gate. Every project posted on LinkedIn also gets a Story and a deep Technical article on the portfolio, written from every doc in its repo. | [`docs/publishing.md`](docs/publishing.md) |
+| 🎞 **Explainer videos** | *"Make a video about AirGated."* Claude Code builds a narrated architecture explainer in a Remotion studio, renders it, writes the YouTube title, description, chapters and tags, and stages it. On approval it goes up through the YouTube Data API, and every detail is read back before it's made public. | [`docs/publishing.md`](docs/publishing.md) |
 | 🎙 **Voice drift check** | `python main.py voice-check` scores Nova's replies against its own character, so "the voice has slipped" becomes a number with a date. | `assistant/persona/drift.py` |
 
 Three properties hold across all of them, and each is a line of code someone will later
@@ -460,23 +468,27 @@ be tempted to delete:
 
 ## The canvas
 
-A live graph of each request as it happens — what you said, how it was routed, the plan
-steps with their branches, each action taken, and the result.
+Four spaces, keyed **1–4**: **Now** (the conversation and the Needs-you inbox), **Work**
+(each task's live graph: what you said, how it was routed, the plan steps, every action,
+the result), **Studio** (everything that goes out under your name) and **You** (profile,
+memory, usage, Connections).
 
-> **Design direction — "Living Ink":** ink-black ground, **Fraunces** for anything Nova
-> *says or is*, **IBM Plex Mono** for anything a machine *measured* (paths, figures,
-> timestamps), coral `#ff8a65` and violet `#7c5cff`. Fonts are self-hosted, so it looks
-> identical offline. The blob is driven by the real status slice — never a decorative
-> loop.
+> **Design direction, "Manga × HUD":** manuscript paper `#f5f5f2`, G-pen ink, a
+> non-repro blue for structure only and one spot pink for the next action and live state.
+> Square ink frames, speech balloons as the only curves, screentone instead of gradients,
+> English paired with Devanagari. HUD mechanics drawn in ink: keys 1–4, F1–F3 on
+> decisions, numbered spoken choices. Fonts are self-hosted, so it looks identical
+> offline. The orb is driven by the real status slice, never a decorative loop
+> (`DESIGN.md`).
 
 | | |
 |:--|:--|
-| **Click any node** | An inspector with the full untruncated text and copy buttons |
+| **Ctrl+Alt+H, over any app** | A still of the screen you were on, ink brackets on what Nova read (your selection or the focused window), and an answer panel ending in numbered choices. Esc or the same keys close it |
+| **Needs you** | Every decision waiting on you, each with its buttons and an F-key: drafts, scheduled posts, proposed automations |
+| **Studio** | Every post at any date in one queue (going out, waiting on you, went out, didn't go out); the week pages back and forward; the picked post shows exactly as it will go out: full text, real images or the video with its chapters, when it goes, where the feed folds it; post now, move, unschedule, schedule or drop |
+| **Connections** | Sign in to Claude or Antigravity and add Groq, OpenRouter or Fish keys, each checked with its provider before it's saved |
 | **Every turn logged raw** | `data/sessions/<date>/<backend>/turn-NN.jsonl`, surviving restarts |
-| **History rail** | The last 20 requests; click one to see its graph again |
-| **Parallel tasks** | Errands start immediately; big jobs queue. One lane and tab each, so conversations never mix |
-| **Cost meter** | What the session cost and how many turns it took |
-| **Mic level, minimap, theme toggle** | Plus a filterable activity feed and adaptive quick-action chips |
+| **Parallel tasks** | Errands start immediately; big jobs queue. One lane each, so conversations never mix |
 | **Restored after a restart** | Conversation and plan both |
 
 Only one task talks out loud; the others report when they finish. `max_parallel` under
@@ -510,9 +522,9 @@ rate = 0                       # -10..10
 
 | | How | Speed |
 |:--|:--|:--|
-| **Automations** | TOML scripts in `automations/`, triggered by their phrases. Each step lights up on the canvas; a failed step turns red and says why. | ~1–8 s, free |
-| **Desktop apps** | Claude lists a window's controls and clicks them **by name** via Windows UI Automation — no pixel guessing. | ~45 s |
-| **Websites** | Claude drives a browser with the Playwright MCP tools. | ~20 s+ |
+| **Automations** | TOML scripts in `automations/`, triggered by their phrases. Each step lights up on the canvas; a failed step turns red and says why. An automation can name a **fallback**: if Spotify can't play a song, the same request plays it on YT Music, and only if that fails too does it go to a brain. | ~1–8 s, free |
+| **Desktop apps** | Lists a window's controls and clicks them **by name** via Windows UI Automation — no pixel guessing. | ~5–45 s |
+| **Websites** | Your own Chrome, with your logins, through the Nova extension: numbered element maps, only the changes after each action, real clicks and file uploads when a page needs them. Playwright only when the extension isn't connected. | ~1–20 s |
 
 ```powershell
 python main.py ui controls "Calculator" --filter plus
@@ -888,11 +900,16 @@ checks — use with care. To always allow specific tools, add entries like
 | [`docs/recipes.md`](docs/recipes.md) | How a job that worked is recorded and fed back |
 | [`docs/journal.md`](docs/journal.md) | The day-by-day record that gives Nova continuity |
 | [`docs/standing_agent.md`](docs/standing_agent.md) | Standing goals, screen capture and editing |
-| [`docs/publishing.md`](docs/publishing.md) | GitHub, LinkedIn, Instagram — and the gate in front of them |
+| [`docs/publishing.md`](docs/publishing.md) | GitHub, LinkedIn, Instagram, YouTube, portfolio articles, and the gate in front of them |
+| [`docs/extension.md`](docs/extension.md) | Driving your own Chrome through the Nova extension |
+| [`docs/release/v1-publisher-notes.md`](docs/release/v1-publisher-notes.md) | Nova v1 as a product by Kaiketsu: what has to happen before it's listed |
+| [`DESIGN.md`](DESIGN.md) | The Manga × HUD design system the canvas follows |
 | [`docs/document_standards.md`](docs/document_standards.md) | How written documents and diagrams are produced |
 | [`docs/business_pipeline.md`](docs/business_pipeline.md) | A designed-but-unbuilt outreach pipeline |
 
 <div align="center">
 <br>
 <sub>Built to get quieter, cheaper and more useful the longer it runs.</sub>
+<br>
+<sub>Nova is a product by <b>Kaiketsu Tech</b>. Developed by <b>Aakshant Kumar</b>, co-founder and VP Tech.</sub>
 </div>

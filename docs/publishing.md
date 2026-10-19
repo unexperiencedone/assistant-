@@ -161,13 +161,28 @@ like any post. `youtube.load` refuses what YouTube would (a title over 100 chara
 with `<`/`>`, a description over 5,000 with chapters), and puts the chapters into the
 description, starting at 00:00, because that is how YouTube finds them.
 
-**Uploading goes through YouTube Studio in your own Chrome**, through the Nova extension,
-not the Data API. Google locks every video uploaded through an unaudited API project to
-private, so an API upload could never go public. The extension attaches the file with the
-debugger (`upload`, `DOM.setFileInputFiles`), then `youtube.sender` fills in the title,
-description, thumbnail, "not made for kids", tags and visibility, waits for the upload to
-finish and publishes. The Studio steps are written from Studio's current page and **haven't
-been through a supervised run yet**; the first upload should be watched.
+**Approving goes through the YouTube Data API** (`assistant/publish/youtube_api.py`) once
+signed in: `python main.py youtube auth` runs Google's installed-app sign-in (PKCE, client
+from `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in `.env`; the Google project lists the
+channel's account as a test user) and keeps the refresh token in `data/youtube_token.json`.
+`python main.py youtube status` lists the latest uploads.
+
+- **A video already on the channel is finished in place**, matched by its file name (what
+  Studio calls an untitled upload) or its title, so a Studio upload that stopped halfway
+  never becomes a duplicate.
+- **Every detail is checked before it goes public.** Title, description with chapters, tags
+  and thumbnail are set, then read back. Title and description must match exactly; tags
+  must match as a set, exact spelling, since YouTube returns them sorted. Any difference
+  keeps the video private and the send names what differs.
+- **Fresh API uploads stay private** until the Google project passes Google's audit, and the
+  send says so; finishing a video uploaded in Studio isn't affected.
+
+Without a sign-in, the send falls back to YouTube Studio in your Chrome through the Nova
+extension (`upload` attaches the file through the debugger). That route's first run stopped
+at the details page because Chrome treats a tab behind another window as hidden; it's kept
+only as the fallback.
+
+First video through the API: https://youtu.be/ABP1MhMZrZA (2026-10-19).
 
 ## Portfolio articles: a Story and a Technical piece for every project post
 
@@ -188,14 +203,20 @@ The session checks the site builds, then stages a commit-and-push of the portfol
 (`linkedin articles-ready`). Approving that push redeploys the site; nothing is published
 before.
 
+**Read what a job wrote before approving.** The first Ved Code rewrite listed which routes
+of the live app accepted unauthenticated requests: true, and a guide to abusing it. It was
+cut to a general note before the push. Route-level security gaps of a live app never go
+in a public article; the fix and the fact that it's open can.
+
 ## Files
 
 | File | Does |
 |---|---|
 | `assistant/publish/articles.py` | the brief for a project's portfolio Story and Technical pieces, and staging the push |
 | `assistant/publish/video.py` | the brief for a video job in the Remotion studio |
-| `assistant/publish/youtube.py` | the package check, staging, and the YouTube Studio upload |
-| `assistant/publish/video_cli.py` | `python main.py youtube make\|brief\|stage\|pending` |
+| `assistant/publish/youtube.py` | the package check, staging, and which route sends it |
+| `assistant/publish/youtube_api.py` | YouTube sign-in, finishing or uploading a video, the read-back check |
+| `assistant/publish/video_cli.py` | `python main.py youtube auth\|status\|make\|brief\|stage\|pending` |
 | `assistant/publish/gate.py` | drafts, approval, honest recording of what happened |
 | `assistant/publish/service.py` | owns the gate, registers the senders, reports which arms work |
 | `assistant/publish/github.py` | the `gh` CLI wrapper, plus `git` commit-and-push |

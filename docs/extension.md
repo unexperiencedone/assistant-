@@ -63,6 +63,19 @@ python main.py web click 7 --trusted # real mouse input, for sites that ignore s
 
 `web click` (and `browse_click`) escalate without a model: page click → real mouse click → app link through Windows → Windows accessibility. A site that needs the real click is remembered. Nothing that sends, pays or deletes is ever clicked twice. Details: docs/ladders.md.
 
+## Files, and picking up a new version
+
+- **`upload`** puts local files into a page's file input, the way picking them by hand
+  would: through the debugger (`DOM.setFileInputFiles`), finding the input through shadow
+  roots too. Automations and the YouTube fallback use it as `ExtensionBrowser.upload()`;
+  over `/api/ext` it's `{"method": "upload", "params": {"files": [...], "selector": "..."}}`.
+- **`reload`** restarts the extension so a changed `background.js` is picked up without a
+  trip to `chrome://extensions`. A version that predates `reload` still needs that trip
+  once.
+- **A page in a tab behind another window counts as hidden.** Chrome won't start audio
+  there, and "wait until visible" can time out. Automations that need sound or a visible
+  page bring Chrome to the front first (the YT Music automation does).
+
 ## How to tell it's being used
 
 - **Canvas activity feed:** every call adds a line such as `Chrome extension: click [7] (0.4s)`.

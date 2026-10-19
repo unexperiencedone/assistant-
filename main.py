@@ -168,6 +168,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     from assistant.app import VoiceAssistant
+    from assistant.ui import identity
+
+    # Before any window: the taskbar and notifications say Nova, not Python 3.11.
+    identity.set_app_id()
+    identity.ensure_shortcut()
 
     assistant = VoiceAssistant(settings, text_mode=args.text)
     assistant.run()
