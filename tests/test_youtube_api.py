@@ -23,7 +23,15 @@ class Differences(unittest.TestCase):
         wrong = youtube_api.differences(video(tags=["voice assistant"]), PACKAGE, DESCRIPTION)
         self.assertTrue(any(w.startswith("title is") for w in wrong))
         self.assertIn("the description doesn't match", wrong)
-        self.assertTrue(any("missing: python" in w for w in wrong))
+        self.assertTrue(any("missing: Python" in w for w in wrong))
+
+    def test_tags_youtube_hands_back_sorted_still_match(self):
+        shuffled = sorted(PACKAGE["tags"], key=str.lower)[::-1]
+        self.assertEqual(youtube_api.differences(video(PACKAGE["title"], DESCRIPTION, shuffled), PACKAGE, DESCRIPTION), [])
+
+    def test_a_misspelled_tag_still_fails(self):
+        wrong = youtube_api.differences(video(PACKAGE["title"], DESCRIPTION, ["voice assistant", "python"]), PACKAGE, DESCRIPTION)
+        self.assertTrue(any("missing: Python" in w and "unexpected: python" in w for w in wrong))
 
 
 class FindExisting(unittest.TestCase):

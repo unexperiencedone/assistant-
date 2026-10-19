@@ -244,9 +244,12 @@ def differences(video: dict[str, Any], package: dict[str, Any], description: str
         wrong.append(f"title is {snip.get('title')!r}")
     if " ".join(snip.get("description", "").split()) != " ".join(description.split()):
         wrong.append("the description doesn't match")
-    if [t.lower() for t in snip.get("tags", [])] != [t.lower() for t in package["tags"]]:
-        missing = sorted(set(t.lower() for t in package["tags"]) - set(t.lower() for t in snip.get("tags", [])))
-        wrong.append(f"tags differ{' (missing: ' + ', '.join(missing) + ')' if missing else ''}")
+    # YouTube hands tags back sorted, so the set is what has to match, not the order.
+    have, want = set(snip.get("tags", [])), set(package["tags"])
+    if have != want:
+        missing, extra = sorted(want - have), sorted(have - want)
+        wrong.append("tags differ" + (f" (missing: {', '.join(missing)})" if missing else "")
+                     + (f" (unexpected: {', '.join(extra)})" if extra else ""))
     return wrong
 
 
